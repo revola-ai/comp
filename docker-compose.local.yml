@@ -1,0 +1,48 @@
+# Local-only infrastructure for self-hosted development.
+# Postgres lives in packages/db/docker-compose.yml (`bun docker:up`); this file
+# adds the S3-compatible object store the app, portal and api expect.
+#
+#   docker compose -f docker-compose.local.yml up -d
+#
+# MinIO console: http://localhost:9001 (minioadmin / minioadmin)
+# Point APP_AWS_ENDPOINT=http://localhost:9000 in each app's .env; every S3
+# client in the repo switches to path-style addressing when that var is set.
+
+services:
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 2s
+      retries: 20
+    logging:
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # One-shot job: creates the four buckets the apps reference, then exits.
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        for b in comp-attachments comp-org-assets comp-questionnaire-uploads comp-knowledge-base; do
+          mc mb --ignore-existing local/$$b;
+        done
+      "
+
+volumes:
+  minio_data:
