@@ -80,7 +80,8 @@ RESEND_API_KEY=FILL_ME
 RESEND_FROM_SYSTEM=Comp <noreply@FILL_ME_DOMAIN>
 RESEND_FROM_DEFAULT=Comp <hello@FILL_ME_DOMAIN>
 
-# --- Background jobs (cloud.trigger.dev -> project -> API keys -> dev key) ---
+# --- Background jobs: the "comp-api" Trigger.dev project (ref + dev key) ---
+TRIGGER_PROJECT_REF=FILL_ME
 TRIGGER_SECRET_KEY=FILL_ME
 
 # --- AI ---
@@ -128,7 +129,8 @@ AUTH_GOOGLE_SECRET=FILL_ME
 # --- Email ---
 RESEND_API_KEY=FILL_ME
 
-# --- Background jobs (same Trigger.dev project as api) ---
+# --- Background jobs: the "comp-app" Trigger.dev project (ref + dev key) ---
+TRIGGER_PROJECT_REF=FILL_ME
 TRIGGER_SECRET_KEY=FILL_ME
 
 # --- AI ---

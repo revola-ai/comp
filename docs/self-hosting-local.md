@@ -48,8 +48,15 @@ Google OAuth client settings:
 - Authorized JavaScript origins: `http://localhost:3000`, `http://localhost:3333`
 - Authorized redirect URI: `http://localhost:3333/api/auth/callback/google`
 
-Trigger.dev: create one project and use its **dev** secret key in both `apps/app/.env` and `apps/api/.env`.
+Trigger.dev needs **two** projects (app tasks and api tasks are separate projects upstream; the task id `update-policy` exists in both, so they cannot share one).
+
+1. `bunx trigger.dev@4.4.3 login` once (the CLI login is separate from the secret key).
+2. Create projects such as `comp-app` and `comp-api` at cloud.trigger.dev.
+3. In `apps/app/.env` set `TRIGGER_PROJECT_REF` and `TRIGGER_SECRET_KEY` (dev key) from `comp-app`; in `apps/api/.env` set both from `comp-api`.
+
+`TRIGGER_PROJECT_REF` overrides the upstream project ids in the two `trigger.config.ts` files.
 `trigger dev` runs task code on your machine; the cloud only orchestrates.
+Both dev scripts use `concurrently --kill-others`, so a failing `trigger dev` takes its server down and turbo then stops everything.
 
 ## Running
 
