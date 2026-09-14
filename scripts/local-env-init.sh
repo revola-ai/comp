@@ -134,6 +134,9 @@ TRIGGER_SECRET_KEY=FILL_ME
 # --- AI ---
 OPENAI_API_KEY=FILL_ME
 ANTHROPIC_API_KEY=FILL_ME
+# Vercel AI Gateway: org onboarding (vendor/risk extraction, policy tailoring) calls
+# google/gemini-3-flash through it. vercel.com -> AI Gateway -> API Keys.
+AI_GATEWAY_API_KEY=FILL_ME
 
 # --- Object storage (MinIO) ---
 APP_AWS_ENDPOINT=$S3_ENDPOINT

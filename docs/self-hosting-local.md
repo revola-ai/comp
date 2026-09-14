@@ -39,7 +39,9 @@ The same value goes in every file that lists it.
 | `TRIGGER_SECRET_KEY` | cloud.trigger.dev -> project -> API keys -> **dev** key | All background jobs (onboarding, policy generation, integrations) |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | console.cloud.google.com -> APIs & Services -> Credentials -> OAuth client (Web) | Sign-in without email delivery |
 | `RESEND_API_KEY` | resend.com -> API keys | Magic-link sign-in, invites, notifications |
-| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | platform.openai.com / console.anthropic.com | Policy editor AI, questionnaire auto-answer, vendor research |
+| `OPENAI_API_KEY` | platform.openai.com (project key, Model capabilities only) | Questionnaire auto-answer, vendor research, embeddings |
+| `AI_GATEWAY_API_KEY` | vercel.com -> AI Gateway -> API Keys (add your Google AI Studio key under BYOK) | Org onboarding: vendor/risk extraction and policy tailoring via Gemini |
+| `ANTHROPIC_API_KEY` (optional) | console.anthropic.com | Policy editor chat/edit-section, cue-line refinement, file extraction, cloud remediation |
 
 Google OAuth client settings:
 
