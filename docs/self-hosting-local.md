@@ -60,16 +60,24 @@ Both dev scripts use `concurrently --kill-others`, so a failing `trigger dev` ta
 
 ## Running
 
-```bash
-bun run dev            # everything via turbo (app :3000, portal :3002, api :3333, framework-editor :3004)
-```
-
-Or per app, without Trigger.dev while keys are missing:
+Use the compiled runner. Dev-mode watchers (`bun run dev`) keep Turbopack and
+`tsc --watch` resident and need ~16 GB of RAM; this needs ~4 GB.
 
 ```bash
-(cd apps/api && bun run dev:no-trigger)
-(cd apps/app && bun run dev:no-trigger)
+scripts/local-run.sh build    # compile api + app; rerun after pulling or editing code
+scripts/local-run.sh start    # containers, api :3333, app :3000, both Trigger workers
+scripts/local-run.sh status
+scripts/local-run.sh logs app # or api, trigger-api, trigger-app
+scripts/local-run.sh stop
 ```
+
+Dashboard: http://localhost:3000. API docs: http://localhost:3333/api/docs.
+Start order matters: the app checks the session against the API on every render, so the script waits for the API before starting the app.
+
+For active development on one app, run only that app's dev script in its own terminal (`cd apps/app && bun run dev`) and keep the rest compiled.
+Never run the root `bun run dev`: it launches 13 watchers including Electron and seven library rebuilders.
+
+Portal (`cd apps/portal && bun run dev`, :3002) and framework-editor (`cd apps/framework-editor && bun run dev`, :3004) are only needed for the employee/trust portal and template editing.
 
 MinIO console: http://localhost:9001 (`minioadmin` / `minioadmin`).
 Redis is required (not optional as the upstream env example says): `/setup` sessions, safe-action wrappers, device-agent tokens and rate limits all use `@upstash/redis`, which needs the REST facade on :8079.
