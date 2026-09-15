@@ -183,6 +183,21 @@ describe('generateObjectStrict', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('falls back to the default attempt limit for a non-finite one', async () => {
+    const { fetchImpl, calls } = geminiFetch([{ text: four }]);
+    const provider = createGoogleGenerativeAI({ apiKey: 'test-key', fetch: fetchImpl });
+
+    await expect(
+      generateObjectStrict({
+        model: provider('gemini-3.5-flash'),
+        schema: fiveSentences,
+        prompt: 'Write five sentences.',
+        maxValidationAttempts: Number.NaN,
+      }),
+    ).rejects.toSatisfy((error: unknown) => NoObjectGeneratedError.isInstance(error));
+    expect(calls).toHaveLength(3);
+  });
+
   it('does not retry when the model stopped for a content filter', async () => {
     const { fetchImpl, calls } = geminiFetch([
       { text: '', finishReason: 'SAFETY' },

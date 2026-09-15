@@ -75,7 +75,9 @@ export async function generateObjectStrict<SCHEMA extends ObjectSchema>(
   options: StrictOptions<SCHEMA>,
 ): Promise<GenerateObjectReturn<SCHEMA>> {
   const { maxValidationAttempts = DEFAULT_MAX_VALIDATION_ATTEMPTS, prompt, ...rest } = options;
-  const attempts = Math.max(1, Math.floor(maxValidationAttempts));
+  const attempts = Number.isFinite(maxValidationAttempts)
+    ? Math.max(1, Math.floor(maxValidationAttempts))
+    : DEFAULT_MAX_VALIDATION_ATTEMPTS;
   let feedback: string | undefined;
 
   for (let attempt = 1; ; attempt++) {
