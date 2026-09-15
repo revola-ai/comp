@@ -110,7 +110,9 @@ cmd_stop() {
   sleep 2
   pkill -TERM -f "$ROOT/node_modules/.bin/trigger dev" 2>/dev/null || true
   pkill -TERM -f "next-server" 2>/dev/null || true
-  echo "containers left running; stop with: bun docker:down && docker compose -f docker-compose.local.yml stop"
+  echo "== containers"
+  ( cd "$ROOT/packages/db" && docker compose stop 2>&1 | grep -v 'obsolete' || true )
+  ( cd "$ROOT" && docker compose -f docker-compose.local.yml stop 2>&1 | grep -v 'obsolete' || true )
 }
 
 cmd_status() {
