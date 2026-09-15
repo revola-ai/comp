@@ -29,6 +29,9 @@ S3_KEY="minioadmin"
 S3_SECRET="minioadmin"
 S3_REGION="us-east-1"
 
+REDIS_REST_URL="http://localhost:8079"   # SRH (Upstash REST facade) from docker-compose.local.yml
+REDIS_REST_TOKEN="local-dev-token"
+
 write() {
   local target="$1"
   if [[ -e "$target" ]]; then
@@ -98,6 +101,10 @@ APP_AWS_ORG_ASSETS_BUCKET=comp-org-assets
 APP_AWS_QUESTIONNAIRE_UPLOAD_BUCKET=comp-questionnaire-uploads
 APP_AWS_KNOWLEDGE_BASE_BUCKET=comp-knowledge-base
 
+# --- Redis (required: setup sessions, safe-actions, rate limiting) ---
+UPSTASH_REDIS_REST_URL=$REDIS_REST_URL
+UPSTASH_REDIS_REST_TOKEN=$REDIS_REST_TOKEN
+
 # --- Optional / unused locally ---
 MACED_API_KEY=mc_dev_dummy_api_key
 EOF
@@ -150,6 +157,10 @@ APP_AWS_ORG_ASSETS_BUCKET=comp-org-assets
 APP_AWS_QUESTIONNAIRE_UPLOAD_BUCKET=comp-questionnaire-uploads
 APP_AWS_KNOWLEDGE_BASE_BUCKET=comp-knowledge-base
 
+# --- Redis (required: setup sessions, safe-actions, rate limiting) ---
+UPSTASH_REDIS_REST_URL=$REDIS_REST_URL
+UPSTASH_REDIS_REST_TOKEN=$REDIS_REST_TOKEN
+
 # --- Analytics (disabled locally) ---
 NEXT_PUBLIC_POSTHOG_HOST=/ingest
 NEXT_PUBLIC_POSTHOG_KEY=
@@ -177,6 +188,10 @@ APP_AWS_REGION=$S3_REGION
 APP_AWS_ACCESS_KEY_ID=$S3_KEY
 APP_AWS_SECRET_ACCESS_KEY=$S3_SECRET
 APP_AWS_BUCKET_NAME=comp-attachments
+
+# --- Redis (required: setup sessions, safe-actions, rate limiting) ---
+UPSTASH_REDIS_REST_URL=$REDIS_REST_URL
+UPSTASH_REDIS_REST_TOKEN=$REDIS_REST_TOKEN
 EOF
 
 echo

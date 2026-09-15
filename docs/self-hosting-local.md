@@ -18,7 +18,7 @@ bun install
 # Postgres (upstream compose file)
 bun docker:up
 
-# MinIO + the four S3 buckets the apps expect
+# MinIO (+ the four S3 buckets), Redis, and SRH (Upstash-compatible REST facade)
 docker compose -f docker-compose.local.yml up -d
 
 # .env files with generated secrets and FILL_ME placeholders
@@ -72,6 +72,7 @@ Or per app, without Trigger.dev while keys are missing:
 ```
 
 MinIO console: http://localhost:9001 (`minioadmin` / `minioadmin`).
+Redis is required (not optional as the upstream env example says): `/setup` sessions, safe-action wrappers, device-agent tokens and rate limits all use `@upstash/redis`, which needs the REST facade on :8079.
 
 ## Self-hosted mode
 

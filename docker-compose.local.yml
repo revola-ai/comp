@@ -1,14 +1,54 @@
 # Local-only infrastructure for self-hosted development.
 # Postgres lives in packages/db/docker-compose.yml (`bun docker:up`); this file
-# adds the S3-compatible object store the app, portal and api expect.
+# adds the S3-compatible object store and the Upstash-compatible Redis that the
+# app, portal and api expect.
 #
 #   docker compose -f docker-compose.local.yml up -d
 #
 # MinIO console: http://localhost:9001 (minioadmin / minioadmin)
 # Point APP_AWS_ENDPOINT=http://localhost:9000 in each app's .env; every S3
 # client in the repo switches to path-style addressing when that var is set.
+#
+# Redis: the code uses @upstash/redis, which speaks Upstash's REST protocol, not
+# RESP. serverless-redis-http (SRH) exposes that REST API over a plain Redis.
+# Point UPSTASH_REDIS_REST_URL=http://localhost:8079 and
+# UPSTASH_REDIS_REST_TOKEN=local-dev-token in app, portal and api.
 
 services:
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 2s
+      retries: 20
+    logging:
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # Upstash REST API facade over the redis service above.
+  srh:
+    image: hiett/serverless-redis-http:0.0.10
+    ports:
+      - '8079:80'
+    environment:
+      SRH_MODE: env
+      SRH_TOKEN: local-dev-token
+      SRH_CONNECTION_STRING: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    logging:
+      options:
+        max-size: '10m'
+        max-file: '3'
+
   minio:
     image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
@@ -46,3 +86,4 @@ services:
 
 volumes:
   minio_data:
+  redis_data:
