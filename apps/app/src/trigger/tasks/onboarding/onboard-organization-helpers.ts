@@ -1,4 +1,3 @@
-import { createGatewayProvider } from '@ai-sdk/gateway';
 import {
   Departments,
   FrameworkEditorFramework,
@@ -13,12 +12,8 @@ import {
 } from '@db';
 import { db } from '@db/server';
 import { logger, metadata, tasks } from '@trigger.dev/sdk';
-import { generateObject, jsonSchema } from 'ai';
-
-const gateway = createGatewayProvider({
-  baseURL: process.env.AI_GATEWAY_BASE_URL,
-});
-const ONBOARDING_MODEL = 'google/gemini-3-flash' as const;
+import { jsonSchema } from 'ai';
+import { generateObjectStrict, googleModel } from '@/lib/ai/google-models';
 import axios from 'axios';
 import { z } from 'zod';
 import type { researchVendor } from '../scrape/research';
@@ -504,8 +499,8 @@ export async function extractVendorsFromContext(
   // Create a set of custom vendor names for quick lookup
   const customVendorNameSet = new Set(customVendors.map((v) => v.name.toLowerCase()));
 
-  const { object } = await generateObject({
-    model: gateway(ONBOARDING_MODEL),
+  const { object } = await generateObjectStrict({
+    model: googleModel('onboarding'),
     schema: jsonSchema({
       type: 'object',
       properties: {
@@ -672,8 +667,8 @@ ${compliancePostureBlock}
 Citations (write one sentence per item, in order):
 ${formatCitationsBlock(citations)}`;
 
-  const result = await generateObject({
-    model: gateway(ONBOARDING_MODEL),
+  const result = await generateObjectStrict({
+    model: googleModel('onboarding'),
     system: RISK_MITIGATION_PROMPT,
     prompt: userPrompt,
     schema: sentencesSchema,
@@ -1041,8 +1036,8 @@ Treatment strategy: ${PLAN_STRATEGY}
 Citations (write one sentence per item, in order):
 ${formatCitationsBlock(citations)}`;
 
-  const result = await generateObject({
-    model: gateway(ONBOARDING_MODEL),
+  const result = await generateObjectStrict({
+    model: googleModel('onboarding'),
     system: RISK_MITIGATION_PROMPT,
     prompt: userPrompt,
     schema: sentencesSchema,
@@ -1113,8 +1108,8 @@ export async function extractRisksFromContext(
   organizationName: string,
   existingRisks: { title: string }[],
 ): Promise<RiskData[]> {
-  const { object } = await generateObject({
-    model: gateway(ONBOARDING_MODEL),
+  const { object } = await generateObjectStrict({
+    model: googleModel('onboarding'),
     schema: jsonSchema({
       type: 'object',
       properties: {

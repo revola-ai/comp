@@ -40,7 +40,7 @@ The same value goes in every file that lists it.
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | console.cloud.google.com -> APIs & Services -> Credentials -> OAuth client (Web) | Sign-in without email delivery |
 | `RESEND_API_KEY` | resend.com -> API keys | Magic-link sign-in, invites, notifications |
 | `OPENAI_API_KEY` | platform.openai.com (project key, Model capabilities only) | Questionnaire auto-answer, vendor research, embeddings |
-| `AI_GATEWAY_API_KEY` | vercel.com -> AI Gateway -> API Keys (add your Google AI Studio key under BYOK) | Org onboarding: vendor/risk extraction and policy tailoring via Gemini |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | aistudio.google.com -> Get API key | Org onboarding (vendor/risk extraction, mitigation plans), policy tailoring, suggestion reranking. This fork calls Gemini directly instead of upstream's Vercel AI Gateway (`apps/app/src/lib/ai/google-models.ts`); model ids are overridable with `AI_MODEL_ONBOARDING`, `AI_MODEL_POLICY_UPDATE`, `AI_MODEL_RERANK`. |
 | `ANTHROPIC_API_KEY` (optional) | console.anthropic.com | Policy editor chat/edit-section, cue-line refinement, file extraction, cloud remediation |
 
 Google OAuth client settings:
