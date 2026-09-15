@@ -87,6 +87,13 @@ Redis is required (not optional as the upstream env example says): `/setup` sess
 `SELF_HOSTED=true` (api) and `NEXT_PUBLIC_SELF_HOSTED=true` (app) are already set.
 New organizations are auto-approved and the Stripe / booking flow is skipped.
 
+## Known gaps
+
+- `link-risks-and-vendors-to-work` (auto-suggesting evidence tasks for each risk and vendor) needs Upstash Vector (`UPSTASH_VECTOR_REST_URL` / `UPSTASH_VECTOR_REST_TOKEN`), a hosted vector database with no local facade.
+  Without it that task fails and links are made manually in the UI; nothing else depends on it.
+  Replacing it with pgvector is a possible follow-up.
+- Seven features call Anthropic directly (policy editor chat and edit-section, cue-line refinement outside onboarding, file extraction, cloud remediation, browser MFA instructions) and need `ANTHROPIC_API_KEY`.
+
 ## Frameworks
 
 The seed ships SOC 2 (visible, 63 requirements, fully mapped to controls) and NIST CSF 2.0 (hidden, 106 subcategories, no control mappings yet).
