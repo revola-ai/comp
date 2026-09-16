@@ -1883,11 +1883,13 @@
   {
     "id": "frk_rq_68201a85cd81afea21c415ae",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RS.AN-08 Incident Analysis\t",
-    "description": "An incident’s magnitude is estimated and validated\r\n",
-    "identifier": "",
+    "name": "Incident Analysis",
+    "description": "An incident's magnitude is estimated and validated",
+    "identifier": "RS.AN-08",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RESPOND",
+    "sortOrder": 93
   },
   {
     "id": "frk_rq_681ef9cb009246bf9a215b11",
@@ -3179,20 +3181,24 @@
   {
     "id": "frk_rq_68201502a79c88a0e564e122",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.OC-01 Organizational Context",
+    "name": "Organizational Context",
     "description": "The organizational mission is understood and informs cybersecurity risk management",
-    "identifier": "",
+    "identifier": "GV.OC-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 0
   },
   {
     "id": "frk_rq_6820150b44f3696a71d2d718",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.OC-02 Organizational Context",
+    "name": "Organizational Context",
     "description": "Internal and external stakeholders are understood, and their needs and expectations regarding cybersecurity risk management are understood and considered",
-    "identifier": "",
+    "identifier": "GV.OC-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 1
   },
   {
     "id": "frk_rq_681fbbbcd4e8bb9cb2eb815d",
@@ -4394,11 +4400,13 @@
   {
     "id": "frk_rq_6820152ff0073eb0c67d97bf",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.RM-01 Risk Management Strategy",
-    "description": "Risk-management objectives are established and agreed to by organizational stakeholders",
-    "identifier": "",
+    "name": "Risk Management Strategy",
+    "description": "Risk management objectives are established and agreed to by organizational stakeholders",
+    "identifier": "GV.RM-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 5
   },
   {
     "id": "frk_rq_681fea39308dba0a946b8ec8",
@@ -4565,128 +4573,156 @@
   {
     "id": "frk_rq_68201513580cb5ac722431f7",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.OC-03 Organizational Context",
-    "description": "Legal, regulatory, and contractual requirements regarding cybersecurity — including privacy and civil-liberties obligations — are understood and managed",
-    "identifier": "",
+    "name": "Organizational Context",
+    "description": "Legal, regulatory, and contractual requirements regarding cybersecurity - including privacy and civil liberties obligations - are understood and managed",
+    "identifier": "GV.OC-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 2
   },
   {
     "id": "frk_rq_6820151c0928262366c996ab",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.OC-04 Organizational Context",
+    "name": "Organizational Context",
     "description": "Critical objectives, capabilities, and services that external stakeholders depend on or expect from the organization are understood and communicated",
-    "identifier": "",
+    "identifier": "GV.OC-04",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 3
   },
   {
     "id": "frk_rq_6820152522040d6ae2a1dab5",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.OC-05 Organizational Context",
+    "name": "Organizational Context",
     "description": "Outcomes, capabilities, and services that the organization depends on are understood and communicated",
-    "identifier": "",
+    "identifier": "GV.OC-05",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 4
   },
   {
     "id": "frk_rq_682015381413ba5fc3abf704",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.RM-02 Risk Management Strategy",
-    "description": "Risk-appetite and risk-tolerance statements are established, communicated, and maintained",
-    "identifier": "",
+    "name": "Risk Management Strategy",
+    "description": "Risk appetite and risk tolerance statements are established, communicated, and maintained",
+    "identifier": "GV.RM-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 6
   },
   {
     "id": "frk_rq_682015428d1e6496757cb976",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.RM-03 Risk Management Strategy",
-    "description": "Cybersecurity risk-management activities and outcomes are included in enterprise-risk-management processes",
-    "identifier": "",
+    "name": "Risk Management Strategy",
+    "description": "Cybersecurity risk management activities and outcomes are included in enterprise risk management processes",
+    "identifier": "GV.RM-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 7
   },
   {
     "id": "frk_rq_6820154e844fc3d69d9d681a",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.RM-04 Risk Management Strategy",
-    "description": "Strategic direction that describes appropriate risk-response options is established and communicated",
-    "identifier": "",
+    "name": "Risk Management Strategy",
+    "description": "Strategic direction that describes appropriate risk response options is established and communicated",
+    "identifier": "GV.RM-04",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 8
   },
   {
     "id": "frk_rq_6820155838e074245e26e467",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.RM-05 Risk Management Strategy",
+    "name": "Risk Management Strategy",
     "description": "Lines of communication across the organization are established for cybersecurity risks, including risks from suppliers and other third parties",
-    "identifier": "",
+    "identifier": "GV.RM-05",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 9
   },
   {
     "id": "frk_rq_68201561a3892d7ec985958d",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.RM-06 Risk Management Strategy",
+    "name": "Risk Management Strategy",
     "description": "A standardized method for calculating, documenting, categorizing, and prioritizing cybersecurity risks is established and communicated",
-    "identifier": "",
+    "identifier": "GV.RM-06",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 10
   },
   {
     "id": "frk_rq_6820156d10cbb20e33906f74",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.RM-07 Risk Management Strategy",
-    "description": "Strategic opportunities (i.e., positive risks) are characterized and are included in organizational cybersecurity-risk discussions",
-    "identifier": "",
+    "name": "Risk Management Strategy",
+    "description": "Strategic opportunities (i.e., positive risks) are characterized and are included in organizational cybersecurity risk discussions",
+    "identifier": "GV.RM-07",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 11
   },
   {
     "id": "frk_rq_68201574bf718fdaa14f8898",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.RR-01 Roles, Responsibilities & Authorities",
+    "name": "Roles, Responsibilities, and Authorities",
     "description": "Organizational leadership is responsible and accountable for cybersecurity risk and fosters a culture that is risk-aware, ethical, and continually improving",
-    "identifier": "",
+    "identifier": "GV.RR-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 12
   },
   {
     "id": "frk_rq_6820157dd156e9b85efe0c79",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.RR-02 Roles, Responsibilities & Authorities",
-    "description": "Roles, responsibilities, and authorities related to cybersecurity-risk management are established, communicated, understood, and enforced",
-    "identifier": "",
+    "name": "Roles, Responsibilities, and Authorities",
+    "description": "Roles, responsibilities, and authorities related to cybersecurity risk management are established, communicated, understood, and enforced",
+    "identifier": "GV.RR-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 13
   },
   {
     "id": "frk_rq_682015866293ae790fb6c5c5",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.RR-03 Roles, Responsibilities & Authorities",
-    "description": "Adequate resources are allocated commensurate with the cybersecurity-risk strategy, roles, responsibilities, and policies",
-    "identifier": "",
+    "name": "Roles, Responsibilities, and Authorities",
+    "description": "Adequate resources are allocated commensurate with the cybersecurity risk strategy, roles, responsibilities, and policies",
+    "identifier": "GV.RR-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 14
   },
   {
     "id": "frk_rq_6820158e5e381227fc0df546",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.RR-04 Roles, Responsibilities & Authorities",
-    "description": "Cybersecurity is included in human-resources practices",
-    "identifier": "",
+    "name": "Roles, Responsibilities, and Authorities",
+    "description": "Cybersecurity is included in human resources practices",
+    "identifier": "GV.RR-04",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 15
   },
   {
     "id": "frk_rq_682015953a094073b6a5e027",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.PO-01 Policy",
+    "name": "Policy",
     "description": "Policy for managing cybersecurity risks is established based on organizational context, cybersecurity strategy, and priorities and is communicated and enforced",
-    "identifier": "",
+    "identifier": "GV.PO-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 16
   },
   {
     "id": "frk_rq_681fec804cec43ea81323332",
@@ -4736,182 +4772,222 @@
   {
     "id": "frk_rq_682015a011500bab38429cbb",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.PO-02 Policy",
+    "name": "Policy",
     "description": "Policy for managing cybersecurity risks is reviewed, updated, communicated, and enforced to reflect changes in requirements, threats, technology, and organizational mission",
-    "identifier": "",
+    "identifier": "GV.PO-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 17
   },
   {
     "id": "frk_rq_68201796472a36e74743c9c9",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.OV-01 Oversight",
-    "description": "Cybersecurity-risk-management strategy outcomes are reviewed to inform and adjust strategy and direction",
-    "identifier": "",
+    "name": "Oversight",
+    "description": "Cybersecurity risk management strategy outcomes are reviewed to inform and adjust strategy and direction",
+    "identifier": "GV.OV-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 18
   },
   {
     "id": "frk_rq_682017a1653f7bbb80718014",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.OV-02 Oversight",
-    "description": "The cybersecurity-risk-management strategy is reviewed and adjusted to ensure coverage of organizational requirements and risks",
-    "identifier": "",
+    "name": "Oversight",
+    "description": "The cybersecurity risk management strategy is reviewed and adjusted to ensure coverage of organizational requirements and risks",
+    "identifier": "GV.OV-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 19
   },
   {
     "id": "frk_rq_682017aab3f593fd7c50486d",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.OV-03 Oversight",
-    "description": "Organizational cybersecurity-risk-management performance is evaluated and reviewed for adjustments needed",
-    "identifier": "",
+    "name": "Oversight",
+    "description": "Organizational cybersecurity risk management performance is evaluated and reviewed for adjustments needed",
+    "identifier": "GV.OV-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 20
   },
   {
     "id": "frk_rq_682017b3fc55b041f0e8b1bb",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.SC-01 Cybersecurity Supply-Chain Risk Management",
-    "description": "A cybersecurity supply-chain-risk-management program, strategy, objectives, policies, and processes are established and agreed to by organizational stakeholders",
-    "identifier": "",
+    "name": "Cybersecurity Supply Chain Risk Management",
+    "description": "A cybersecurity supply chain risk management program, strategy, objectives, policies, and processes are established and agreed to by organizational stakeholders",
+    "identifier": "GV.SC-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 21
   },
   {
     "id": "frk_rq_682017bc7277cf66700a7801",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.SC-02 Cybersecurity Supply-Chain Risk Management",
+    "name": "Cybersecurity Supply Chain Risk Management",
     "description": "Cybersecurity roles and responsibilities for suppliers, customers, and partners are established, communicated, and coordinated internally and externally",
-    "identifier": "",
+    "identifier": "GV.SC-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 22
   },
   {
     "id": "frk_rq_682017cd3dfa157c77ad41bf",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.SC-03 Cybersecurity Supply-Chain Risk Management",
-    "description": "Cybersecurity supply-chain-risk management is integrated into cybersecurity and enterprise-risk-management, risk-assessment, and improvement processes",
-    "identifier": "",
+    "name": "Cybersecurity Supply Chain Risk Management",
+    "description": "Cybersecurity supply chain risk management is integrated into cybersecurity and enterprise risk management, risk assessment, and improvement processes",
+    "identifier": "GV.SC-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 23
   },
   {
     "id": "frk_rq_682017d778325cd740dd3dbf",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.SC-04 Cybersecurity Supply-Chain Risk Management",
+    "name": "Cybersecurity Supply Chain Risk Management",
     "description": "Suppliers are known and prioritized by criticality",
-    "identifier": "",
+    "identifier": "GV.SC-04",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 24
   },
   {
     "id": "frk_rq_682017e5eeb681c1c572bb09",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.SC-05 Cybersecurity Supply-Chain Risk Management",
-    "description": "Requirements to address cybersecurity risks in supply chains are established, prioritized, and integrated into contracts and other agreements with suppliers and other relevant third parties",
-    "identifier": "",
+    "name": "Cybersecurity Supply Chain Risk Management",
+    "description": "Requirements to address cybersecurity risks in supply chains are established, prioritized, and integrated into contracts and other types of agreements with suppliers and other relevant third parties",
+    "identifier": "GV.SC-05",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 25
   },
   {
     "id": "frk_rq_682017edc7257934865f91be",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.SC-06 Cybersecurity Supply-Chain Risk Management",
-    "description": "Planning and due-diligence are performed to reduce risks before entering into formal supplier or other third-party relationships",
-    "identifier": "",
+    "name": "Cybersecurity Supply Chain Risk Management",
+    "description": "Planning and due diligence are performed to reduce risks before entering into formal supplier or other third-party relationships",
+    "identifier": "GV.SC-06",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 26
   },
   {
     "id": "frk_rq_682017f69315ef5772158cce",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.SC-07 Cybersecurity Supply-Chain Risk Management",
+    "name": "Cybersecurity Supply Chain Risk Management",
     "description": "The risks posed by a supplier, their products and services, and other third parties are understood, recorded, prioritized, assessed, responded to, and monitored over the course of the relationship",
-    "identifier": "",
+    "identifier": "GV.SC-07",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 27
   },
   {
     "id": "frk_rq_682018018abdf044ff47a9cb",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.SC-08 Cybersecurity Supply-Chain Risk Management",
-    "description": "Relevant suppliers and other third parties are included in incident-planning, response, and recovery activities",
-    "identifier": "",
+    "name": "Cybersecurity Supply Chain Risk Management",
+    "description": "Relevant suppliers and other third parties are included in incident planning, response, and recovery activities",
+    "identifier": "GV.SC-08",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 28
   },
   {
     "id": "frk_rq_68201809a5e08a599dd92f4a",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.SC-09 Cybersecurity Supply-Chain Risk Management",
-    "description": "Supply-chain-security practices are integrated into cybersecurity and enterprise-risk-management programs, and their performance is monitored throughout the technology-product and-service life-cycle",
-    "identifier": "",
+    "name": "Cybersecurity Supply Chain Risk Management",
+    "description": "Supply chain security practices are integrated into cybersecurity and enterprise risk management programs, and their performance is monitored throughout the technology product and service life cycle",
+    "identifier": "GV.SC-09",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 29
   },
   {
     "id": "frk_rq_68201817a9d021a7389e1854",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "GV.SC-10 Cybersecurity Supply-Chain Risk Management",
-    "description": "Cybersecurity-supply-chain-risk-management plans include provisions for activities that occur after the conclusion of a partnership or service agreement",
-    "identifier": "",
+    "name": "Cybersecurity Supply Chain Risk Management",
+    "description": "Cybersecurity supply chain risk management plans include provisions for activities that occur after the conclusion of a partnership or service agreement",
+    "identifier": "GV.SC-10",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "GOVERN",
+    "sortOrder": 30
   },
   {
     "id": "frk_rq_6820181f1d2b2007eea322bf",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.AM-01 Asset Management",
+    "name": "Asset Management",
     "description": "Inventories of hardware managed by the organization are maintained",
-    "identifier": "",
+    "identifier": "ID.AM-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 31
   },
   {
     "id": "frk_rq_682018268c9eee021e3d1142",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.AM-02 Asset Management",
+    "name": "Asset Management",
     "description": "Inventories of software, services, and systems managed by the organization are maintained",
-    "identifier": "",
+    "identifier": "ID.AM-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 32
   },
   {
     "id": "frk_rq_682018311b621417bcd4b81e",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.AM-03 Asset Management",
-    "description": "Representations of the organization’s authorized network communication and internal and external network-data flows are maintained",
-    "identifier": "",
+    "name": "Asset Management",
+    "description": "Representations of the organization's authorized network communication and internal and external network data flows are maintained",
+    "identifier": "ID.AM-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 33
   },
   {
     "id": "frk_rq_6820183993608d647490c874",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.AM-04 Asset Management",
+    "name": "Asset Management",
     "description": "Inventories of services provided by suppliers are maintained",
-    "identifier": "",
+    "identifier": "ID.AM-04",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 34
   },
   {
     "id": "frk_rq_6820184218ba65229d77360b",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.AM-05 Asset Management",
+    "name": "Asset Management",
     "description": "Assets are prioritized based on classification, criticality, resources, and impact on the mission",
-    "identifier": "",
+    "identifier": "ID.AM-05",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 35
   },
   {
     "id": "frk_rq_6820184913a148304c6dff43",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.AM-07 Asset Management",
+    "name": "Asset Management",
     "description": "Inventories of data and corresponding metadata for designated data types are maintained",
-    "identifier": "",
+    "identifier": "ID.AM-07",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 36
   },
   {
     "id": "frk_rq_6820cd052a84be538724709f",
@@ -4925,614 +5001,750 @@
   {
     "id": "frk_rq_682018502f7429b8b07eb4cd",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.AM-08 Asset Management",
-    "description": "Systems, hardware, software, services, and data are managed throughout their life-cycles",
-    "identifier": "",
+    "name": "Asset Management",
+    "description": "Systems, hardware, software, services, and data are managed throughout their life cycles",
+    "identifier": "ID.AM-08",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 37
   },
   {
     "id": "frk_rq_6820185a66769108e65c3365",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.RA-01 Risk Assessment",
-    "description": "Vulnerabilities in assets are identified, validated, and recorded\r\n",
-    "identifier": "",
+    "name": "Risk Assessment",
+    "description": "Vulnerabilities in assets are identified, validated, and recorded",
+    "identifier": "ID.RA-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 38
   },
   {
     "id": "frk_rq_682018618428e7459d0f9ff4",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.RA-02 Risk Assessment",
-    "description": "Cyber-threat intelligence is received from information-sharing forums and sources",
-    "identifier": "",
+    "name": "Risk Assessment",
+    "description": "Cyber threat intelligence is received from information sharing forums and sources",
+    "identifier": "ID.RA-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 39
   },
   {
     "id": "frk_rq_682018692f2469248d9cddbb",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.RA-03 Risk Assessment",
+    "name": "Risk Assessment",
     "description": "Internal and external threats to the organization are identified and recorded",
-    "identifier": "",
+    "identifier": "ID.RA-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 40
   },
   {
     "id": "frk_rq_68201874abea127a0a75a01b",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.RA-04 Risk Assessment",
+    "name": "Risk Assessment",
     "description": "Potential impacts and likelihoods of threats exploiting vulnerabilities are identified and recorded",
-    "identifier": "",
+    "identifier": "ID.RA-04",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 41
   },
   {
     "id": "frk_rq_68201881c5bf83139b431ce8",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.RA-05 Risk Assessment",
-    "description": "Threats, vulnerabilities, likelihoods, and impacts are used to understand inherent risk and inform risk-response prioritization",
-    "identifier": "",
+    "name": "Risk Assessment",
+    "description": "Threats, vulnerabilities, likelihoods, and impacts are used to understand inherent risk and inform risk response prioritization",
+    "identifier": "ID.RA-05",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 42
   },
   {
     "id": "frk_rq_6820188a1c422596e38ae9dc",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.RA-06 Risk Assessment",
+    "name": "Risk Assessment",
     "description": "Risk responses are chosen, prioritized, planned, tracked, and communicated",
-    "identifier": "",
+    "identifier": "ID.RA-06",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 43
   },
   {
     "id": "frk_rq_68201895392339da7d9954ea",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.RA-07 Risk Assessment",
+    "name": "Risk Assessment",
     "description": "Changes and exceptions are managed, assessed for risk impact, recorded, and tracked",
-    "identifier": "",
+    "identifier": "ID.RA-07",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 44
   },
   {
     "id": "frk_rq_6820189d97faa652b8b56f0e",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.RA-08 Risk Assessment",
+    "name": "Risk Assessment",
     "description": "Processes for receiving, analyzing, and responding to vulnerability disclosures are established",
-    "identifier": "",
+    "identifier": "ID.RA-08",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 45
   },
   {
     "id": "frk_rq_682018a885085783d41c32e6",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.RA-09 Risk Assessment",
+    "name": "Risk Assessment",
     "description": "The authenticity and integrity of hardware and software are assessed prior to acquisition and use",
-    "identifier": "",
+    "identifier": "ID.RA-09",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 46
   },
   {
     "id": "frk_rq_682018b12e73908eb9863f97",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.RA-10 Risk Assessment",
+    "name": "Risk Assessment",
     "description": "Critical suppliers are assessed prior to acquisition",
-    "identifier": "",
+    "identifier": "ID.RA-10",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 47
   },
   {
     "id": "frk_rq_682018bf59c0ad3212f726fe",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.IM-01 Improvement",
+    "name": "Improvement",
     "description": "Improvements are identified from evaluations",
-    "identifier": "",
+    "identifier": "ID.IM-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 48
   },
   {
     "id": "frk_rq_682018caa3270e2058296c93",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.IM-02 Improvement",
+    "name": "Improvement",
     "description": "Improvements are identified from security tests and exercises, including those done in coordination with suppliers and relevant third parties",
-    "identifier": "",
+    "identifier": "ID.IM-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 49
   },
   {
     "id": "frk_rq_682018d5d553a3b1357492c8",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.IM-03 Improvement",
+    "name": "Improvement",
     "description": "Improvements are identified from execution of operational processes, procedures, and activities",
-    "identifier": "",
+    "identifier": "ID.IM-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 50
   },
   {
     "id": "frk_rq_682018ddf94cbab9fac8820f",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "ID.IM-04 Improvement",
-    "description": "Incident-response plans and other cybersecurity plans that affect operations are established, communicated, maintained, and improved",
-    "identifier": "",
+    "name": "Improvement",
+    "description": "Incident response plans and other cybersecurity plans that affect operations are established, communicated, maintained, and improved",
+    "identifier": "ID.IM-04",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "IDENTIFY",
+    "sortOrder": 51
   },
   {
     "id": "frk_rq_682018e77df1600bced32004",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.AA-01 Identity Management, Authentication & Access Control",
+    "name": "Identity Management, Authentication, and Access Control",
     "description": "Identities and credentials for authorized users, services, and hardware are managed by the organization",
-    "identifier": "",
+    "identifier": "PR.AA-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 52
   },
   {
     "id": "frk_rq_682018f6a0c18def82e42c34",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.AA-02 Identity Management, Authentication & Access Control",
+    "name": "Identity Management, Authentication, and Access Control",
     "description": "Identities are proofed and bound to credentials based on the context of interactions",
-    "identifier": "",
+    "identifier": "PR.AA-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 53
   },
   {
     "id": "frk_rq_682018fe4603c0f1614f90e1",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.AA-03 Identity Management, Authentication & Access Control",
-    "description": "Users, services, and hardware are authenticated\r\n",
-    "identifier": "",
+    "name": "Identity Management, Authentication, and Access Control",
+    "description": "Users, services, and hardware are authenticated",
+    "identifier": "PR.AA-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 54
   },
   {
     "id": "frk_rq_68201906b3b3a5e6f7e2bd23",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.AA-04 Identity Management, Authentication & Access Control\t",
-    "description": "Identity assertions are protected, conveyed, and verified\r\n",
-    "identifier": "",
+    "name": "Identity Management, Authentication, and Access Control",
+    "description": "Identity assertions are protected, conveyed, and verified",
+    "identifier": "PR.AA-04",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 55
   },
   {
     "id": "frk_rq_6820190ce232783101b229f0",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.AA-05 Identity Management, Authentication & Access Control\t",
-    "description": "Access permissions, entitlements, and authorizations are defined in a policy, managed, enforced, and reviewed, and incorporate the principles of least privilege and separation of duties\r\n",
-    "identifier": "",
+    "name": "Identity Management, Authentication, and Access Control",
+    "description": "Access permissions, entitlements, and authorizations are defined in a policy, managed, enforced, and reviewed, and incorporate the principles of least privilege and separation of duties",
+    "identifier": "PR.AA-05",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 56
   },
   {
     "id": "frk_rq_682019145173ad9daed9cfd2",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.AA-06 Identity Management, Authentication & Access Control\t",
-    "description": "Physical access to assets is managed, monitored, and enforced commensurate with risk\r\n",
-    "identifier": "",
+    "name": "Identity Management, Authentication, and Access Control",
+    "description": "Physical access to assets is managed, monitored, and enforced commensurate with risk",
+    "identifier": "PR.AA-06",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 57
   },
   {
     "id": "frk_rq_6820191955df761a8b987a45",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.AT-01 Awareness & Training\t",
-    "description": "Personnel are provided with awareness and training so that they possess the knowledge and skills to perform general tasks with cybersecurity risks in mind\r\n",
-    "identifier": "",
+    "name": "Awareness and Training",
+    "description": "Personnel are provided with awareness and training so that they possess the knowledge and skills to perform general tasks with cybersecurity risks in mind",
+    "identifier": "PR.AT-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 58
   },
   {
     "id": "frk_rq_682019204fe0fef329a87017",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.AT-02 Awareness & Training\t",
-    "description": "Individuals in specialized roles are provided with awareness and training so that they possess the knowledge and skills to perform relevant tasks with cybersecurity risks in mind\r\n",
-    "identifier": "",
+    "name": "Awareness and Training",
+    "description": "Individuals in specialized roles are provided with awareness and training so that they possess the knowledge and skills to perform relevant tasks with cybersecurity risks in mind",
+    "identifier": "PR.AT-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 59
   },
   {
     "id": "frk_rq_68201927110905fef0bfe40d",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.DS-01 Data Security\t",
-    "description": "The confidentiality, integrity, and availability of data-at-rest are protected\r\n",
-    "identifier": "",
+    "name": "Data Security",
+    "description": "The confidentiality, integrity, and availability of data-at-rest are protected",
+    "identifier": "PR.DS-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 60
   },
   {
     "id": "frk_rq_6820192d9c235ed18f05188e",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.DS-02 Data Security\t",
-    "description": "The confidentiality, integrity, and availability of data-in-transit are protected\r\n",
-    "identifier": "",
+    "name": "Data Security",
+    "description": "The confidentiality, integrity, and availability of data-in-transit are protected",
+    "identifier": "PR.DS-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 61
   },
   {
     "id": "frk_rq_68201933a43efb8eb52076a3",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.DS-10 Data Security\t",
-    "description": "The confidentiality, integrity, and availability of data-in-use are protected\r\n",
-    "identifier": "",
+    "name": "Data Security",
+    "description": "The confidentiality, integrity, and availability of data-in-use are protected",
+    "identifier": "PR.DS-10",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 62
   },
   {
     "id": "frk_rq_6820193a0a546ca68910c661",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.DS-11 Data Security\t",
-    "description": "Backups of data are created, protected, maintained, and tested\r\n",
-    "identifier": "",
+    "name": "Data Security",
+    "description": "Backups of data are created, protected, maintained, and tested",
+    "identifier": "PR.DS-11",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 63
   },
   {
     "id": "frk_rq_68201941dc15a95f3cf165c0",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.PS-01 Platform Security\t",
-    "description": "Configuration-management practices are established and applied\r\n",
-    "identifier": "",
+    "name": "Platform Security",
+    "description": "Configuration management practices are established and applied",
+    "identifier": "PR.PS-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 64
   },
   {
     "id": "frk_rq_68201948738940d7ca3f5c28",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.PS-02 Platform Security\t",
-    "description": "Software is maintained, replaced, and removed commensurate with risk\r\n",
-    "identifier": "",
+    "name": "Platform Security",
+    "description": "Software is maintained, replaced, and removed commensurate with risk",
+    "identifier": "PR.PS-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 65
   },
   {
     "id": "frk_rq_6820198b5f9481e2d6186821",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.PS-03 Platform Security\t",
-    "description": "Hardware is maintained, replaced, and removed commensurate with risk\r\n",
-    "identifier": "",
+    "name": "Platform Security",
+    "description": "Hardware is maintained, replaced, and removed commensurate with risk",
+    "identifier": "PR.PS-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 66
   },
   {
     "id": "frk_rq_6820199287e66274ea47ec05",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.PS-04 Platform Security\t",
-    "description": "Log records are generated and made available for continuous monitoring\r\n",
-    "identifier": "",
+    "name": "Platform Security",
+    "description": "Log records are generated and made available for continuous monitoring",
+    "identifier": "PR.PS-04",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 67
   },
   {
     "id": "frk_rq_6820199869becd48af47c8a4",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.PS-05 Platform Security\t",
-    "description": "Installation and execution of unauthorized software are prevented\r\n",
-    "identifier": "",
+    "name": "Platform Security",
+    "description": "Installation and execution of unauthorized software are prevented",
+    "identifier": "PR.PS-05",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 68
   },
   {
     "id": "frk_rq_682019a06ab1128c6aa4bec1",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.PS-06 Platform Security\t",
-    "description": "Secure-software-development practices are integrated, and their performance is monitored throughout the software-development life-cycle\r\n",
-    "identifier": "",
+    "name": "Platform Security",
+    "description": "Secure software development practices are integrated, and their performance is monitored throughout the software development life cycle",
+    "identifier": "PR.PS-06",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 69
   },
   {
     "id": "frk_rq_682019a556567e9cb873e51a",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.IR-01 Technology Infrastructure Resilience\t",
-    "description": "Networks and environments are protected from unauthorized logical access and usage\r\n",
-    "identifier": "",
+    "name": "Technology Infrastructure Resilience",
+    "description": "Networks and environments are protected from unauthorized logical access and usage",
+    "identifier": "PR.IR-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 70
   },
   {
     "id": "frk_rq_682019c3f04acc039da4a4d4",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.IR-02 Technology Infrastructure Resilience\t",
-    "description": "The organization’s technology assets are protected from environmental threats\r\n",
-    "identifier": "",
+    "name": "Technology Infrastructure Resilience",
+    "description": "The organization's technology assets are protected from environmental threats",
+    "identifier": "PR.IR-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 71
   },
   {
     "id": "frk_rq_682019cbebc42f6f6e883e50",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.IR-03 Technology Infrastructure Resilience\t",
-    "description": "Mechanisms are implemented to achieve resilience requirements in normal and adverse situations\r\n",
-    "identifier": "",
+    "name": "Technology Infrastructure Resilience",
+    "description": "Mechanisms are implemented to achieve resilience requirements in normal and adverse situations",
+    "identifier": "PR.IR-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 72
   },
   {
     "id": "frk_rq_682019d3d50f1071280e6e26",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "PR.IR-04 Technology Infrastructure Resilience\t",
-    "description": "Adequate resource capacity to ensure availability is maintained\r\n",
-    "identifier": "",
+    "name": "Technology Infrastructure Resilience",
+    "description": "Adequate resource capacity to ensure availability is maintained",
+    "identifier": "PR.IR-04",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "PROTECT",
+    "sortOrder": 73
   },
   {
     "id": "frk_rq_682019dae9898848f45cfd0a",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "DE.CM-01 Continuous Monitoring\t",
-    "description": "Networks and network services are monitored to find potentially adverse events\r\n",
-    "identifier": "",
+    "name": "Continuous Monitoring",
+    "description": "Networks and network services are monitored to find potentially adverse events",
+    "identifier": "DE.CM-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "DETECT",
+    "sortOrder": 74
   },
   {
     "id": "frk_rq_682019e2f27153878ce33caf",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "DE.CM-02 Continuous Monitoring\t",
-    "description": "The physical environment is monitored to find potentially adverse events\r\n",
-    "identifier": "",
+    "name": "Continuous Monitoring",
+    "description": "The physical environment is monitored to find potentially adverse events",
+    "identifier": "DE.CM-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "DETECT",
+    "sortOrder": 75
   },
   {
     "id": "frk_rq_682019ea951cebd7fb04320d",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "DE.CM-03 Continuous Monitoring\t",
-    "description": "Personnel activity and technology usage are monitored to find potentially adverse events\r\n",
-    "identifier": "",
+    "name": "Continuous Monitoring",
+    "description": "Personnel activity and technology usage are monitored to find potentially adverse events",
+    "identifier": "DE.CM-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "DETECT",
+    "sortOrder": 76
   },
   {
     "id": "frk_rq_682019f0a811676293ed8831",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "DE.CM-06 Continuous Monitoring\t",
-    "description": "External-service-provider activities and services are monitored to find potentially adverse events\r\n",
-    "identifier": "",
+    "name": "Continuous Monitoring",
+    "description": "External service provider activities and services are monitored to find potentially adverse events",
+    "identifier": "DE.CM-06",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "DETECT",
+    "sortOrder": 77
   },
   {
     "id": "frk_rq_682019f9afd61d46ed0fd756",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "DE.CM-09 Continuous Monitoring\t",
-    "description": "Computing hardware and software, runtime environments, and their data are monitored to find potentially adverse events\r\n",
-    "identifier": "",
+    "name": "Continuous Monitoring",
+    "description": "Computing hardware and software, runtime environments, and their data are monitored to find potentially adverse events",
+    "identifier": "DE.CM-09",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "DETECT",
+    "sortOrder": 78
   },
   {
     "id": "frk_rq_68201a0238231f1da4cba2e9",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "DE.AE-02 Adverse-Event Analysis\t",
-    "description": "Potentially adverse events are analyzed to better understand associated activities\r\n",
-    "identifier": "",
+    "name": "Adverse Event Analysis",
+    "description": "Potentially adverse events are analyzed to better understand associated activities",
+    "identifier": "DE.AE-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "DETECT",
+    "sortOrder": 79
   },
   {
     "id": "frk_rq_68201a09343a57b7a137930d",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "DE.AE-03 Adverse-Event Analysis\t",
-    "description": "Information is correlated from multiple sources\r\n",
-    "identifier": "",
+    "name": "Adverse Event Analysis",
+    "description": "Information is correlated from multiple sources",
+    "identifier": "DE.AE-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "DETECT",
+    "sortOrder": 80
   },
   {
     "id": "frk_rq_68201a116ae3ba4382d7f6e1",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "DE.AE-04 Adverse-Event Analysis\t",
-    "description": "The estimated impact and scope of adverse events are understood\r\n",
-    "identifier": "",
+    "name": "Adverse Event Analysis",
+    "description": "The estimated impact and scope of adverse events are understood",
+    "identifier": "DE.AE-04",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "DETECT",
+    "sortOrder": 81
   },
   {
     "id": "frk_rq_68201a23c8043be0ebbd972f",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "DE.AE-06 Adverse-Event Analysis\t",
-    "description": "Information on adverse events is provided to authorized staff and tools\r\n",
-    "identifier": "",
+    "name": "Adverse Event Analysis",
+    "description": "Information on adverse events is provided to authorized staff and tools",
+    "identifier": "DE.AE-06",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "DETECT",
+    "sortOrder": 82
   },
   {
     "id": "frk_rq_68201a2d9af254f208ea4205",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "DE.AE-07 Adverse-Event Analysis\t",
-    "description": "Cyber-threat intelligence and other contextual information are integrated into the analysis\r\n",
-    "identifier": "",
+    "name": "Adverse Event Analysis",
+    "description": "Cyber threat intelligence and other contextual information are integrated into the analysis",
+    "identifier": "DE.AE-07",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "DETECT",
+    "sortOrder": 83
   },
   {
     "id": "frk_rq_68201a363edc9ba6a521a9e0",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "DE.AE-08 Adverse-Event Analysis\t",
-    "description": "Incidents are declared when adverse events meet the defined incident criteria\r\n",
-    "identifier": "",
+    "name": "Adverse Event Analysis",
+    "description": "Incidents are declared when adverse events meet the defined incident criteria",
+    "identifier": "DE.AE-08",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "DETECT",
+    "sortOrder": 84
   },
   {
     "id": "frk_rq_68201a3edf19674f9cafe313",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RS.MA-01 Incident Management\t",
-    "description": "The incident-response plan is executed in coordination with relevant third parties once an incident is declared\r\n",
-    "identifier": "",
+    "name": "Incident Management",
+    "description": "The incident response plan is executed in coordination with relevant third parties once an incident is declared",
+    "identifier": "RS.MA-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RESPOND",
+    "sortOrder": 85
   },
   {
     "id": "frk_rq_68201a4372a2d06722749f6f",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RS.MA-02 Incident Management\t",
-    "description": "Incident reports are triaged and validated\r\n",
-    "identifier": "",
+    "name": "Incident Management",
+    "description": "Incident reports are triaged and validated",
+    "identifier": "RS.MA-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RESPOND",
+    "sortOrder": 86
   },
   {
     "id": "frk_rq_68201a562017d13330a25cbb",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RS.MA-03 Incident Management\t",
-    "description": "Incidents are categorized and prioritized\r\n",
-    "identifier": "",
+    "name": "Incident Management",
+    "description": "Incidents are categorized and prioritized",
+    "identifier": "RS.MA-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RESPOND",
+    "sortOrder": 87
   },
   {
     "id": "frk_rq_68201a5b8cc75519501e950d",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RS.MA-04 Incident Management\t",
-    "description": "Incidents are escalated or elevated as needed\r\n",
-    "identifier": "",
+    "name": "Incident Management",
+    "description": "Incidents are escalated or elevated as needed",
+    "identifier": "RS.MA-04",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RESPOND",
+    "sortOrder": 88
   },
   {
     "id": "frk_rq_68201a63d7306eed0eb9ad2b",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RS.MA-05 Incident Management\t",
-    "description": "The criteria for initiating incident recovery are applied\r\n",
-    "identifier": "",
+    "name": "Incident Management",
+    "description": "The criteria for initiating incident recovery are applied",
+    "identifier": "RS.MA-05",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RESPOND",
+    "sortOrder": 89
   },
   {
     "id": "frk_rq_68201a6ab3fff07c00cac3eb",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RS.AN-03 Incident Analysis\t",
-    "description": "Analysis is performed to establish what has taken place during an incident and the root cause of the incident\r\n",
-    "identifier": "",
+    "name": "Incident Analysis",
+    "description": "Analysis is performed to establish what has taken place during an incident and the root cause of the incident",
+    "identifier": "RS.AN-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RESPOND",
+    "sortOrder": 90
   },
   {
     "id": "frk_rq_68201a70ff773b7626274969",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RS.AN-06 Incident Analysis\t",
-    "description": "Actions performed during an investigation are recorded, and the records’ integrity and provenance are preserved\r\n",
-    "identifier": "",
+    "name": "Incident Analysis",
+    "description": "Actions performed during an investigation are recorded, and the records' integrity and provenance are preserved",
+    "identifier": "RS.AN-06",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RESPOND",
+    "sortOrder": 91
   },
   {
     "id": "frk_rq_68201a78d4bf42c174f03bbe",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RS.AN-07 Incident Analysis\t",
-    "description": "Incident data and metadata are collected, and their integrity and provenance are preserved\r\n",
-    "identifier": "",
+    "name": "Incident Analysis",
+    "description": "Incident data and metadata are collected, and their integrity and provenance are preserved",
+    "identifier": "RS.AN-07",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RESPOND",
+    "sortOrder": 92
   },
   {
     "id": "frk_rq_68201a8b88ebc3036f057ba2",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RS.CO-02 Incident-Response Reporting & Communication\t",
-    "description": "Internal and external stakeholders are notified of incidents\r\n",
-    "identifier": "",
+    "name": "Incident Response Reporting and Communication",
+    "description": "Internal and external stakeholders are notified of incidents",
+    "identifier": "RS.CO-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RESPOND",
+    "sortOrder": 94
   },
   {
     "id": "frk_rq_68201a9131dfa0c1fa2c397b",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RS.CO-03 Incident-Response Reporting & Communication\t",
-    "description": "Information is shared with designated internal and external stakeholders\r\n",
-    "identifier": "",
+    "name": "Incident Response Reporting and Communication",
+    "description": "Information is shared with designated internal and external stakeholders",
+    "identifier": "RS.CO-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RESPOND",
+    "sortOrder": 95
   },
   {
     "id": "frk_rq_68201a970f1b0e3392dbb719",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RS.MI-01 Incident Mitigation\t",
-    "description": "Incidents are contained\r\n",
-    "identifier": "",
+    "name": "Incident Mitigation",
+    "description": "Incidents are contained",
+    "identifier": "RS.MI-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RESPOND",
+    "sortOrder": 96
   },
   {
     "id": "frk_rq_68201a9f81e7ed0c958c8e69",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RS.MI-02 Incident Mitigation\t",
-    "description": "Incidents are eradicated\r\n",
-    "identifier": "",
+    "name": "Incident Mitigation",
+    "description": "Incidents are eradicated",
+    "identifier": "RS.MI-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RESPOND",
+    "sortOrder": 97
   },
   {
     "id": "frk_rq_68201aa479f56fd85ac36dd8",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RC.RP-01 Incident-Recovery Plan Execution\t",
-    "description": "The recovery portion of the incident-response plan is executed once initiated from the incident-response process\r\n",
-    "identifier": "",
+    "name": "Incident Recovery Plan Execution",
+    "description": "The recovery portion of the incident response plan is executed once initiated from the incident response process",
+    "identifier": "RC.RP-01",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RECOVER",
+    "sortOrder": 98
   },
   {
     "id": "frk_rq_68201aac513743e9d7ea9dc0",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RC.RP-02 Incident-Recovery Plan Execution\t",
-    "description": "Recovery actions are selected, scoped, prioritized, and performed\r\n",
-    "identifier": "",
+    "name": "Incident Recovery Plan Execution",
+    "description": "Recovery actions are selected, scoped, prioritized, and performed",
+    "identifier": "RC.RP-02",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RECOVER",
+    "sortOrder": 99
   },
   {
     "id": "frk_rq_68201ab2045fc214d7d2bc17",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RC.RP-03 Incident-Recovery Plan Execution\t",
-    "description": "The integrity of backups and other restoration assets is verified before using them for restoration\r\n",
-    "identifier": "",
+    "name": "Incident Recovery Plan Execution",
+    "description": "The integrity of backups and other restoration assets is verified before using them for restoration",
+    "identifier": "RC.RP-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RECOVER",
+    "sortOrder": 100
   },
   {
     "id": "frk_rq_68201ab8cc8961002bb4f68b",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RC.RP-04 Incident-Recovery Plan Execution\t",
-    "description": "Critical mission functions and cybersecurity-risk management are considered to establish post-incident operational norms\r\n",
-    "identifier": "",
+    "name": "Incident Recovery Plan Execution",
+    "description": "Critical mission functions and cybersecurity risk management are considered to establish post-incident operational norms",
+    "identifier": "RC.RP-04",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RECOVER",
+    "sortOrder": 101
   },
   {
     "id": "frk_rq_68201abe57d6cfdedd8b2200",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RC.RP-05 Incident-Recovery Plan Execution\t",
-    "description": "The integrity of restored assets is verified, systems and services are restored, and normal operating status is confirmed\r\n",
-    "identifier": "",
+    "name": "Incident Recovery Plan Execution",
+    "description": "The integrity of restored assets is verified, systems and services are restored, and normal operating status is confirmed",
+    "identifier": "RC.RP-05",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RECOVER",
+    "sortOrder": 102
   },
   {
     "id": "frk_rq_68201acafa28ec3bf25be454",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RC.RP-06 Incident-Recovery Plan Execution\t",
-    "description": "The end of incident recovery is declared based on criteria, and incident-related documentation is completed\r\n",
-    "identifier": "",
+    "name": "Incident Recovery Plan Execution",
+    "description": "The end of incident recovery is declared based on criteria, and incident-related documentation is completed",
+    "identifier": "RC.RP-06",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RECOVER",
+    "sortOrder": 103
   },
   {
     "id": "frk_rq_68201ad2957c35a17d4d912e",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RC.CO-03 Incident-Recovery Communication\t",
-    "description": "Recovery activities and progress in restoring operational capabilities are communicated to designated internal and external stakeholders\r\n",
-    "identifier": "",
+    "name": "Incident Recovery Communication",
+    "description": "Recovery activities and progress in restoring operational capabilities are communicated to designated internal and external stakeholders",
+    "identifier": "RC.CO-03",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RECOVER",
+    "sortOrder": 104
   },
   {
     "id": "frk_rq_68201ad9f0eb43b0f0ff83e1",
     "frameworkId": "frk_6820090a1653380dd386c5eb",
-    "name": "RC.CO-04 Incident-Recovery Communication\t",
-    "description": "Public updates on incident recovery are shared using approved methods and messaging\r\n\r\n",
-    "identifier": "",
+    "name": "Incident Recovery Communication",
+    "description": "Public updates on incident recovery are shared using approved methods and messaging",
+    "identifier": "RC.CO-04",
     "createdAt": "2025-05-14 19:20:44.920",
-    "updatedAt": "2025-05-14 19:20:44.920"
+    "updatedAt": "2025-05-14 19:20:44.920",
+    "requirementFamily": "RECOVER",
+    "sortOrder": 105
   },
   {
     "id": "frk_rq_6820cc127fea14f883b29edd",

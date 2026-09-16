@@ -1478,5 +1478,105 @@
     "createdAt": "2026-04-30 23:48:55.224",
     "updatedAt": "2026-05-01 00:11:09.620",
     "automationStatus": "AUTOMATED"
+  },
+  {
+    "id": "frk_tt_27442012080fc2afedc260e0",
+    "name": "Interested Parties Register",
+    "description": "Maintain a register of the organization's mission and how it informs cybersecurity risk decisions, and of internal and external interested parties (customers, regulators, employees, partners, suppliers), their cybersecurity needs and expectations, and how the organization addresses them. Review annually.",
+    "frequency": "yearly",
+    "department": "gov",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "automationStatus": "MANUAL"
+  },
+  {
+    "id": "frk_tt_2d89494b9a3e963eb1a01446",
+    "name": "Critical Services & Dependencies Statement",
+    "description": "Maintain a statement of the critical objectives, capabilities and services that external parties depend on or expect from the organization, and of the outcomes, capabilities and services the organization itself depends on, with criticality ratings. Review annually.",
+    "frequency": "yearly",
+    "department": "gov",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "automationStatus": "MANUAL"
+  },
+  {
+    "id": "frk_tt_09431ae883c3f97fd32590c8",
+    "name": "Risk Appetite Statement",
+    "description": "Maintain an approved risk appetite and risk tolerance statement, including the accepted risk response options and how strategic opportunities (positive risks) are considered. Review annually and after major changes.",
+    "frequency": "yearly",
+    "department": "gov",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "automationStatus": "MANUAL"
+  },
+  {
+    "id": "frk_tt_940a3f59ee7fd1f369873346",
+    "name": "Risk Register & Treatment Plan",
+    "description": "Maintain the cybersecurity risk register: risk management objectives agreed by organizational stakeholders, identified threats and vulnerabilities, likelihood and impact, resulting prioritization, chosen responses, owners and tracking, and how risks are communicated across the organization and with suppliers. Review quarterly.",
+    "frequency": "quarterly",
+    "department": "gov",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "automationStatus": "MANUAL"
+  },
+  {
+    "id": "frk_tt_7fd448444392f9d3292891cd",
+    "name": "Security Metrics Report",
+    "description": "Report the defined security metrics and KPIs to management on the agreed cadence, including how cybersecurity strategy outcomes and risk management performance were reviewed and any adjustments decided.",
+    "frequency": "quarterly",
+    "department": "gov",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "automationStatus": "MANUAL"
+  },
+  {
+    "id": "frk_tt_e47ae4e157bab5d2cc401758",
+    "name": "Supply Chain Risk Register",
+    "description": "Maintain a register of suppliers ranked by criticality with their assessed cybersecurity risk, contract security requirements, results of authenticity and integrity checks for acquired hardware and software, incident-response involvement, and end-of-relationship provisions.",
+    "frequency": "quarterly",
+    "department": "gov",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "automationStatus": "MANUAL"
+  },
+  {
+    "id": "frk_tt_ad97385b34091bacfcf9c9b0",
+    "name": "Stakeholder Communication Plan",
+    "description": "Maintain the incident and recovery communication plan: notification lists, designated internal and external stakeholders, recovery progress reporting, and approved methods and messaging for public updates.",
+    "frequency": "yearly",
+    "department": "gov",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "automationStatus": "MANUAL"
+  },
+  {
+    "id": "frk_tt_3676f86dfb8066980bfb8e22",
+    "name": "Threat Intelligence Review",
+    "description": "Record the cyber threat intelligence sources in use, the periodic review of received intelligence against the organization's assets and risks, and how intelligence is fed into monitoring and event analysis.",
+    "frequency": "quarterly",
+    "department": "it",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "automationStatus": "MANUAL"
+  },
+  {
+    "id": "frk_tt_08ddc5f5645c1a2e53ed5e63",
+    "name": "Vulnerability Disclosure Handling",
+    "description": "Maintain the channel for receiving vulnerability disclosures from researchers and third parties, and the log of disclosures received, analyzed, and responded to.",
+    "frequency": "quarterly",
+    "department": "it",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "automationStatus": "MANUAL"
+  },
+  {
+    "id": "frk_tt_509ffab96bcb629a099389c5",
+    "name": "Asset Disposal & Sanitization Log",
+    "description": "Maintain a log of hardware, media and software retired, replaced or removed, including sanitization or destruction method, date and accountable owner.",
+    "frequency": "quarterly",
+    "department": "it",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "automationStatus": "MANUAL"
   }
 ]
