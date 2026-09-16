@@ -65,7 +65,7 @@ Use the compiled runner. Dev-mode watchers (`bun run dev`) keep Turbopack and
 
 ```bash
 scripts/local-run.sh build    # compile api + app; rerun after pulling or editing code
-scripts/local-run.sh start    # containers, api :3333, app :3000, both Trigger workers
+scripts/local-run.sh start    # local containers (only when DATABASE_URL is local), api :3333, app :3000, both Trigger workers
 scripts/local-run.sh status
 scripts/local-run.sh logs app # or api, trigger-api, trigger-app
 scripts/local-run.sh stop
@@ -81,6 +81,46 @@ Portal (`cd apps/portal && bun run dev`, :3002) and framework-editor (`cd apps/f
 
 MinIO console: http://localhost:9001 (`minioadmin` / `minioadmin`).
 Redis is required (not optional as the upstream env example says): `/setup` sessions, safe-action wrappers, device-agent tokens and rate limits all use `@upstash/redis`, which needs the REST facade on :8079.
+
+## Shared state (team mode)
+
+Everything above runs against containers on one laptop, so each person has their own database and nobody sees anyone else's policies or evidence.
+For a team, the servers keep running locally but the state is hosted; the runner detects this from `DATABASE_URL` and leaves the local containers alone.
+
+| State | Hosted by | Env vars (same value in every file that lists them) |
+|---|---|---|
+| Postgres | Supabase, session pooler (`aws-0-<region>.pooler.supabase.com:5432`, user `postgres.<ref>`) | `DATABASE_URL` (`?sslmode=require`), `DATABASE_SSL_CA` in `packages/db`, `apps/api`, `apps/app`, `apps/portal` |
+| Files (evidence, org assets, questionnaire uploads, knowledge base) | Supabase Storage via its S3 endpoint | `APP_AWS_ENDPOINT=https://<ref>.storage.supabase.co/storage/v1/s3`, `APP_AWS_REGION`, `APP_AWS_ACCESS_KEY_ID`, `APP_AWS_SECRET_ACCESS_KEY`; bucket names unchanged |
+| Redis | Upstash Redis | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` |
+| Background jobs | Trigger.dev cloud, tasks executed by each developer's `trigger dev` | unchanged |
+
+Why the session pooler: Supabase's direct connection is IPv6-only without the IPv4 add-on, and the transaction pooler (port 6543) does not support the prepared statements Prisma's `pg` adapter uses.
+Session mode works for the apps, the Trigger workers, `prisma migrate deploy` and the seed.
+
+TLS: the pooler's certificate is signed by Supabase's own CA, which is not in Node's trust store.
+Download it (Database, SSL, "Download certificate"), save it as `packages/db/certs/prod-ca-2021.crt` (gitignored) and set `DATABASE_SSL_CA` to its absolute path.
+`resolveSslConfig` then verifies the chain and the hostname against Node's roots plus that CA; a wrong CA is rejected (`self signed certificate in certificate chain`).
+Do not use `PRISMA_ALLOW_INSECURE_TLS=1` for a shared database.
+
+Moving an existing local database to Supabase (done once, 2026-09-16):
+
+```bash
+# freeze the source: stop api/app/workers but keep the containers
+pg_dump -h 127.0.0.1 -U postgres -d comp -Fc --no-owner --no-acl -f .local/migration/comp-local.dump
+cd packages/db && set -a && source .env && set +a
+PGSSLROOTCERT="$PWD/certs/prod-ca-2021.crt" pg_restore -d "${DATABASE_URL%%\?*}?sslmode=verify-full" --no-owner --no-acl --exit-on-error .local/migration/comp-local.dump
+bunx prisma migrate status   # "Database schema is up to date!"
+```
+
+The dump carries `_prisma_migrations`, so no migration runs during the restore; Supabase already provides `pgcrypto` in its `extensions` schema, which is on the default `search_path`, so `generate_prefixed_cuid()` keeps working.
+Files are copied bucket by bucket with `aws s3 sync --endpoint-url` from MinIO to the Supabase S3 endpoint (there were none to copy at migration time).
+
+Onboarding a colleague: they clone the fork, run the one-time setup up to `./scripts/local-env-init.sh`, then replace the local values with the shared ones above (share them through a password manager, never in git), download the CA, set `DATABASE_SSL_CA`, and skip the migrate/seed step (the shared database is already migrated).
+Their Google OAuth client must list `http://localhost:3000` and `http://localhost:3333` too, or they use the same client.
+Two people running `trigger dev` against one Trigger.dev project share its dev environment; runs go to whichever session is connected, which is fine while everyone runs the same code.
+Deploying the workers with `trigger deploy` removes that dependency on someone's laptop being up.
+
+Tests keep their guard: `packages/db` database suites only run when `DATABASE_URL` names a database ending in `_test`, so `bun test` never touches the shared database; keep a local Postgres for `comp_test`.
 
 ## Self-hosted mode
 
