@@ -54,7 +54,7 @@ Code behaviour:
 
 Database on this machine (snapshot):
 
-- CSF has one `FrameworkVersion`, `fvr_6aa8572300dc0104dcff375b`, version `1.0.0`, manifest with 106 requirements and 0 controls; 0 `FrameworkInstance` rows reference it; 0 `FrameworkSyncOperation` rows reference it.
+- CSF has one `FrameworkVersion` (id omitted; a local CUID), version `1.0.0`, manifest with 106 requirements and 0 controls; 0 `FrameworkInstance` rows reference it; 0 `FrameworkSyncOperation` rows reference it.
 - The organization has one `FrameworkInstance` (SOC 2, pinned to a version).
 - All three scoped editor link tables are empty (0, 0, 0), because the migration ran before the seed. Consequently a normal publish from the framework editor would currently produce controls with no policies or tasks for every framework, including SOC 2. SOC 2 works only because its `1.0.0` manifest came from the seed backfill, which reads the global relations.
 - Instance-level links: 63 `FrameworkControlPolicyLink`, 76 `FrameworkControlTaskLink`, 9 `FrameworkControlDocumentTypeLink` (totals only; the snapshot does not record the edge sets, which is why 5.7 records them at rollout). SOC 2 (`SOC 2 1`) has exactly one version, `1.0.0`, whose manifest has 63 requirements and 35 controls referencing 25 distinct policy ids and 26 distinct task ids; the organization's SOC 2 instance is pinned to it.

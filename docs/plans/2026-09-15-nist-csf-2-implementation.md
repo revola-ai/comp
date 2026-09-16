@@ -1606,13 +1606,20 @@ git commit -m "chore(csf): quality gates and self-hosting docs for the CSF 2.0 c
 
 **Files:** none (operational). Record outputs in `.local/rollout-2026-09-15.txt`.
 
+The queries below use two placeholders for the local database's ids; set them once in the shell before running any step (ids are opaque CUIDs and are not recorded in this document):
+
+```bash
+export ORG_ID=$(PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d comp -Atc "select id from \"Organization\" order by \"createdAt\" limit 1")
+export SOC2_INSTANCE_ID=$(PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d comp -Atc "select id from \"FrameworkInstance\" where \"organizationId\"='$ORG_ID' and \"frameworkId\"='frk_683f377429b8408d1c85f9bd'")
+```
+
 - [ ] **Step 1: Record SOC 2 instance edge sets before**
 
 ```bash
 mkdir -p .local && PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d comp -Atc "
-select 'P', \"controlId\"||'|'||\"policyId\" from \"FrameworkControlPolicyLink\" where \"frameworkInstanceId\"='frm_6aa9b0791d35af29c6305e45'
-union all select 'T', \"controlId\"||'|'||\"taskId\" from \"FrameworkControlTaskLink\" where \"frameworkInstanceId\"='frm_6aa9b0791d35af29c6305e45'
-union all select 'D', \"controlId\"||'|'||\"formType\" from \"FrameworkControlDocumentTypeLink\" where \"frameworkInstanceId\"='frm_6aa9b0791d35af29c6305e45' order by 1,2" > .local/soc2-edges-before.txt; wc -l .local/soc2-edges-before.txt
+select 'P', \"controlId\"||'|'||\"policyId\" from \"FrameworkControlPolicyLink\" where \"frameworkInstanceId\"='$SOC2_INSTANCE_ID'
+union all select 'T', \"controlId\"||'|'||\"taskId\" from \"FrameworkControlTaskLink\" where \"frameworkInstanceId\"='$SOC2_INSTANCE_ID'
+union all select 'D', \"controlId\"||'|'||\"formType\" from \"FrameworkControlDocumentTypeLink\" where \"frameworkInstanceId\"='$SOC2_INSTANCE_ID' order by 1,2" > .local/soc2-edges-before.txt; wc -l .local/soc2-edges-before.txt
 ```
 
 Expected: `148` lines (63 + 76 + 9).
@@ -1637,9 +1644,9 @@ Expected: `csf_manifest|106|48`; scoped link counts greater than 0. Then compare
 
 ```bash
 PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d comp -Atc "
-select 'P', \"controlId\"||'|'||\"policyId\" from \"FrameworkControlPolicyLink\" where \"frameworkInstanceId\"='frm_6aa9b0791d35af29c6305e45'
-union all select 'T', \"controlId\"||'|'||\"taskId\" from \"FrameworkControlTaskLink\" where \"frameworkInstanceId\"='frm_6aa9b0791d35af29c6305e45'
-union all select 'D', \"controlId\"||'|'||\"formType\" from \"FrameworkControlDocumentTypeLink\" where \"frameworkInstanceId\"='frm_6aa9b0791d35af29c6305e45' order by 1,2" > .local/soc2-edges-after-seed.txt; diff .local/soc2-edges-before.txt .local/soc2-edges-after-seed.txt && echo "SOC 2 edge sets identical after seed"
+select 'P', \"controlId\"||'|'||\"policyId\" from \"FrameworkControlPolicyLink\" where \"frameworkInstanceId\"='$SOC2_INSTANCE_ID'
+union all select 'T', \"controlId\"||'|'||\"taskId\" from \"FrameworkControlTaskLink\" where \"frameworkInstanceId\"='$SOC2_INSTANCE_ID'
+union all select 'D', \"controlId\"||'|'||\"formType\" from \"FrameworkControlDocumentTypeLink\" where \"frameworkInstanceId\"='$SOC2_INSTANCE_ID' order by 1,2" > .local/soc2-edges-after-seed.txt; diff .local/soc2-edges-before.txt .local/soc2-edges-after-seed.txt && echo "SOC 2 edge sets identical after seed"
 ```
 
 Expected: `SOC 2 edge sets identical after seed`. If the diff is non-empty, stop: the instance backfill produced a different set than the stored manifest implies, and the rollout must not continue until that is understood.
@@ -1658,10 +1665,10 @@ In the browser at http://localhost:3000, Overview, Add Framework, select NIST CS
 
 ```bash
 PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d comp -Atc "
-select 'csf_instance', i.id, i.\"currentVersionId\" from \"FrameworkInstance\" i where i.\"organizationId\"='org_6aa9b0797c69fd27a4fc05ad' and i.\"frameworkId\"='frk_6820090a1653380dd386c5eb';
+select 'csf_instance', i.id, i.\"currentVersionId\" from \"FrameworkInstance\" i where i.\"organizationId\"='$ORG_ID' and i.\"frameworkId\"='frk_6820090a1653380dd386c5eb';
 select 'csf_requirements_with_controls', count(distinct rm.\"requirementId\") from \"RequirementMap\" rm join \"FrameworkInstance\" i on i.id=rm.\"frameworkInstanceId\" where i.\"frameworkId\"='frk_6820090a1653380dd386c5eb' and rm.\"archivedAt\" is null;
-select 'org_totals', (select count(*) from \"Control\" where \"organizationId\"='org_6aa9b0797c69fd27a4fc05ad'), (select count(*) from \"Policy\" where \"organizationId\"='org_6aa9b0797c69fd27a4fc05ad'), (select count(*) from \"Task\" where \"organizationId\"='org_6aa9b0797c69fd27a4fc05ad');
-select 'dup_controls_by_template', count(*) from (select \"controlTemplateId\" from \"Control\" where \"organizationId\"='org_6aa9b0797c69fd27a4fc05ad' and \"controlTemplateId\" is not null group by 1 having count(*)>1) d;" | tee -a .local/rollout-2026-09-15.txt
+select 'org_totals', (select count(*) from \"Control\" where \"organizationId\"='$ORG_ID'), (select count(*) from \"Policy\" where \"organizationId\"='$ORG_ID'), (select count(*) from \"Task\" where \"organizationId\"='$ORG_ID');
+select 'dup_controls_by_template', count(*) from (select \"controlTemplateId\" from \"Control\" where \"organizationId\"='$ORG_ID' and \"controlTemplateId\" is not null group by 1 having count(*)>1) d;" | tee -a .local/rollout-2026-09-15.txt
 ```
 
 Expected: a CSF instance pinned to a version; `csf_requirements_with_controls` = 106; org totals greater than 35/25/26 by the number of templates the organization did not already have; `dup_controls_by_template` = 0.
@@ -1670,9 +1677,9 @@ Expected: a CSF instance pinned to a version; `csf_requirements_with_controls` =
 
 ```bash
 cd packages/db && bun run db:seed && cd ../.. && PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d comp -Atc "
-select 'P', \"controlId\"||'|'||\"policyId\" from \"FrameworkControlPolicyLink\" where \"frameworkInstanceId\"='frm_6aa9b0791d35af29c6305e45'
-union all select 'T', \"controlId\"||'|'||\"taskId\" from \"FrameworkControlTaskLink\" where \"frameworkInstanceId\"='frm_6aa9b0791d35af29c6305e45'
-union all select 'D', \"controlId\"||'|'||\"formType\" from \"FrameworkControlDocumentTypeLink\" where \"frameworkInstanceId\"='frm_6aa9b0791d35af29c6305e45' order by 1,2" > .local/soc2-edges-after.txt; diff .local/soc2-edges-before.txt .local/soc2-edges-after.txt && echo "SOC 2 edge sets identical"
+select 'P', \"controlId\"||'|'||\"policyId\" from \"FrameworkControlPolicyLink\" where \"frameworkInstanceId\"='$SOC2_INSTANCE_ID'
+union all select 'T', \"controlId\"||'|'||\"taskId\" from \"FrameworkControlTaskLink\" where \"frameworkInstanceId\"='$SOC2_INSTANCE_ID'
+union all select 'D', \"controlId\"||'|'||\"formType\" from \"FrameworkControlDocumentTypeLink\" where \"frameworkInstanceId\"='$SOC2_INSTANCE_ID' order by 1,2" > .local/soc2-edges-after.txt; diff .local/soc2-edges-before.txt .local/soc2-edges-after.txt && echo "SOC 2 edge sets identical"
 ```
 
 Expected: `SOC 2 edge sets identical`.
@@ -1682,7 +1689,7 @@ Expected: `SOC 2 edge sets identical`.
 ```bash
 cd packages/db && bun -e '
 import { db } from "./src/client";
-const instances = await db.frameworkInstance.findMany({ where: { organizationId: "org_6aa9b0797c69fd27a4fc05ad", currentVersionId: { not: null } }, select: { id: true, frameworkId: true, organizationId: true, currentVersion: { select: { manifest: true } } } });
+const instances = await db.frameworkInstance.findMany({ where: { organizationId: "'"$ORG_ID"'", currentVersionId: { not: null } }, select: { id: true, frameworkId: true, organizationId: true, currentVersion: { select: { manifest: true } } } });
 for (const instance of instances) {
   const manifest = instance.currentVersion!.manifest as { controls: { id: string; taskIds: string[] }[] };
   const controls = await db.control.findMany({ where: { organizationId: instance.organizationId }, select: { id: true, controlTemplateId: true } });
