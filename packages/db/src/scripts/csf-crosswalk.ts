@@ -89,7 +89,8 @@ export function readJsonArray<T>(filePath: string): T[] {
 }
 
 export function serializeJsonArray(rows: unknown[]): string {
-  return JSON.stringify(rows, null, 4);
+  // Seed JSON files use 2-space indentation and end without a trailing newline
+  return JSON.stringify(rows, null, 2);
 }
 
 export function writeJsonArray({ filePath, rows }: { filePath: string; rows: unknown[] }): void {
