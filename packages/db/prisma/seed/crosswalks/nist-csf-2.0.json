@@ -1,0 +1,1713 @@
+{
+    "frameworkId": "frk_6820090a1653380dd386c5eb",
+    "source": "NIST CSF 2.0 Reference Tool export (workbook sheet \"CSF 2.0\", change log \"Final\"), csrc.nist.gov/extensions/nudp/services/json/csf/download?olirids=all, downloaded 2026-09-15. sp800_53 = union of \"SP 800-53 Rev 5.1.1\" and \"SP 800-53 Rev 5.2.0\" entries, including family-level entries.",
+    "subcategories": [
+        {
+            "id": "GV.OC-01",
+            "requirementId": "frk_rq_68201502a79c88a0e564e122",
+            "controls": [
+                {
+                    "id": "frk_ct_69e6766bd8ca18f572d4c34f",
+                    "name": "Scope & Governance"
+                }
+            ],
+            "rationale": "Parent: Scope & Governance, whose description covers \"internal and external context\"; the mission is part of that context. Evidence: Interested Parties Register (CSF-scoped, new), which records \"the organization's mission and how it informs cybersecurity risk decisions\". Judgment mapping."
+        },
+        {
+            "id": "GV.OC-02",
+            "requirementId": "frk_rq_6820150b44f3696a71d2d718",
+            "controls": [
+                {
+                    "id": "frk_ct_69e6766bd8ca18f572d4c34f",
+                    "name": "Scope & Governance"
+                }
+            ],
+            "rationale": "Parent: Scope & Governance, whose description names \"interested parties\". Evidence: Interested Parties Register (new) records their needs and expectations."
+        },
+        {
+            "id": "GV.OC-03",
+            "requirementId": "frk_rq_68201513580cb5ac722431f7",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b9148c96a37c8936fc",
+                    "name": "Legal, Regulatory & IP Compliance"
+                }
+            ],
+            "rationale": "Parent: Legal, Regulatory & IP Compliance, which \"Maintains an obligations register for applicable laws, regulations, contracts, and IP\". Policy: Compliance & Regulatory Monitoring."
+        },
+        {
+            "id": "GV.OC-04",
+            "requirementId": "frk_rq_6820151c0928262366c996ab",
+            "controls": [
+                {
+                    "id": "frk_ct_86cea95ec8a5cbc4d502dc6f",
+                    "name": "Critical Services & Dependencies"
+                },
+                {
+                    "id": "frk_ct_69e639b9d5ced482c12ae932",
+                    "name": "Business Continuity & ICT Readiness"
+                }
+            ],
+            "rationale": "Parent: the new Critical Services & Dependencies control (services external parties depend on, with criticality). Business Continuity & ICT Readiness \"Extends DR to include BIA\", which quantifies that criticality. Evidence: Critical Services & Dependencies Statement (new), Contingency Plan Testing & Revision."
+        },
+        {
+            "id": "GV.OC-05",
+            "requirementId": "frk_rq_6820152522040d6ae2a1dab5",
+            "controls": [
+                {
+                    "id": "frk_ct_86cea95ec8a5cbc4d502dc6f",
+                    "name": "Critical Services & Dependencies"
+                },
+                {
+                    "id": "frk_ct_69e639b9bf66b5a6ffb17d27",
+                    "name": "Supplier & Third-Party Security"
+                }
+            ],
+            "rationale": "Parent: the new Critical Services & Dependencies control (what the organization depends on). External dependencies are suppliers under Supplier & Third-Party Security (\"supply-chain risk for ICT services\"). Evidence: Critical Services & Dependencies Statement (new), Supplier Evaluation Records."
+        },
+        {
+            "id": "GV.RM-01",
+            "requirementId": "frk_rq_6820152ff0073eb0c67d97bf",
+            "controls": [
+                {
+                    "id": "frk_ct_683f484fc7b5506ab97c26af",
+                    "name": "Risk Management"
+                }
+            ],
+            "rationale": "Parent: Risk Management (\"Maintain a Risk Management Program\"). The control description does not state objectives; the CSF-scoped task Risk Register & Treatment Plan (new) records \"risk management objectives agreed by organizational stakeholders\". Policy: Risk Management. Judgment mapping."
+        },
+        {
+            "id": "GV.RM-02",
+            "requirementId": "frk_rq_682015381413ba5fc3abf704",
+            "controls": [
+                {
+                    "id": "frk_ct_5d0faa559be322a448e68204",
+                    "name": "Risk Appetite & Tolerance"
+                }
+            ],
+            "rationale": "No existing control or task produces appetite and tolerance statements. Parent: new Risk Appetite & Tolerance control (\"Establish, communicate and maintain risk appetite and risk tolerance statements\"). Evidence: Risk Appetite Statement (new)."
+        },
+        {
+            "id": "GV.RM-03",
+            "requirementId": "frk_rq_682015428d1e6496757cb976",
+            "controls": [
+                {
+                    "id": "frk_ct_683f484fc7b5506ab97c26af",
+                    "name": "Risk Management"
+                }
+            ],
+            "rationale": "Parent: Risk Management. No control description or task states integration into enterprise risk management; the program is the place it would be implemented. Judgment mapping."
+        },
+        {
+            "id": "GV.RM-04",
+            "requirementId": "frk_rq_6820154e844fc3d69d9d681a",
+            "controls": [
+                {
+                    "id": "frk_ct_5d0faa559be322a448e68204",
+                    "name": "Risk Appetite & Tolerance"
+                },
+                {
+                    "id": "frk_ct_683f484fc7b5506ab97c26af",
+                    "name": "Risk Management"
+                }
+            ],
+            "rationale": "Parent: new Risk Appetite & Tolerance control, whose description includes \"the strategic direction on acceptable risk response options\"; responses are executed under Risk Management. Evidence: Risk Appetite Statement (new)."
+        },
+        {
+            "id": "GV.RM-05",
+            "requirementId": "frk_rq_6820155838e074245e26e467",
+            "controls": [
+                {
+                    "id": "frk_ct_683f484fc7b5506ab97c26af",
+                    "name": "Risk Management"
+                },
+                {
+                    "id": "frk_ct_69e639b9bf66b5a6ffb17d27",
+                    "name": "Supplier & Third-Party Security"
+                }
+            ],
+            "rationale": "Parent: Risk Management and Supplier & Third-Party Security. Neither description states communication lines; the Risk Register & Treatment Plan task (new) records \"how risks are communicated across the organization and with suppliers\". Judgment mapping."
+        },
+        {
+            "id": "GV.RM-06",
+            "requirementId": "frk_rq_68201561a3892d7ec985958d",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b90a3bf8c1443cbf5b",
+                    "name": "Risk Management"
+                }
+            ],
+            "rationale": "Parent: the ISO-variant Risk Management control, described as a \"Formal risk identification, assessment, treatment, and monitoring process, including risk register and treatment plans\". A formal process is the basis for a standardized method; the specific calculation, categorization and communication rules are procedure content. Evidence: Risk Register & Treatment Plan (new). Judgment mapping."
+        },
+        {
+            "id": "GV.RM-07",
+            "requirementId": "frk_rq_6820156d10cbb20e33906f74",
+            "controls": [
+                {
+                    "id": "frk_ct_5d0faa559be322a448e68204",
+                    "name": "Risk Appetite & Tolerance"
+                }
+            ],
+            "rationale": "Parent: new Risk Appetite & Tolerance control, whose description includes \"the treatment of strategic opportunities (positive risks)\". No existing control covers opportunities."
+        },
+        {
+            "id": "GV.RR-01",
+            "requirementId": "frk_rq_68201574bf718fdaa14f8898",
+            "controls": [
+                {
+                    "id": "frk_ct_683f41e775f4ca03d8f6bae2",
+                    "name": "Management Security Accountability"
+                },
+                {
+                    "id": "frk_ct_68e80a11f225cb2253e31fa0",
+                    "name": "Organization Structure & Reporting Lines"
+                }
+            ],
+            "rationale": "Parent: Management Security Accountability (\"Ensure Management Addresses Security Responsibilities\") and Organization Structure & Reporting Lines (\"Management establishes, with board oversight, structures, reporting lines, authorities, and responsibilities\"). Evidence: Management Review Minutes (CSF-scoped)."
+        },
+        {
+            "id": "GV.RR-02",
+            "requirementId": "frk_rq_6820157dd156e9b85efe0c79",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4036b541126388e2989a",
+                    "name": "Security Governance Roles"
+                },
+                {
+                    "id": "frk_ct_68e80a11f225cb2253e31fa0",
+                    "name": "Organization Structure & Reporting Lines"
+                }
+            ],
+            "rationale": "Parent: Security Governance Roles (\"Define Security Roles and Responsibilities\") and Organization Structure & Reporting Lines for authorities and reporting lines."
+        },
+        {
+            "id": "GV.RR-03",
+            "requirementId": "frk_rq_682015866293ae790fb6c5c5",
+            "controls": [
+                {
+                    "id": "frk_ct_683f41e775f4ca03d8f6bae2",
+                    "name": "Management Security Accountability"
+                },
+                {
+                    "id": "frk_ct_69e6766bd8ca18f572d4c34f",
+                    "name": "Scope & Governance"
+                }
+            ],
+            "rationale": "Parent: Management Security Accountability; Scope & Governance \"Establishes top-management commitment\". No description or task evidences resource allocation. Judgment mapping."
+        },
+        {
+            "id": "GV.RR-04",
+            "requirementId": "frk_rq_6820158e5e381227fc0df546",
+            "controls": [
+                {
+                    "id": "frk_ct_683f43a65de3b6044e63220f",
+                    "name": "Personnel Security"
+                },
+                {
+                    "id": "frk_ct_69e639b958a20954c4afa186",
+                    "name": "Human Resources Security"
+                }
+            ],
+            "rationale": "Parent: Personnel Security (\"Screen onboard offboard securely\") and Human Resources Security (\"Owns pre-employment screening, confidentiality agreements, awareness training curriculum, and disciplinary handling for security violations\")."
+        },
+        {
+            "id": "GV.PO-01",
+            "requirementId": "frk_rq_682015953a094073b6a5e027",
+            "controls": [
+                {
+                    "id": "frk_ct_683f3ecd42e62fde624c59c1",
+                    "name": "Policy Compliance"
+                }
+            ],
+            "rationale": "Parent: Policy Compliance (\"Ensure Compliance with Security Policies and Standards\"), whose linked policies include \"Information Security & Privacy Governance\" and \"Policy Management & Exception Handling\"."
+        },
+        {
+            "id": "GV.PO-02",
+            "requirementId": "frk_rq_682015a011500bab38429cbb",
+            "controls": [
+                {
+                    "id": "frk_ct_683f3ecd42e62fde624c59c1",
+                    "name": "Policy Compliance"
+                }
+            ],
+            "rationale": "Parent: Policy Compliance (\"Ensure Compliance with Security Policies and Standards\"); the review and update cadence is supplied by its linked \"Policy Management & Exception Handling\" policy, not by the control description. Judgment mapping."
+        },
+        {
+            "id": "GV.OV-01",
+            "requirementId": "frk_rq_68201796472a36e74743c9c9",
+            "controls": [
+                {
+                    "id": "frk_ct_69e6766b4fd2b466bf7686cf",
+                    "name": "Performance Monitoring & Measurement"
+                },
+                {
+                    "id": "frk_ct_69e639b96ad6c5e729676acb",
+                    "name": "Internal Audit & Management Review"
+                }
+            ],
+            "rationale": "Parent: Performance Monitoring & Measurement (\"Measures how well the ISMS is achieving its intended outcomes by defining security metrics and KPIs\") and Internal Audit & Management Review (\"facilitates periodic management review of ISMS effectiveness\"). Evidence: Security Metrics Report (new), Management Review Minutes."
+        },
+        {
+            "id": "GV.OV-02",
+            "requirementId": "frk_rq_682017a1653f7bbb80718014",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b96ad6c5e729676acb",
+                    "name": "Internal Audit & Management Review"
+                },
+                {
+                    "id": "frk_ct_69e6766b4fd2b466bf7686cf",
+                    "name": "Performance Monitoring & Measurement"
+                }
+            ],
+            "rationale": "Parent: Internal Audit & Management Review (\"facilitates periodic management review of ISMS effectiveness\"), where strategy adjustments would be decided; Performance Monitoring & Measurement supplies the inputs. Adjusting the strategy itself is not stated by either description. Evidence: Management Review Minutes, Security Metrics Report (new). Judgment mapping."
+        },
+        {
+            "id": "GV.OV-03",
+            "requirementId": "frk_rq_682017aab3f593fd7c50486d",
+            "controls": [
+                {
+                    "id": "frk_ct_69e6766b4fd2b466bf7686cf",
+                    "name": "Performance Monitoring & Measurement"
+                },
+                {
+                    "id": "frk_ct_69e639b96ad6c5e729676acb",
+                    "name": "Internal Audit & Management Review"
+                }
+            ],
+            "rationale": "Parent: Performance Monitoring & Measurement, which collects \"results on a defined cadence, and reporting them to management\"; Internal Audit & Management Review evaluates them. Evidence: Security Metrics Report (new), Internal Security Audit."
+        },
+        {
+            "id": "GV.SC-01",
+            "requirementId": "frk_rq_682017b3fc55b041f0e8b1bb",
+            "controls": [
+                {
+                    "id": "frk_ct_a5c4ad98b7180673da73ca67",
+                    "name": "Supply Chain Risk Management Program"
+                }
+            ],
+            "rationale": "No existing control establishes a C-SCRM program with \"strategy, objectives, policies\" as a unit; the new control does. Policy: Vendor & Third-Party Risk. Evidence: Supply Chain Risk Register (new)."
+        },
+        {
+            "id": "GV.SC-02",
+            "requirementId": "frk_rq_682017bc7277cf66700a7801",
+            "controls": [
+                {
+                    "id": "frk_ct_a5c4ad98b7180673da73ca67",
+                    "name": "Supply Chain Risk Management Program"
+                },
+                {
+                    "id": "frk_ct_683f4036b541126388e2989a",
+                    "name": "Security Governance Roles"
+                }
+            ],
+            "rationale": "Parent: new program control, whose description includes \"supplier-facing roles\"; internal role definition is Security Governance Roles."
+        },
+        {
+            "id": "GV.SC-03",
+            "requirementId": "frk_rq_682017cd3dfa157c77ad41bf",
+            "controls": [
+                {
+                    "id": "frk_ct_a5c4ad98b7180673da73ca67",
+                    "name": "Supply Chain Risk Management Program"
+                },
+                {
+                    "id": "frk_ct_683f484fc7b5506ab97c26af",
+                    "name": "Risk Management"
+                }
+            ],
+            "rationale": "Parent: new program control (\"integration into enterprise risk management\") and Risk Management."
+        },
+        {
+            "id": "GV.SC-04",
+            "requirementId": "frk_rq_682017d778325cd740dd3dbf",
+            "controls": [
+                {
+                    "id": "frk_ct_a5c4ad98b7180673da73ca67",
+                    "name": "Supply Chain Risk Management Program"
+                },
+                {
+                    "id": "frk_ct_69e639b9bf66b5a6ffb17d27",
+                    "name": "Supplier & Third-Party Security"
+                }
+            ],
+            "rationale": "Parent: Supplier & Third-Party Security for the supplier register; the new program control for prioritization. Ranking by criticality is stated by the Supply Chain Risk Register task (new), \"suppliers ranked by criticality\", not by either control description. Judgment mapping."
+        },
+        {
+            "id": "GV.SC-05",
+            "requirementId": "frk_rq_682017e5eeb681c1c572bb09",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b9bf66b5a6ffb17d27",
+                    "name": "Supplier & Third-Party Security"
+                }
+            ],
+            "rationale": "Parent: Supplier & Third-Party Security, which \"Manages supplier due diligence, contract clauses, ongoing monitoring\". Evidence: Supplier Evaluation Records."
+        },
+        {
+            "id": "GV.SC-06",
+            "requirementId": "frk_rq_682017edc7257934865f91be",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b9bf66b5a6ffb17d27",
+                    "name": "Supplier & Third-Party Security"
+                }
+            ],
+            "rationale": "Parent: Supplier & Third-Party Security (\"supplier due diligence\"). Evidence: Supplier Evaluation Records (\"evaluated, selected, and monitored against defined criteria\")."
+        },
+        {
+            "id": "GV.SC-07",
+            "requirementId": "frk_rq_682017f69315ef5772158cce",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b9bf66b5a6ffb17d27",
+                    "name": "Supplier & Third-Party Security"
+                },
+                {
+                    "id": "frk_ct_683f484fc7b5506ab97c26af",
+                    "name": "Risk Management"
+                }
+            ],
+            "rationale": "Parent: Supplier & Third-Party Security (\"ongoing monitoring\"); supplier risks are tracked in the risk register under Risk Management."
+        },
+        {
+            "id": "GV.SC-08",
+            "requirementId": "frk_rq_682018018abdf044ff47a9cb",
+            "controls": [
+                {
+                    "id": "frk_ct_a5c4ad98b7180673da73ca67",
+                    "name": "Supply Chain Risk Management Program"
+                },
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: new program control (\"supplier inclusion in incident planning, response and recovery\") executed through Security Incident Management."
+        },
+        {
+            "id": "GV.SC-09",
+            "requirementId": "frk_rq_68201809a5e08a599dd92f4a",
+            "controls": [
+                {
+                    "id": "frk_ct_a5c4ad98b7180673da73ca67",
+                    "name": "Supply Chain Risk Management Program"
+                }
+            ],
+            "rationale": "Parent: new program control (\"lifecycle-wide monitoring of supply chain security practices\")."
+        },
+        {
+            "id": "GV.SC-10",
+            "requirementId": "frk_rq_68201817a9d021a7389e1854",
+            "controls": [
+                {
+                    "id": "frk_ct_a5c4ad98b7180673da73ca67",
+                    "name": "Supply Chain Risk Management Program"
+                },
+                {
+                    "id": "frk_ct_683f44c8074680be528353c1",
+                    "name": "Data Retention & Destruction"
+                }
+            ],
+            "rationale": "Parent: new program control (\"provisions for concluding supplier relationships\"); data disposition at termination is Data Retention & Destruction (\"Follow retention; securely dispose\")."
+        },
+        {
+            "id": "ID.AM-01",
+            "requirementId": "frk_rq_6820181f1d2b2007eea322bf",
+            "controls": [
+                {
+                    "id": "frk_ct_683f42c71eea99f22f9df060",
+                    "name": "Asset Inventory"
+                }
+            ],
+            "rationale": "Parent: Asset Inventory (\"Maintain an Inventory of Information Assets\"). Evidence: Device List (\"laptops/servers\")."
+        },
+        {
+            "id": "ID.AM-02",
+            "requirementId": "frk_rq_682018268c9eee021e3d1142",
+            "controls": [
+                {
+                    "id": "frk_ct_683f42c71eea99f22f9df060",
+                    "name": "Asset Inventory"
+                }
+            ],
+            "rationale": "Parent: Asset Inventory. Evidence: Infrastructure Inventory (CSF-scoped), which covers \"cloud accounts, compute resources, databases, storage, and networks\". Software and services beyond infrastructure are not required by any task. Judgment mapping."
+        },
+        {
+            "id": "ID.AM-03",
+            "requirementId": "frk_rq_682018311b621417bcd4b81e",
+            "controls": [
+                {
+                    "id": "frk_ct_684070f0b4f6c2036306e23c",
+                    "name": "Network Security"
+                },
+                {
+                    "id": "frk_ct_683f42c71eea99f22f9df060",
+                    "name": "Asset Inventory"
+                }
+            ],
+            "rationale": "Parent: Network Security and Asset Inventory. Neither description mentions flow representations; the CSF-scoped Diagramming task (\"Data Flow Diagram\") supplies them. Judgment mapping."
+        },
+        {
+            "id": "ID.AM-04",
+            "requirementId": "frk_rq_6820183993608d647490c874",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b9bf66b5a6ffb17d27",
+                    "name": "Supplier & Third-Party Security"
+                },
+                {
+                    "id": "frk_ct_683f42c71eea99f22f9df060",
+                    "name": "Asset Inventory"
+                }
+            ],
+            "rationale": "Parent: Supplier & Third-Party Security (\"supply-chain risk for ICT services\") and Asset Inventory (\"Maintain an Inventory of Information Assets\"). A specific inventory of supplier-provided services is not stated by either. Evidence: Supplier Evaluation Records, Infrastructure Inventory. Judgment mapping."
+        },
+        {
+            "id": "ID.AM-05",
+            "requirementId": "frk_rq_6820184218ba65229d77360b",
+            "controls": [
+                {
+                    "id": "frk_ct_683f464bec8bea67de7b9c31",
+                    "name": "Information Classification"
+                },
+                {
+                    "id": "frk_ct_683f42c71eea99f22f9df060",
+                    "name": "Asset Inventory"
+                }
+            ],
+            "rationale": "Parent: Information Classification (\"Classify Information by Sensitivity\") for the classification input; Asset Inventory for the prioritized list. Criticality and impact fields are not required by either description. Judgment mapping."
+        },
+        {
+            "id": "ID.AM-07",
+            "requirementId": "frk_rq_6820184913a148304c6dff43",
+            "controls": [
+                {
+                    "id": "frk_ct_69e918e6d72a45b4f933a112",
+                    "name": "Data Inventory and Mapping"
+                },
+                {
+                    "id": "frk_ct_683f464bec8bea67de7b9c31",
+                    "name": "Information Classification"
+                }
+            ],
+            "rationale": "Parent: Data Inventory and Mapping (\"Maintain a documented inventory of personal data processed by the organization, including data categories, sources, purposes\") for personal data; Information Classification (\"Classify Information by Sensitivity\") for other data. Inventories of non-personal designated data are not required by either. Judgment mapping."
+        },
+        {
+            "id": "ID.AM-08",
+            "requirementId": "frk_rq_682018502f7429b8b07eb4cd",
+            "controls": [
+                {
+                    "id": "frk_ct_58fd3ca20e2cc44afa40b97a",
+                    "name": "Technology Asset Lifecycle"
+                },
+                {
+                    "id": "frk_ct_683f4c30e2d3f1117fa58e13",
+                    "name": "Change management"
+                }
+            ],
+            "rationale": "Parent: new Technology Asset Lifecycle control (\"acquisition, maintenance, replacement and removal\"); lifecycle changes go through Change management (\"Apply Change Management for Information Systems\")."
+        },
+        {
+            "id": "ID.RA-01",
+            "requirementId": "frk_rq_6820185a66769108e65c3365",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4d7360a876b972aba39a",
+                    "name": "Vulnerability Management"
+                }
+            ],
+            "rationale": "Parent: Vulnerability Management (\"Manage both software and code vulnerabilities\"). Policy: Vulnerability & Patch Management."
+        },
+        {
+            "id": "ID.RA-02",
+            "requirementId": "frk_rq_682018618428e7459d0f9ff4",
+            "controls": [
+                {
+                    "id": "frk_ct_684073d541bfb8b8b777e529",
+                    "name": "Threat intelligence"
+                }
+            ],
+            "rationale": "Parent: Threat intelligence (\"Implement a Threat Intelligence Program\"). Evidence: Threat Intelligence Review (CSF-scoped, new)."
+        },
+        {
+            "id": "ID.RA-03",
+            "requirementId": "frk_rq_682018692f2469248d9cddbb",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b90a3bf8c1443cbf5b",
+                    "name": "Risk Management"
+                },
+                {
+                    "id": "frk_ct_684073d541bfb8b8b777e529",
+                    "name": "Threat intelligence"
+                }
+            ],
+            "rationale": "Parent: ISO-variant Risk Management (\"Formal risk identification\") for recording threats; Threat intelligence for external threats. Evidence: Risk Register & Treatment Plan (new), covering \"identified threats and vulnerabilities\"."
+        },
+        {
+            "id": "ID.RA-04",
+            "requirementId": "frk_rq_68201874abea127a0a75a01b",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b90a3bf8c1443cbf5b",
+                    "name": "Risk Management"
+                }
+            ],
+            "rationale": "Parent: ISO-variant Risk Management (\"Formal risk identification, assessment, treatment, and monitoring process\"). Impact and likelihood recording is stated by the Risk Register & Treatment Plan task (new), \"likelihood and impact\". Judgment mapping."
+        },
+        {
+            "id": "ID.RA-05",
+            "requirementId": "frk_rq_68201881c5bf83139b431ce8",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b90a3bf8c1443cbf5b",
+                    "name": "Risk Management"
+                },
+                {
+                    "id": "frk_ct_683f484fc7b5506ab97c26af",
+                    "name": "Risk Management"
+                }
+            ],
+            "rationale": "Parent: both Risk Management controls. Combining threats, vulnerabilities, likelihoods and impacts into prioritization is stated by the Risk Register & Treatment Plan task (new), \"resulting prioritization\", not by the control descriptions. Judgment mapping."
+        },
+        {
+            "id": "ID.RA-06",
+            "requirementId": "frk_rq_6820188a1c422596e38ae9dc",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b90a3bf8c1443cbf5b",
+                    "name": "Risk Management"
+                }
+            ],
+            "rationale": "Parent: ISO-variant Risk Management (\"treatment plans\"). Evidence: Risk Register & Treatment Plan (new), covering \"chosen responses, owners and tracking\"."
+        },
+        {
+            "id": "ID.RA-07",
+            "requirementId": "frk_rq_68201895392339da7d9954ea",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4c30e2d3f1117fa58e13",
+                    "name": "Change management"
+                },
+                {
+                    "id": "frk_ct_683f3ecd42e62fde624c59c1",
+                    "name": "Policy Compliance"
+                }
+            ],
+            "rationale": "Parent: Change management (\"Apply Change Management for Information Systems\") for changes; exceptions are handled under Policy Compliance through its linked \"Policy Management & Exception Handling\" policy. Risk assessment of each change is procedure content. Judgment mapping."
+        },
+        {
+            "id": "ID.RA-08",
+            "requirementId": "frk_rq_6820189d97faa652b8b56f0e",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4d7360a876b972aba39a",
+                    "name": "Vulnerability Management"
+                },
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Vulnerability Management. Disclosure intake is not in the control description; the CSF-scoped Vulnerability Disclosure Handling task (new) adds it. Response follows Security Incident Management. Judgment mapping."
+        },
+        {
+            "id": "ID.RA-09",
+            "requirementId": "frk_rq_682018a885085783d41c32e6",
+            "controls": [
+                {
+                    "id": "frk_ct_a5c4ad98b7180673da73ca67",
+                    "name": "Supply Chain Risk Management Program"
+                },
+                {
+                    "id": "frk_ct_683f50aae46f5e4e096e6bb3",
+                    "name": "Secure SDLC Integration"
+                }
+            ],
+            "rationale": "Parent: new program control, whose description includes \"verification of the authenticity and integrity of hardware and software before acquisition and use\"; software integrity in delivery is Secure SDLC Integration. Evidence: Supply Chain Risk Register (new), covering \"results of authenticity and integrity checks\"."
+        },
+        {
+            "id": "ID.RA-10",
+            "requirementId": "frk_rq_682018b12e73908eb9863f97",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b9bf66b5a6ffb17d27",
+                    "name": "Supplier & Third-Party Security"
+                }
+            ],
+            "rationale": "Parent: Supplier & Third-Party Security (\"supplier due diligence\"). Evidence: Supplier Evaluation Records."
+        },
+        {
+            "id": "ID.IM-01",
+            "requirementId": "frk_rq_682018bf59c0ad3212f726fe",
+            "controls": [
+                {
+                    "id": "frk_ct_69e6766bd483954a1f0b8445",
+                    "name": "Continual Improvement & Corrective Action"
+                },
+                {
+                    "id": "frk_ct_69e639b96ad6c5e729676acb",
+                    "name": "Internal Audit & Management Review"
+                }
+            ],
+            "rationale": "Parent: Continual Improvement & Corrective Action, which \"Captures nonconformities identified through audits, incidents, management reviews, or day-to-day operations\"; audits come from Internal Audit & Management Review. Evidence: Corrective Action Reports (CSF-scoped)."
+        },
+        {
+            "id": "ID.IM-02",
+            "requirementId": "frk_rq_682018caa3270e2058296c93",
+            "controls": [
+                {
+                    "id": "frk_ct_69e6766bd483954a1f0b8445",
+                    "name": "Continual Improvement & Corrective Action"
+                },
+                {
+                    "id": "frk_ct_683f4dd564057a97ae323c9f",
+                    "name": "Disaster Recovery Planning"
+                }
+            ],
+            "rationale": "Parent: Continual Improvement & Corrective Action; test findings come from Disaster Recovery Planning (\"Test DR; meet RTO/RPO\"). Evidence: Corrective Action Reports, Backup Restoration Test."
+        },
+        {
+            "id": "ID.IM-03",
+            "requirementId": "frk_rq_682018d5d553a3b1357492c8",
+            "controls": [
+                {
+                    "id": "frk_ct_69e6766bd483954a1f0b8445",
+                    "name": "Continual Improvement & Corrective Action"
+                }
+            ],
+            "rationale": "Parent: Continual Improvement & Corrective Action (\"or day-to-day operations\")."
+        },
+        {
+            "id": "ID.IM-04",
+            "requirementId": "frk_rq_682018ddf94cbab9fac8820f",
+            "controls": [
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                },
+                {
+                    "id": "frk_ct_683f4dd564057a97ae323c9f",
+                    "name": "Disaster Recovery Planning"
+                },
+                {
+                    "id": "frk_ct_69e6766bd483954a1f0b8445",
+                    "name": "Continual Improvement & Corrective Action"
+                }
+            ],
+            "rationale": "Parent: Security Incident Management and Disaster Recovery Planning own the plans; Continual Improvement & Corrective Action \"Feeds lessons learned back into policies, controls, and the risk register\"."
+        },
+        {
+            "id": "PR.AA-01",
+            "requirementId": "frk_rq_682018e77df1600bced32004",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4a410cf5bf6d40bf3583",
+                    "name": "Access Rights"
+                },
+                {
+                    "id": "frk_ct_683f4ae4acbd63d0e558a6f5",
+                    "name": "Credential Management"
+                }
+            ],
+            "rationale": "Parent: Access Rights (\"Manage User Access Rights Lifecycle\") and Credential Management (\"Protect Authentication Information\"). Evidence: Employee Access, Access Review Log, 2FA, Secure Secrets."
+        },
+        {
+            "id": "PR.AA-02",
+            "requirementId": "frk_rq_682018f6a0c18def82e42c34",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4a410cf5bf6d40bf3583",
+                    "name": "Access Rights"
+                },
+                {
+                    "id": "frk_ct_683f43a65de3b6044e63220f",
+                    "name": "Personnel Security"
+                }
+            ],
+            "rationale": "Parent: Access Rights (\"Manage User Access Rights Lifecycle\") and Personnel Security. Proofing at onboarding is evidenced by Employee Verification; binding of identities to credentials across contexts is not stated by either description. Judgment mapping."
+        },
+        {
+            "id": "PR.AA-03",
+            "requirementId": "frk_rq_682018fe4603c0f1614f90e1",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4ae4acbd63d0e558a6f5",
+                    "name": "Credential Management"
+                }
+            ],
+            "rationale": "Parent: Credential Management (\"Protect Authentication Information\"). Evidence: 2FA and Secure Secrets cover user and service authentication; hardware authentication is not evidenced. Judgment mapping."
+        },
+        {
+            "id": "PR.AA-04",
+            "requirementId": "frk_rq_68201906b3b3a5e6f7e2bd23",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4ae4acbd63d0e558a6f5",
+                    "name": "Credential Management"
+                }
+            ],
+            "rationale": "Parent: Credential Management (\"Protect Authentication Information\"). The description does not address assertion conveyance specifically. Judgment mapping."
+        },
+        {
+            "id": "PR.AA-05",
+            "requirementId": "frk_rq_6820190ce232783101b229f0",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4a410cf5bf6d40bf3583",
+                    "name": "Access Rights"
+                },
+                {
+                    "id": "frk_ct_684073ba24475a83ba048022",
+                    "name": "Segregation of duties"
+                }
+            ],
+            "rationale": "Parent: Access Rights and Segregation of duties (\"Implement Segregation of Duties\"). Evidence: Access Review Log and Role-based Access Controls (CSF-scoped), which requires \"role-based access control (RBAC) to manage user permissions based on job functions\"."
+        },
+        {
+            "id": "PR.AA-06",
+            "requirementId": "frk_rq_682019145173ad9daed9cfd2",
+            "controls": [
+                {
+                    "id": "frk_ct_68407122565b1968676d93db",
+                    "name": "Physical Access Control"
+                }
+            ],
+            "rationale": "Parent: Physical Access Control (\"Control Physical Entry to Facilities\"). Evidence: Visitor Control, Office Access & Door Monitoring."
+        },
+        {
+            "id": "PR.AT-01",
+            "requirementId": "frk_rq_6820191955df761a8b987a45",
+            "controls": [
+                {
+                    "id": "frk_ct_69eb876f3270ed0b11233ece",
+                    "name": "Security Awareness & Training"
+                },
+                {
+                    "id": "frk_ct_683f43a65de3b6044e63220f",
+                    "name": "Personnel Security"
+                }
+            ],
+            "rationale": "Parent: Security Awareness & Training (\"Implement a security awareness and training program\"); Personnel Security carries the Security & Privacy Awareness Training policy. Evidence: Security Awareness Training."
+        },
+        {
+            "id": "PR.AT-02",
+            "requirementId": "frk_rq_682019204fe0fef329a87017",
+            "controls": [
+                {
+                    "id": "frk_ct_69eb876f3270ed0b11233ece",
+                    "name": "Security Awareness & Training"
+                }
+            ],
+            "rationale": "Parent: Security Awareness & Training. Role-specific evidence: Training / Competence Records (CSF-scoped), which \"must cover role-specific skills\". Judgment mapping."
+        },
+        {
+            "id": "PR.DS-01",
+            "requirementId": "frk_rq_68201927110905fef0bfe40d",
+            "controls": [
+                {
+                    "id": "frk_ct_68e8079750107bcc63fc79d9",
+                    "name": "Encrypted Data at Rest"
+                },
+                {
+                    "id": "frk_ct_683f464bec8bea67de7b9c31",
+                    "name": "Information Classification"
+                }
+            ],
+            "rationale": "Parent: Encrypted Data at Rest (\"The organization encrypts all production databases containing customer data at rest\"); Information Classification determines which data needs which protection."
+        },
+        {
+            "id": "PR.DS-02",
+            "requirementId": "frk_rq_6820192d9c235ed18f05188e",
+            "controls": [
+                {
+                    "id": "frk_ct_68406fc94e08f884cc085ded",
+                    "name": "Secure Data Transfer"
+                }
+            ],
+            "rationale": "Parent: Secure Data Transfer (\"Protect Information in Transit\"). Evidence: TLS / HTTPS."
+        },
+        {
+            "id": "PR.DS-10",
+            "requirementId": "frk_rq_68201933a43efb8eb52076a3",
+            "controls": [
+                {
+                    "id": "frk_ct_6849c343d7fbe4e71446ce78",
+                    "name": "Data Masking"
+                },
+                {
+                    "id": "frk_ct_683f4a410cf5bf6d40bf3583",
+                    "name": "Access Rights"
+                }
+            ],
+            "rationale": "Parent: Data Masking (\"Hide sensitive fields\") for data in use; Access Rights limits who can process it. The library has no dedicated data-in-use control. Judgment mapping."
+        },
+        {
+            "id": "PR.DS-11",
+            "requirementId": "frk_rq_6820193a0a546ca68910c661",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4dd564057a97ae323c9f",
+                    "name": "Disaster Recovery Planning"
+                }
+            ],
+            "rationale": "Parent: Disaster Recovery Planning (\"Test DR; meet RTO/RPO\"), whose Backup policy governs backups. Evidence: Backup Restoration Test and Backup logs (both CSF-scoped). Backup creation and protection are policy and task content, not the control description. Judgment mapping."
+        },
+        {
+            "id": "PR.PS-01",
+            "requirementId": "frk_rq_68201941dc15a95f3cf165c0",
+            "controls": [
+                {
+                    "id": "frk_ct_6840738800f98fa3c0f3a3ae",
+                    "name": "Configuration & Patch Management"
+                },
+                {
+                    "id": "frk_ct_683f4c30e2d3f1117fa58e13",
+                    "name": "Change management"
+                }
+            ],
+            "rationale": "Parent: Configuration & Patch Management (\"Harden baselines\") and Change management for baseline changes."
+        },
+        {
+            "id": "PR.PS-02",
+            "requirementId": "frk_rq_68201948738940d7ca3f5c28",
+            "controls": [
+                {
+                    "id": "frk_ct_6840738800f98fa3c0f3a3ae",
+                    "name": "Configuration & Patch Management"
+                },
+                {
+                    "id": "frk_ct_683f4d7360a876b972aba39a",
+                    "name": "Vulnerability Management"
+                },
+                {
+                    "id": "frk_ct_58fd3ca20e2cc44afa40b97a",
+                    "name": "Technology Asset Lifecycle"
+                }
+            ],
+            "rationale": "Parent: Configuration & Patch Management (\"patch swiftly\") and Vulnerability Management for maintenance; the new Technology Asset Lifecycle control (\"retirement of unsupported software\") for replacement and removal."
+        },
+        {
+            "id": "PR.PS-03",
+            "requirementId": "frk_rq_6820198b5f9481e2d6186821",
+            "controls": [
+                {
+                    "id": "frk_ct_58fd3ca20e2cc44afa40b97a",
+                    "name": "Technology Asset Lifecycle"
+                }
+            ],
+            "rationale": "Parent: new Technology Asset Lifecycle control (\"acquisition, maintenance, replacement and removal\"). Evidence: Asset Disposal & Sanitization Log (new), Device List."
+        },
+        {
+            "id": "PR.PS-04",
+            "requirementId": "frk_rq_6820199287e66274ea47ec05",
+            "controls": [
+                {
+                    "id": "frk_ct_684070831cc83c4ab4c2c4d8",
+                    "name": "Security Logging"
+                }
+            ],
+            "rationale": "Parent: Security Logging (\"Enable Logging of Security Events\"). Policy: Logging, Monitoring & Audit."
+        },
+        {
+            "id": "PR.PS-05",
+            "requirementId": "frk_rq_6820199869becd48af47c8a4",
+            "controls": [
+                {
+                    "id": "frk_ct_684072e06f4a49ee669076cc",
+                    "name": "Endpoint Protection"
+                },
+                {
+                    "id": "frk_ct_6840738800f98fa3c0f3a3ae",
+                    "name": "Configuration & Patch Management"
+                }
+            ],
+            "rationale": "Parent: Endpoint Protection (\"Protect Systems Against Malware\") and Configuration & Patch Management (\"Harden baselines\"), whose Secure Configuration & Hardening policy governs what may be installed. No control names application allow-listing explicitly. Judgment mapping."
+        },
+        {
+            "id": "PR.PS-06",
+            "requirementId": "frk_rq_682019a06ab1128c6aa4bec1",
+            "controls": [
+                {
+                    "id": "frk_ct_683f50aae46f5e4e096e6bb3",
+                    "name": "Secure SDLC Integration"
+                },
+                {
+                    "id": "frk_ct_683f4d7360a876b972aba39a",
+                    "name": "Vulnerability Management"
+                }
+            ],
+            "rationale": "Parent: Secure SDLC Integration (policy: Secure Software Development Lifecycle); \"code vulnerabilities\" are Vulnerability Management. Evidence: Secure Code and Static Code Scanning (both CSF-scoped)."
+        },
+        {
+            "id": "PR.IR-01",
+            "requirementId": "frk_rq_682019a556567e9cb873e51a",
+            "controls": [
+                {
+                    "id": "frk_ct_684070f0b4f6c2036306e23c",
+                    "name": "Network Security"
+                },
+                {
+                    "id": "frk_ct_6840731ae0b857152b35ca8f",
+                    "name": "Remote-Work Security"
+                }
+            ],
+            "rationale": "Parent: Network Security (\"Enforce segmentation and firewalls\") and Remote-Work Security (\"Implement Secure Remote Working Practices\"). Evidence: Production Firewall & No-Public-Access Controls."
+        },
+        {
+            "id": "PR.IR-02",
+            "requirementId": "frk_rq_682019c3f04acc039da4a4d4",
+            "controls": [
+                {
+                    "id": "frk_ct_69e65ef9c20933590d85cc31",
+                    "name": "Physical & Environmental Security"
+                }
+            ],
+            "rationale": "Parent: Physical & Environmental Security (\"environmental threat protections, cabling security, and secure siting of equipment\"). Evidence: Facility Security Plan (CSF-scoped)."
+        },
+        {
+            "id": "PR.IR-03",
+            "requirementId": "frk_rq_682019cbebc42f6f6e883e50",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b9d5ced482c12ae932",
+                    "name": "Business Continuity & ICT Readiness"
+                },
+                {
+                    "id": "frk_ct_683f4dd564057a97ae323c9f",
+                    "name": "Disaster Recovery Planning"
+                }
+            ],
+            "rationale": "Parent: Business Continuity & ICT Readiness (\"continuity strategy, tabletop/real exercises, and ICT readiness commitments per service tier\") and Disaster Recovery Planning."
+        },
+        {
+            "id": "PR.IR-04",
+            "requirementId": "frk_rq_682019d3d50f1071280e6e26",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4b7614d209f8b6ffd477",
+                    "name": "Resource Capacity Management"
+                }
+            ],
+            "rationale": "Parent: Resource Capacity Management (\"Perform Capacity Management for Resources\"). Evidence: App Availability."
+        },
+        {
+            "id": "DE.CM-01",
+            "requirementId": "frk_rq_682019dae9898848f45cfd0a",
+            "controls": [
+                {
+                    "id": "frk_ct_683f46f3f181af3f93773c1d",
+                    "name": "Security Monitoring & Detection"
+                },
+                {
+                    "id": "frk_ct_684070f0b4f6c2036306e23c",
+                    "name": "Network Security"
+                }
+            ],
+            "rationale": "Parent: Security Monitoring & Detection (\"Central SIEM with alerting\"); Network Security provides the monitored boundary. Evidence: Monitoring & Alerting."
+        },
+        {
+            "id": "DE.CM-02",
+            "requirementId": "frk_rq_682019e2f27153878ce33caf",
+            "controls": [
+                {
+                    "id": "frk_ct_68407122565b1968676d93db",
+                    "name": "Physical Access Control"
+                }
+            ],
+            "rationale": "Parent: Physical Access Control (\"Control Physical Entry to Facilities\"). Monitoring, as distinct from control, is evidenced by the linked tasks Office Access & Door Monitoring and Visitor Control. Judgment mapping."
+        },
+        {
+            "id": "DE.CM-03",
+            "requirementId": "frk_rq_682019ea951cebd7fb04320d",
+            "controls": [
+                {
+                    "id": "frk_ct_683f46f3f181af3f93773c1d",
+                    "name": "Security Monitoring & Detection"
+                },
+                {
+                    "id": "frk_ct_6849ba93636ff0155eb89158",
+                    "name": "Utility Tool monitoring"
+                }
+            ],
+            "rationale": "Parent: Security Monitoring & Detection for personnel activity; Utility Tool monitoring \"Audits the execution of privileged program\". Evidence: Utility Monitoring."
+        },
+        {
+            "id": "DE.CM-06",
+            "requirementId": "frk_rq_682019f0a811676293ed8831",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b9bf66b5a6ffb17d27",
+                    "name": "Supplier & Third-Party Security"
+                },
+                {
+                    "id": "frk_ct_683f46f3f181af3f93773c1d",
+                    "name": "Security Monitoring & Detection"
+                }
+            ],
+            "rationale": "Parent: Supplier & Third-Party Security (\"ongoing monitoring\") for provider oversight; Security Monitoring & Detection for their activity in the environment."
+        },
+        {
+            "id": "DE.CM-09",
+            "requirementId": "frk_rq_682019f9afd61d46ed0fd756",
+            "controls": [
+                {
+                    "id": "frk_ct_683f46f3f181af3f93773c1d",
+                    "name": "Security Monitoring & Detection"
+                },
+                {
+                    "id": "frk_ct_684072e06f4a49ee669076cc",
+                    "name": "Endpoint Protection"
+                },
+                {
+                    "id": "frk_ct_684070831cc83c4ab4c2c4d8",
+                    "name": "Security Logging"
+                }
+            ],
+            "rationale": "Parent: Security Monitoring & Detection (\"Central SIEM with alerting\"), Endpoint Protection (\"Protect Systems Against Malware\") and Security Logging (\"Enable Logging of Security Events\"). Together they cover software, endpoint and event monitoring; comprehensive runtime and data monitoring is not stated. Judgment mapping."
+        },
+        {
+            "id": "DE.AE-02",
+            "requirementId": "frk_rq_68201a0238231f1da4cba2e9",
+            "controls": [
+                {
+                    "id": "frk_ct_683f46f3f181af3f93773c1d",
+                    "name": "Security Monitoring & Detection"
+                },
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Security Monitoring & Detection (\"Central SIEM with alerting\") for analysis; Security Incident Management for escalation. Characterization of events is procedure content. Evidence: Monitoring & Alerting, Incident Response. Judgment mapping."
+        },
+        {
+            "id": "DE.AE-03",
+            "requirementId": "frk_rq_68201a09343a57b7a137930d",
+            "controls": [
+                {
+                    "id": "frk_ct_683f46f3f181af3f93773c1d",
+                    "name": "Security Monitoring & Detection"
+                }
+            ],
+            "rationale": "Parent: Security Monitoring & Detection; correlation across sources is what a \"Central SIEM\" does."
+        },
+        {
+            "id": "DE.AE-04",
+            "requirementId": "frk_rq_68201a116ae3ba4382d7f6e1",
+            "controls": [
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Security Incident Management. Its Incident Response & Breach Notification policy requires that incidents are \"identified, contained, reported, and resolved quickly\"; impact and scope estimation is procedure content. Judgment mapping."
+        },
+        {
+            "id": "DE.AE-06",
+            "requirementId": "frk_rq_68201a23c8043be0ebbd972f",
+            "controls": [
+                {
+                    "id": "frk_ct_683f46f3f181af3f93773c1d",
+                    "name": "Security Monitoring & Detection"
+                },
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Security Monitoring & Detection (\"alerting\") and Security Incident Management, whose policy assigns an \"Incident Commander, Technical Lead, Communications Lead, and Scribe\"."
+        },
+        {
+            "id": "DE.AE-07",
+            "requirementId": "frk_rq_68201a2d9af254f208ea4205",
+            "controls": [
+                {
+                    "id": "frk_ct_684073d541bfb8b8b777e529",
+                    "name": "Threat intelligence"
+                },
+                {
+                    "id": "frk_ct_683f46f3f181af3f93773c1d",
+                    "name": "Security Monitoring & Detection"
+                }
+            ],
+            "rationale": "Parent: Threat intelligence and Security Monitoring & Detection. Integration is evidenced by the Threat Intelligence Review task (new), which records \"how intelligence is fed into monitoring and event analysis\". Judgment mapping."
+        },
+        {
+            "id": "DE.AE-08",
+            "requirementId": "frk_rq_68201a363edc9ba6a521a9e0",
+            "controls": [
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Security Incident Management (\"Establish an Incident Management Policy and Procedures\"); declaration criteria belong in those procedures. Judgment mapping."
+        },
+        {
+            "id": "RS.MA-01",
+            "requirementId": "frk_rq_68201a3edf19674f9cafe313",
+            "controls": [
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Security Incident Management. Evidence: Incident Response. Coordination with suppliers is mapped separately at GV.SC-08 through the supply chain program; this row does not claim it. Judgment mapping."
+        },
+        {
+            "id": "RS.MA-02",
+            "requirementId": "frk_rq_68201a4372a2d06722749f6f",
+            "controls": [
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Security Incident Management; its policy requires incidents to be \"identified, contained, reported, and resolved quickly\". Triage detail is procedure content. Judgment mapping."
+        },
+        {
+            "id": "RS.MA-03",
+            "requirementId": "frk_rq_68201a562017d13330a25cbb",
+            "controls": [
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Security Incident Management; categorization and prioritization are procedure content under the same policy. Judgment mapping."
+        },
+        {
+            "id": "RS.MA-04",
+            "requirementId": "frk_rq_68201a5b8cc75519501e950d",
+            "controls": [
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Security Incident Management; its policy states that mishandled incidents \"escalate to executive review\". General severity-based escalation is procedure content. Judgment mapping."
+        },
+        {
+            "id": "RS.MA-05",
+            "requirementId": "frk_rq_68201a63d7306eed0eb9ad2b",
+            "controls": [
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                },
+                {
+                    "id": "frk_ct_683f4dd564057a97ae323c9f",
+                    "name": "Disaster Recovery Planning"
+                }
+            ],
+            "rationale": "Parent: Security Incident Management and Disaster Recovery Planning, whose linked policy requires \"Define DR trigger thresholds; an Incident Commander authorises activation and coordinates restoration\". The criteria are policy content, not control description. Judgment mapping."
+        },
+        {
+            "id": "RS.AN-03",
+            "requirementId": "frk_rq_68201a6ab3fff07c00cac3eb",
+            "controls": [
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                },
+                {
+                    "id": "frk_ct_69e6766bd483954a1f0b8445",
+                    "name": "Continual Improvement & Corrective Action"
+                }
+            ],
+            "rationale": "Parent: Security Incident Management, whose policy requires \"a root-cause post-mortem within 10 business days\"; Continual Improvement & Corrective Action \"performs root-cause analysis\"."
+        },
+        {
+            "id": "RS.AN-06",
+            "requirementId": "frk_rq_68201a70ff773b7626274969",
+            "controls": [
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                },
+                {
+                    "id": "frk_ct_684070831cc83c4ab4c2c4d8",
+                    "name": "Security Logging"
+                }
+            ],
+            "rationale": "Parent: Security Incident Management, whose policy says \"Preserve logs and evidence; record containment start/stop and recovery steps\"; Security Logging supplies the records. Provenance handling beyond preservation is not stated. Judgment mapping."
+        },
+        {
+            "id": "RS.AN-07",
+            "requirementId": "frk_rq_68201a78d4bf42c174f03bbe",
+            "controls": [
+                {
+                    "id": "frk_ct_684070831cc83c4ab4c2c4d8",
+                    "name": "Security Logging"
+                },
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Security Logging and Security Incident Management (\"Preserve logs and evidence\"). Provenance handling beyond preservation is not stated. Judgment mapping."
+        },
+        {
+            "id": "RS.AN-08",
+            "requirementId": "frk_rq_68201a85cd81afea21c415ae",
+            "controls": [
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Security Incident Management; magnitude estimation is procedure content. Judgment mapping."
+        },
+        {
+            "id": "RS.CO-02",
+            "requirementId": "frk_rq_68201a8b88ebc3036f057ba2",
+            "controls": [
+                {
+                    "id": "frk_ct_57d8de27937cb526a83b30d4",
+                    "name": "Incident & Recovery Communications"
+                },
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: new Incident & Recovery Communications control (\"who is notified\"); the incident policy requires that \"required notifications are issued on time\". Evidence: Stakeholder Communication Plan (new)."
+        },
+        {
+            "id": "RS.CO-03",
+            "requirementId": "frk_rq_68201a9131dfa0c1fa2c397b",
+            "controls": [
+                {
+                    "id": "frk_ct_57d8de27937cb526a83b30d4",
+                    "name": "Incident & Recovery Communications"
+                },
+                {
+                    "id": "frk_ct_683f45c5058c486f3fa5b7bc",
+                    "name": "Regulatory Liaison"
+                }
+            ],
+            "rationale": "Parent: new communications control (\"what is shared with designated internal and external stakeholders\"); Regulatory Liaison (\"Maintain Contact with Authorities\") for regulators; the incident policy requires \"customer/regulator notices within applicable legal timeframes\"."
+        },
+        {
+            "id": "RS.MI-01",
+            "requirementId": "frk_rq_68201a970f1b0e3392dbb719",
+            "controls": [
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Security Incident Management; its linked policy section \"Containment & Eradication\" requires \"Isolate affected systems within 30 minutes of confirmation\". Containment is policy content, not control description. Judgment mapping."
+        },
+        {
+            "id": "RS.MI-02",
+            "requirementId": "frk_rq_68201a9f81e7ed0c958c8e69",
+            "controls": [
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                },
+                {
+                    "id": "frk_ct_683f4d7360a876b972aba39a",
+                    "name": "Vulnerability Management"
+                }
+            ],
+            "rationale": "Parent: Security Incident Management, whose linked policy has a \"Containment & Eradication\" section; removing the exploited weakness is Vulnerability Management (\"Manage both software and code vulnerabilities\"). Eradication is policy content. Judgment mapping."
+        },
+        {
+            "id": "RC.RP-01",
+            "requirementId": "frk_rq_68201aa479f56fd85ac36dd8",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4dd564057a97ae323c9f",
+                    "name": "Disaster Recovery Planning"
+                },
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Disaster Recovery Planning (\"Test DR; meet RTO/RPO\") executed when incident procedures invoke recovery. Testing and planning evidence (Planning, Backup Restoration Test) does not itself show execution during an actual incident. Judgment mapping."
+        },
+        {
+            "id": "RC.RP-02",
+            "requirementId": "frk_rq_68201aac513743e9d7ea9dc0",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4dd564057a97ae323c9f",
+                    "name": "Disaster Recovery Planning"
+                },
+                {
+                    "id": "frk_ct_69e639b9d5ced482c12ae932",
+                    "name": "Business Continuity & ICT Readiness"
+                }
+            ],
+            "rationale": "Parent: Disaster Recovery Planning (\"Test DR; meet RTO/RPO\") and Business Continuity & ICT Readiness (\"BIA, continuity strategy\") supply the prioritization inputs; selection and performance of recovery actions is procedure content. Judgment mapping."
+        },
+        {
+            "id": "RC.RP-03",
+            "requirementId": "frk_rq_68201ab2045fc214d7d2bc17",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4dd564057a97ae323c9f",
+                    "name": "Disaster Recovery Planning"
+                },
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Disaster Recovery Planning. Evidence: Backup Restoration Test (CSF-scoped) demonstrates backups restore correctly; a pre-use check during an actual recovery is procedure content. Judgment mapping."
+        },
+        {
+            "id": "RC.RP-04",
+            "requirementId": "frk_rq_68201ab8cc8961002bb4f68b",
+            "controls": [
+                {
+                    "id": "frk_ct_69e639b9d5ced482c12ae932",
+                    "name": "Business Continuity & ICT Readiness"
+                },
+                {
+                    "id": "frk_ct_683f4dd564057a97ae323c9f",
+                    "name": "Disaster Recovery Planning"
+                }
+            ],
+            "rationale": "Parent: Business Continuity & ICT Readiness (\"ICT readiness commitments per service tier\") and Disaster Recovery Planning (\"RTO/RPO\") define recovery targets; post-incident operating norms that incorporate cybersecurity risk are not stated. Judgment mapping."
+        },
+        {
+            "id": "RC.RP-05",
+            "requirementId": "frk_rq_68201abe57d6cfdedd8b2200",
+            "controls": [
+                {
+                    "id": "frk_ct_683f4dd564057a97ae323c9f",
+                    "name": "Disaster Recovery Planning"
+                },
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                }
+            ],
+            "rationale": "Parent: Disaster Recovery Planning for restoration and Security Incident Management for closure. Verification of restored-asset integrity and confirmation of normal operation are not stated by either. Judgment mapping."
+        },
+        {
+            "id": "RC.RP-06",
+            "requirementId": "frk_rq_68201acafa28ec3bf25be454",
+            "controls": [
+                {
+                    "id": "frk_ct_683f47cc2faa426603d6bee8",
+                    "name": "Security Incident Management"
+                },
+                {
+                    "id": "frk_ct_69e6766bd483954a1f0b8445",
+                    "name": "Continual Improvement & Corrective Action"
+                }
+            ],
+            "rationale": "Parent: Security Incident Management, whose policy requires a \"Post-Incident Review & Lessons Learned\"; Continual Improvement & Corrective Action tracks the outcomes. Declaration criteria are procedure content. Judgment mapping."
+        },
+        {
+            "id": "RC.CO-03",
+            "requirementId": "frk_rq_68201ad2957c35a17d4d912e",
+            "controls": [
+                {
+                    "id": "frk_ct_57d8de27937cb526a83b30d4",
+                    "name": "Incident & Recovery Communications"
+                },
+                {
+                    "id": "frk_ct_683f4dd564057a97ae323c9f",
+                    "name": "Disaster Recovery Planning"
+                }
+            ],
+            "rationale": "Parent: new communications control (\"how recovery progress is reported\"), exercised during Disaster Recovery Planning. Evidence: Stakeholder Communication Plan (new)."
+        },
+        {
+            "id": "RC.CO-04",
+            "requirementId": "frk_rq_68201ad9f0eb43b0f0ff83e1",
+            "controls": [
+                {
+                    "id": "frk_ct_57d8de27937cb526a83b30d4",
+                    "name": "Incident & Recovery Communications"
+                }
+            ],
+            "rationale": "Parent: new communications control, whose description states \"which approved methods and messaging are used for public updates\". Evidence: Stakeholder Communication Plan (new)."
+        }
+    ],
+    "newControls": [
+        {
+            "id": "frk_ct_86cea95ec8a5cbc4d502dc6f",
+            "name": "Critical Services & Dependencies",
+            "description": "Identify and communicate the critical objectives, capabilities and services that external stakeholders depend on or expect from the organization, and the outcomes, capabilities and services the organization depends on, so that criticality informs cybersecurity risk management and continuity planning.",
+            "policies": [
+                {
+                    "id": "frk_pt_685e3f7b4ebcb27b60c51434",
+                    "name": "Information Security & Privacy Governance"
+                }
+            ],
+            "tasks": [
+                {
+                    "id": "frk_tt_2d89494b9a3e963eb1a01446",
+                    "name": "Critical Services & Dependencies Statement"
+                }
+            ]
+        },
+        {
+            "id": "frk_ct_5d0faa559be322a448e68204",
+            "name": "Risk Appetite & Tolerance",
+            "description": "Establish, communicate and maintain risk appetite and risk tolerance statements, the strategic direction on acceptable risk response options, and the treatment of strategic opportunities (positive risks) in cybersecurity risk discussions.",
+            "policies": [
+                {
+                    "id": "frk_pt_685e3fc75bd72cd0745dc5d1",
+                    "name": "Risk Management"
+                }
+            ],
+            "tasks": [
+                {
+                    "id": "frk_tt_09431ae883c3f97fd32590c8",
+                    "name": "Risk Appetite Statement"
+                }
+            ]
+        },
+        {
+            "id": "frk_ct_a5c4ad98b7180673da73ca67",
+            "name": "Supply Chain Risk Management Program",
+            "description": "Establish and operate a cybersecurity supply chain risk management program: strategy, objectives, policies and supplier-facing roles agreed by stakeholders; integration into enterprise risk management; verification of the authenticity and integrity of hardware and software before acquisition and use; supplier inclusion in incident planning, response and recovery; lifecycle-wide monitoring of supply chain security practices; and provisions for concluding supplier relationships.",
+            "policies": [
+                {
+                    "id": "frk_pt_685e462046667f75a50a2c3e",
+                    "name": "Vendor & Third-Party Risk"
+                }
+            ],
+            "tasks": [
+                {
+                    "id": "frk_tt_e47ae4e157bab5d2cc401758",
+                    "name": "Supply Chain Risk Register"
+                }
+            ]
+        },
+        {
+            "id": "frk_ct_57d8de27937cb526a83b30d4",
+            "name": "Incident & Recovery Communications",
+            "description": "Maintain a stakeholder communication plan for incidents and recovery: who is notified, what is shared with designated internal and external stakeholders, how recovery progress is reported, and which approved methods and messaging are used for public updates.",
+            "policies": [
+                {
+                    "id": "frk_pt_685e43e23b78127274355980",
+                    "name": "Incident Response & Breach Notification"
+                }
+            ],
+            "tasks": [
+                {
+                    "id": "frk_tt_ad97385b34091bacfcf9c9b0",
+                    "name": "Stakeholder Communication Plan"
+                }
+            ]
+        },
+        {
+            "id": "frk_ct_58fd3ca20e2cc44afa40b97a",
+            "name": "Technology Asset Lifecycle",
+            "description": "Manage systems, hardware, software, services and data through acquisition, maintenance, replacement and removal, including retirement of unsupported software and secure disposal of hardware and media at end of life.",
+            "policies": [
+                {
+                    "id": "frk_pt_685e42a3bbd08ad14de297f0",
+                    "name": "Secure Configuration & Hardening"
+                },
+                {
+                    "id": "frk_pt_685e414029124c24387beff0",
+                    "name": "Retention & Secure Disposal"
+                }
+            ],
+            "tasks": [
+                {
+                    "id": "frk_tt_509ffab96bcb629a099389c5",
+                    "name": "Asset Disposal & Sanitization Log"
+                },
+                {
+                    "id": "frk_tt_68406903839203801ac8041a",
+                    "name": "Device List"
+                }
+            ]
+        }
+    ],
+    "newTasks": [
+        {
+            "id": "frk_tt_27442012080fc2afedc260e0",
+            "name": "Interested Parties Register",
+            "description": "Maintain a register of the organization's mission and how it informs cybersecurity risk decisions, and of internal and external interested parties (customers, regulators, employees, partners, suppliers), their cybersecurity needs and expectations, and how the organization addresses them. Review annually.",
+            "frequency": "yearly",
+            "department": "gov"
+        },
+        {
+            "id": "frk_tt_2d89494b9a3e963eb1a01446",
+            "name": "Critical Services & Dependencies Statement",
+            "description": "Maintain a statement of the critical objectives, capabilities and services that external parties depend on or expect from the organization, and of the outcomes, capabilities and services the organization itself depends on, with criticality ratings. Review annually.",
+            "frequency": "yearly",
+            "department": "gov"
+        },
+        {
+            "id": "frk_tt_09431ae883c3f97fd32590c8",
+            "name": "Risk Appetite Statement",
+            "description": "Maintain an approved risk appetite and risk tolerance statement, including the accepted risk response options and how strategic opportunities (positive risks) are considered. Review annually and after major changes.",
+            "frequency": "yearly",
+            "department": "gov"
+        },
+        {
+            "id": "frk_tt_940a3f59ee7fd1f369873346",
+            "name": "Risk Register & Treatment Plan",
+            "description": "Maintain the cybersecurity risk register: risk management objectives agreed by organizational stakeholders, identified threats and vulnerabilities, likelihood and impact, resulting prioritization, chosen responses, owners and tracking, and how risks are communicated across the organization and with suppliers. Review quarterly.",
+            "frequency": "quarterly",
+            "department": "gov"
+        },
+        {
+            "id": "frk_tt_7fd448444392f9d3292891cd",
+            "name": "Security Metrics Report",
+            "description": "Report the defined security metrics and KPIs to management on the agreed cadence, including how cybersecurity strategy outcomes and risk management performance were reviewed and any adjustments decided.",
+            "frequency": "quarterly",
+            "department": "gov"
+        },
+        {
+            "id": "frk_tt_e47ae4e157bab5d2cc401758",
+            "name": "Supply Chain Risk Register",
+            "description": "Maintain a register of suppliers ranked by criticality with their assessed cybersecurity risk, contract security requirements, results of authenticity and integrity checks for acquired hardware and software, incident-response involvement, and end-of-relationship provisions.",
+            "frequency": "quarterly",
+            "department": "gov"
+        },
+        {
+            "id": "frk_tt_ad97385b34091bacfcf9c9b0",
+            "name": "Stakeholder Communication Plan",
+            "description": "Maintain the incident and recovery communication plan: notification lists, designated internal and external stakeholders, recovery progress reporting, and approved methods and messaging for public updates.",
+            "frequency": "yearly",
+            "department": "gov"
+        },
+        {
+            "id": "frk_tt_3676f86dfb8066980bfb8e22",
+            "name": "Threat Intelligence Review",
+            "description": "Record the cyber threat intelligence sources in use, the periodic review of received intelligence against the organization's assets and risks, and how intelligence is fed into monitoring and event analysis.",
+            "frequency": "quarterly",
+            "department": "it"
+        },
+        {
+            "id": "frk_tt_08ddc5f5645c1a2e53ed5e63",
+            "name": "Vulnerability Disclosure Handling",
+            "description": "Maintain the channel for receiving vulnerability disclosures from researchers and third parties, and the log of disclosures received, analyzed, and responded to.",
+            "frequency": "quarterly",
+            "department": "it"
+        },
+        {
+            "id": "frk_tt_509ffab96bcb629a099389c5",
+            "name": "Asset Disposal & Sanitization Log",
+            "description": "Maintain a log of hardware, media and software retired, replaced or removed, including sanitization or destruction method, date and accountable owner.",
+            "frequency": "quarterly",
+            "department": "it"
+        }
+    ],
+    "csfLinks": {
+        "policies": [
+            {
+                "controlTemplateId": "frk_ct_69e6766bd8ca18f572d4c34f",
+                "policyTemplateId": "frk_pt_685e3f7b4ebcb27b60c51434"
+            },
+            {
+                "controlTemplateId": "frk_ct_69e6766b4fd2b466bf7686cf",
+                "policyTemplateId": "frk_pt_685e3f7b4ebcb27b60c51434"
+            },
+            {
+                "controlTemplateId": "frk_ct_69e6766bd483954a1f0b8445",
+                "policyTemplateId": "frk_pt_691e4bd04aac53e783cb7c14"
+            },
+            {
+                "controlTemplateId": "frk_ct_69eb876f3270ed0b11233ece",
+                "policyTemplateId": "frk_pt_685e458a49e1eff0af54e3d2"
+            },
+            {
+                "controlTemplateId": "frk_ct_69e639b958a20954c4afa186",
+                "policyTemplateId": "frk_pt_685e45c938ad29ad775a2344"
+            }
+        ],
+        "tasks": [
+            {
+                "controlTemplateId": "frk_ct_69e6766bd8ca18f572d4c34f",
+                "taskTemplateId": "frk_tt_27442012080fc2afedc260e0"
+            },
+            {
+                "controlTemplateId": "frk_ct_69e6766b4fd2b466bf7686cf",
+                "taskTemplateId": "frk_tt_7fd448444392f9d3292891cd"
+            },
+            {
+                "controlTemplateId": "frk_ct_69e6766b4fd2b466bf7686cf",
+                "taskTemplateId": "frk_tt_68e1d619944625cc1876540c"
+            },
+            {
+                "controlTemplateId": "frk_ct_69e6766bd483954a1f0b8445",
+                "taskTemplateId": "frk_tt_691e6d9cb17ea23bfc68c57b"
+            },
+            {
+                "controlTemplateId": "frk_ct_69eb876f3270ed0b11233ece",
+                "taskTemplateId": "frk_tt_691e56cc5a52ee1256d5e1d6"
+            },
+            {
+                "controlTemplateId": "frk_ct_69e639b9bf66b5a6ffb17d27",
+                "taskTemplateId": "frk_tt_691e56cccca43b5df5080439"
+            },
+            {
+                "controlTemplateId": "frk_ct_684073d541bfb8b8b777e529",
+                "taskTemplateId": "frk_tt_3676f86dfb8066980bfb8e22"
+            },
+            {
+                "controlTemplateId": "frk_ct_69e639b9d5ced482c12ae932",
+                "taskTemplateId": "frk_tt_69eb8760d56cb8d18c53df13"
+            },
+            {
+                "controlTemplateId": "frk_ct_69e65ef9c20933590d85cc31",
+                "taskTemplateId": "frk_tt_69eb875fa49f13b4b81e9f3b"
+            },
+            {
+                "controlTemplateId": "frk_ct_69e639b90a3bf8c1443cbf5b",
+                "taskTemplateId": "frk_tt_940a3f59ee7fd1f369873346"
+            },
+            {
+                "controlTemplateId": "frk_ct_683f484fc7b5506ab97c26af",
+                "taskTemplateId": "frk_tt_940a3f59ee7fd1f369873346"
+            },
+            {
+                "controlTemplateId": "frk_ct_683f41e775f4ca03d8f6bae2",
+                "taskTemplateId": "frk_tt_68e1d619944625cc1876540c"
+            },
+            {
+                "controlTemplateId": "frk_ct_683f42c71eea99f22f9df060",
+                "taskTemplateId": "frk_tt_69033a6bfeb4759be36257bc"
+            },
+            {
+                "controlTemplateId": "frk_ct_683f42c71eea99f22f9df060",
+                "taskTemplateId": "frk_tt_6849aad98c50d734dd904d98"
+            },
+            {
+                "controlTemplateId": "frk_ct_683f4a410cf5bf6d40bf3583",
+                "taskTemplateId": "frk_tt_68e80544d9734e0402cfa807"
+            },
+            {
+                "controlTemplateId": "frk_ct_683f50aae46f5e4e096e6bb3",
+                "taskTemplateId": "frk_tt_68406e353df3bc002994acef"
+            },
+            {
+                "controlTemplateId": "frk_ct_683f50aae46f5e4e096e6bb3",
+                "taskTemplateId": "frk_tt_69f0d514d103c34ca40ad332"
+            },
+            {
+                "controlTemplateId": "frk_ct_684070f0b4f6c2036306e23c",
+                "taskTemplateId": "frk_tt_6849aad98c50d734dd904d98"
+            },
+            {
+                "controlTemplateId": "frk_ct_683f4dd564057a97ae323c9f",
+                "taskTemplateId": "frk_tt_68e52b269db179c434734766"
+            },
+            {
+                "controlTemplateId": "frk_ct_683f4dd564057a97ae323c9f",
+                "taskTemplateId": "frk_tt_68e52b26b166e2c0a0d11956"
+            },
+            {
+                "controlTemplateId": "frk_ct_683f4d7360a876b972aba39a",
+                "taskTemplateId": "frk_tt_08ddc5f5645c1a2e53ed5e63"
+            }
+        ]
+    }
+}
