@@ -11,6 +11,7 @@ import {
   readJsonArray,
 } from './csf-crosswalk';
 
+type Framework = { id: string; visible: boolean };
 type Requirement = {
   id: string;
   frameworkId: string;
@@ -71,14 +72,14 @@ describe('crosswalk coverage', () => {
   it('leaves no CSF control without a policy and a task', () => {
     const policyOf = new Map<string, Set<string>>();
     const taskOf = new Map<string, Set<string>>();
-    const add = (map: Map<string, Set<string>>, a: string, b: string) => {
+    const add = ({ map, a, b }: { map: Map<string, Set<string>>; a: string; b: string }) => {
       if (!map.has(a)) map.set(a, new Set());
       map.get(a)!.add(b);
     };
-    state.controlPolicyPairs.forEach((p) => add(policyOf, p.A, p.B));
-    state.controlTaskPairs.forEach((p) => add(taskOf, p.A, p.B));
-    crosswalk.csfLinks.policies.forEach((l) => add(policyOf, l.controlTemplateId, l.policyTemplateId));
-    crosswalk.csfLinks.tasks.forEach((l) => add(taskOf, l.controlTemplateId, l.taskTemplateId));
+    state.controlPolicyPairs.forEach((p) => add({ map: policyOf, a: p.A, b: p.B }));
+    state.controlTaskPairs.forEach((p) => add({ map: taskOf, a: p.A, b: p.B }));
+    crosswalk.csfLinks.policies.forEach((l) => add({ map: policyOf, a: l.controlTemplateId, b: l.policyTemplateId }));
+    crosswalk.csfLinks.tasks.forEach((l) => add({ map: taskOf, a: l.controlTemplateId, b: l.taskTemplateId }));
     const used = new Set(crosswalk.subcategories.flatMap((s) => s.controls.map((c) => c.id)));
     for (const id of used) {
       expect(policyOf.get(id)?.size ?? 0).toBeGreaterThan(0);
@@ -90,6 +91,7 @@ describe('crosswalk coverage', () => {
 describe('generated seed files', () => {
   it('committed files equal the generator output (no hand edits)', () => {
     const committed = {
+      frameworks: readJsonArray<Framework>(path.join(PRIMITIVES_DIR, 'FrameworkEditorFramework.json')),
       requirements: readJsonArray<Requirement>(path.join(PRIMITIVES_DIR, 'FrameworkEditorRequirement.json')),
       controls: readJsonArray<ControlTemplate>(path.join(PRIMITIVES_DIR, 'FrameworkEditorControlTemplate.json')),
       tasks: readJsonArray<TaskTemplate>(path.join(PRIMITIVES_DIR, 'FrameworkEditorTaskTemplate.json')),
@@ -98,6 +100,7 @@ describe('generated seed files', () => {
       controlTaskPairs: readJsonArray<Pair>(path.join(RELATIONS_DIR, '_FrameworkEditorControlTemplateToFrameworkEditorTaskTemplate.json')),
     };
     expect(committed).toEqual({
+      frameworks: state.frameworks,
       requirements: state.requirements,
       controls: state.controls,
       tasks: state.tasks,
@@ -105,6 +108,7 @@ describe('generated seed files', () => {
       controlPolicyPairs: state.controlPolicyPairs,
       controlTaskPairs: state.controlTaskPairs,
     });
+    expect(state.frameworks.find((f) => f.id === CSF_FRAMEWORK_ID)?.visible).toBe(true);
   });
 
   it('keeps the 1453 pre-existing non-CSF requirement links untouched', () => {

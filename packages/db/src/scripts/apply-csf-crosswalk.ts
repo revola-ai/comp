@@ -48,17 +48,17 @@ const FILES = {
 
 const SEED_TIMESTAMP = '2026-09-15 00:00:00.000';
 
-function byPair(a: Pair, b: Pair): number {
+function byPair({ a, b }: { a: Pair; b: Pair }): number {
   return a.A.localeCompare(b.A) || a.B.localeCompare(b.B);
 }
 
-function upsertRows<T extends { id: string }>(rows: T[], additions: T[]): T[] {
+function upsertRows<T extends { id: string }>({ rows, additions }: { rows: T[]; additions: T[] }): T[] {
   const byId = new Map(rows.map((r) => [r.id, r]));
   for (const row of additions) byId.set(row.id, { ...byId.get(row.id), ...row });
   return [...byId.values()];
 }
 
-function mergePairs(existing: Pair[], additions: Pair[]): Pair[] {
+function mergePairs({ existing, additions }: { existing: Pair[]; additions: Pair[] }): Pair[] {
   const seen = new Set(existing.map((p) => `${p.A}|${p.B}`));
   const merged = [...existing];
   for (const p of additions) {
@@ -103,9 +103,9 @@ export function computeSeedState(): SeedState {
   });
   const csfRequirementIds = new Set(requirementUpdates.keys());
 
-  const controls = upsertRows(
-    readJsonArray<ControlTemplate>(FILES.controls),
-    crosswalk.newControls.map((c) => ({
+  const controls = upsertRows({
+    rows: readJsonArray<ControlTemplate>(FILES.controls),
+    additions: crosswalk.newControls.map((c) => ({
       id: c.id,
       name: c.name,
       description: c.description,
@@ -113,10 +113,10 @@ export function computeSeedState(): SeedState {
       updatedAt: SEED_TIMESTAMP,
       documentTypes: [],
     })),
-  );
-  const tasks = upsertRows(
-    readJsonArray<TaskTemplate>(FILES.tasks),
-    crosswalk.newTasks.map((t) => ({
+  });
+  const tasks = upsertRows({
+    rows: readJsonArray<TaskTemplate>(FILES.tasks),
+    additions: crosswalk.newTasks.map((t) => ({
       id: t.id,
       name: t.name,
       description: t.description,
@@ -126,23 +126,23 @@ export function computeSeedState(): SeedState {
       updatedAt: SEED_TIMESTAMP,
       automationStatus: 'MANUAL',
     })),
-  );
+  });
 
   const existingPairs = readJsonArray<Pair>(FILES.controlRequirementPairs);
   const nonCsf = existingPairs.filter((p) => !csfRequirementIds.has(p.B));
   const csfPairs = crosswalk.subcategories
     .flatMap((s) => s.controls.map((c) => ({ A: c.id, B: s.requirementId })))
-    .sort(byPair);
+    .sort((a, b) => byPair({ a, b }));
   const controlRequirementPairs = [...nonCsf, ...csfPairs];
 
-  const controlPolicyPairs = mergePairs(
-    readJsonArray<Pair>(FILES.controlPolicyPairs),
-    crosswalk.newControls.flatMap((c) => c.policies.map((p) => ({ A: c.id, B: p.id }))),
-  );
-  const controlTaskPairs = mergePairs(
-    readJsonArray<Pair>(FILES.controlTaskPairs),
-    crosswalk.newControls.flatMap((c) => c.tasks.map((t) => ({ A: c.id, B: t.id }))),
-  );
+  const controlPolicyPairs = mergePairs({
+    existing: readJsonArray<Pair>(FILES.controlPolicyPairs),
+    additions: crosswalk.newControls.flatMap((c) => c.policies.map((p) => ({ A: c.id, B: p.id }))),
+  });
+  const controlTaskPairs = mergePairs({
+    existing: readJsonArray<Pair>(FILES.controlTaskPairs),
+    additions: crosswalk.newControls.flatMap((c) => c.tasks.map((t) => ({ A: c.id, B: t.id }))),
+  });
 
   return { frameworks, requirements, controls, tasks, controlRequirementPairs, controlPolicyPairs, controlTaskPairs };
 }
