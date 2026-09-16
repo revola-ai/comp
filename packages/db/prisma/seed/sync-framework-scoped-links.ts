@@ -81,8 +81,6 @@ export async function syncCsfCrosswalk({ prisma }: { prisma: PrismaClient }): Pr
 
   const stalePolicyIds = existingPolicies.filter((l) => !targetPolicies.has(pairKey({ a: l.controlTemplateId, b: l.policyTemplateId }))).map((l) => l.id);
   const staleTaskIds = existingTasks.filter((l) => !targetTasks.has(pairKey({ a: l.controlTemplateId, b: l.taskTemplateId }))).map((l) => l.id);
-  await prisma.frameworkEditorControlPolicyTemplateLink.deleteMany({ where: { id: { in: stalePolicyIds } } });
-  await prisma.frameworkEditorControlTaskTemplateLink.deleteMany({ where: { id: { in: staleTaskIds } } });
 
   const havePolicies = new Set(existingPolicies.map((l) => pairKey({ a: l.controlTemplateId, b: l.policyTemplateId })));
   const haveTasks = new Set(existingTasks.map((l) => pairKey({ a: l.controlTemplateId, b: l.taskTemplateId })));
@@ -94,8 +92,13 @@ export async function syncCsfCrosswalk({ prisma }: { prisma: PrismaClient }): Pr
     const [controlTemplateId, taskTemplateId] = splitKey(k);
     return { frameworkId: CSF_FRAMEWORK_ID, controlTemplateId, taskTemplateId };
   });
-  await prisma.frameworkEditorControlPolicyTemplateLink.createMany({ data: newPolicies, skipDuplicates: true });
-  await prisma.frameworkEditorControlTaskTemplateLink.createMany({ data: newTasks, skipDuplicates: true });
+  // Delete and insert atomically so a failed insert cannot leave CSF stripped of its links.
+  await prisma.$transaction(async (tx) => {
+    await tx.frameworkEditorControlPolicyTemplateLink.deleteMany({ where: { id: { in: stalePolicyIds } } });
+    await tx.frameworkEditorControlTaskTemplateLink.deleteMany({ where: { id: { in: staleTaskIds } } });
+    await tx.frameworkEditorControlPolicyTemplateLink.createMany({ data: newPolicies, skipDuplicates: true });
+    await tx.frameworkEditorControlTaskTemplateLink.createMany({ data: newTasks, skipDuplicates: true });
+  });
 
   return {
     requirements: crosswalk.subcategories.length,

@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { db } from '../client';
 import { backfillFrameworkVersions } from './backfill-framework-versions';
+import { isScratchDatabaseUrl } from './scratch-db';
 
-const dbUrl = process.env.DATABASE_URL ?? '';
-const isScratchDb = dbUrl.includes('test') && !dbUrl.includes('prod') && !dbUrl.includes('staging');
+const isScratchDb = isScratchDatabaseUrl(process.env.DATABASE_URL);
 
 describe.skipIf(!isScratchDb)('backfillFrameworkVersions', () => {
   beforeEach(async () => {

@@ -197,7 +197,7 @@ Organizations then move to the new version through the existing sync flow (`POST
 
 ### 5.6 Tests
 
-`packages/db` tests use `bun:test` against the local database with the existing destructive-test guard (`backfill-framework-versions.spec.ts` is the pattern).
+`packages/db` tests use `bun:test` against a scratch database only: each database suite skips unless `DATABASE_URL` names a database ending in `_test` on a non-prod, non-staging host (`isScratchDatabaseUrl` in `packages/db/src/scripts/scratch-db.ts`), so the working database `comp` is never touched by tests.
 A `test` script (`bun test src`) is added to `packages/db/package.json` so `turbo test` includes the package.
 
 Static tests (`apply-csf-crosswalk.spec.ts`, no database):

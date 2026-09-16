@@ -113,5 +113,6 @@ CSF 2.0 is defined by `packages/db/prisma/seed/crosswalks/nist-csf-2.0.json` (su
 
 - Change a mapping: edit the crosswalk JSON, run `bun run crosswalk:csf` in `packages/db`, run `bun run db:seed` (the seed reconciles CSF to the file), then publish a new version from the framework editor and sync organizations.
 - Reseeding never deletes instance-level links; links you removed from a control in the app are re-added if the pinned framework version still lists them.
-- `bun run crosswalk:csf:check` fails when the committed seed files differ from the crosswalk; CI runs it through `bun run test`.
+- `bun run crosswalk:csf:check` fails when the committed seed files differ from the crosswalk; the root `bun run test` gate (turbo) runs it. No GitHub workflow runs the test gate yet; `check-types.yml` covers types only.
+- Database test suites in `packages/db` (`*.spec.ts`) run only when `DATABASE_URL` names a database ending in `_test` on a non-prod, non-staging host (`isScratchDatabaseUrl`); they skip otherwise, so they can never touch the working database `comp`.
 - The design and the full per-subcategory rationale are in `docs/specs/2026-09-15-nist-csf-2-crosswalk-design.md`.

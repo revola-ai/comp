@@ -5,9 +5,9 @@ import { db } from '../client';
 import type { FrameworkManifest } from '../framework-manifest';
 import { CSF_FRAMEWORK_ID, loadCrosswalk } from './csf-crosswalk';
 import { backfillInstanceLinksFromManifests } from '../../prisma/seed/instance-links-from-manifests';
+import { isScratchDatabaseUrl } from './scratch-db';
 
-const dbUrl = process.env.DATABASE_URL ?? '';
-const isScratchDb = dbUrl.includes('test') && !dbUrl.includes('prod') && !dbUrl.includes('staging');
+const isScratchDb = isScratchDatabaseUrl(process.env.DATABASE_URL);
 
 // Mirrors csf-seed.spec.ts: the seed takes well over bun's 5s default timeout.
 setDefaultTimeout(180_000);
