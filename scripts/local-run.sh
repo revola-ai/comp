@@ -3,8 +3,11 @@
 #
 # Dev mode (`bun run dev`) keeps Turbopack and tsc --watch resident and needs
 # ~16 GB; this uses `next start` and `node dist/...` and needs ~4 GB. The two
-# Trigger.dev workers still run as `trigger dev` because tasks must reach the
-# local Postgres.
+# Trigger.dev workers still run as `trigger dev` so tasks run on this machine.
+#
+# Local containers (Postgres, MinIO, Redis) are started and stopped only when
+# packages/db/.env points DATABASE_URL at localhost. With shared state (Supabase,
+# Upstash) they are left alone; see docs/self-hosting-local.md, "Shared state".
 #
 #   scripts/local-run.sh build     # compile api + app (rerun after code changes)
 #   scripts/local-run.sh start     # start containers, api, app, trigger workers
@@ -28,6 +31,39 @@ use_node() {
 }
 
 pid_of() { [[ -f "$RUN_DIR/$1.pid" ]] && cat "$RUN_DIR/$1.pid" || true; }
+
+# True when packages/db/.env points DATABASE_URL at a local Postgres.
+uses_local_db() {
+  local host
+  host="$(
+    set -a
+    # shellcheck disable=SC1091
+    source "$ROOT/packages/db/.env" 2>/dev/null
+    set +a
+    printf '%s' "${DATABASE_URL:-}" | sed -E 's#^[a-z]+://([^@]*@)?([^/:?]+).*#\2#'
+  )"
+  case "$host" in localhost|127.0.0.1|::1|"[::1]") return 0 ;; *) return 1 ;; esac
+}
+
+start_containers() {
+  if ! uses_local_db; then
+    echo "== containers: skipped (DATABASE_URL is not local; shared state mode)"
+    return 0
+  fi
+  echo "== containers"
+  ( cd "$ROOT/packages/db" && docker compose up -d 2>&1 | grep -v 'obsolete' || true )
+  ( cd "$ROOT" && docker compose -f docker-compose.local.yml up -d 2>&1 | grep -v 'obsolete' || true )
+}
+
+stop_containers() {
+  if ! uses_local_db; then
+    echo "== containers: left running (shared state mode)"
+    return 0
+  fi
+  echo "== containers"
+  ( cd "$ROOT/packages/db" && docker compose stop 2>&1 | grep -v 'obsolete' || true )
+  ( cd "$ROOT" && docker compose -f docker-compose.local.yml stop 2>&1 | grep -v 'obsolete' || true )
+}
 
 is_running() {
   local pid; pid="$(pid_of "$1")"
@@ -60,6 +96,8 @@ wait_for_url() {
 
 cmd_build() {
   use_node
+  echo "== building packages/db (apps resolve @trycompai/db from its dist)"
+  ( cd "$ROOT/packages/db" && bun run build )
   echo "== building api"
   ( cd "$ROOT/apps/api" && bun run build )
   echo "== building app"
@@ -74,9 +112,7 @@ cmd_start() {
     exit 1
   fi
 
-  echo "== containers"
-  ( cd "$ROOT/packages/db" && docker compose up -d 2>&1 | grep -v 'obsolete' || true )
-  ( cd "$ROOT" && docker compose -f docker-compose.local.yml up -d 2>&1 | grep -v 'obsolete' || true )
+  start_containers
 
   echo "== api"
   spawn api "$ROOT/apps/api" node --enable-source-maps dist/src/main.js
@@ -110,9 +146,7 @@ cmd_stop() {
   sleep 2
   pkill -TERM -f "$ROOT/node_modules/.bin/trigger dev" 2>/dev/null || true
   pkill -TERM -f "next-server" 2>/dev/null || true
-  echo "== containers"
-  ( cd "$ROOT/packages/db" && docker compose stop 2>&1 | grep -v 'obsolete' || true )
-  ( cd "$ROOT" && docker compose -f docker-compose.local.yml stop 2>&1 | grep -v 'obsolete' || true )
+  stop_containers
 }
 
 cmd_status() {
