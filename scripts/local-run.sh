@@ -96,6 +96,8 @@ wait_for_url() {
 
 cmd_build() {
   use_node
+  echo "== building packages/db (apps resolve @trycompai/db from its dist)"
+  ( cd "$ROOT/packages/db" && bun run build )
   echo "== building api"
   ( cd "$ROOT/apps/api" && bun run build )
   echo "== building app"

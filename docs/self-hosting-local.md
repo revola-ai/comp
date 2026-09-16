@@ -118,7 +118,9 @@ Files are copied bucket by bucket with `aws s3 sync --endpoint-url` from MinIO t
 Onboarding a colleague: they clone the fork, run the one-time setup up to `./scripts/local-env-init.sh`, then replace the local values with the shared ones above (share them through a password manager, never in git), download the CA, set `DATABASE_SSL_CA`, and skip the migrate/seed step (the shared database is already migrated).
 Their Google OAuth client must list `http://localhost:3000` and `http://localhost:3333` too, or they use the same client.
 Two people running `trigger dev` against one Trigger.dev project share its dev environment; runs go to whichever session is connected, which is fine while everyone runs the same code.
-Deploying the workers with `trigger deploy` removes that dependency on someone's laptop being up; that deployment must also ship the Supabase CA (extend `apps/api/caBundleExtension.ts`, which today copies only the RDS bundle) and set `DATABASE_SSL_CA` to its path inside the image.
+Deploying the workers with `trigger deploy` removes that dependency on someone's laptop being up, but it does not work for this fork yet: the deploy build (`apps/api/customPrismaExtension.ts`) installs `@trycompai/db` from npm, which is upstream's package and lacks this fork's exports (`resolveSslConfig`, `buildManifestFromFramework`), so deployed tasks would fail at first database access.
+Making it work means vendoring `packages/db/dist` into the worker image (or publishing the fork's package), shipping the Supabase CA alongside the RDS bundle in `apps/api/caBundleExtension.ts`, and setting `DATABASE_SSL_CA` to its path inside the image.
+Until then, run `trigger dev` locally.
 
 Tests keep their guard: `packages/db` database suites only run when `DATABASE_URL` names a database ending in `_test`, so `bun test` never touches the shared database; keep a local Postgres for `comp_test`.
 
