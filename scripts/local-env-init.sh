@@ -46,10 +46,14 @@ write() {
 
 write "$ROOT/packages/db/.env" <<EOF
 DATABASE_URL="$DATABASE_URL"
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
+# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
 EOF
 
 write "$ROOT/apps/framework-editor/.env" <<EOF
 DATABASE_URL="$DATABASE_URL"
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
+# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
 NEXT_PUBLIC_API_URL=$API_URL
 BACKEND_API_URL=$API_URL
 EOF
@@ -64,6 +68,8 @@ NEXT_PUBLIC_APP_URL=$APP_URL
 APP_URL=$APP_URL
 PORTAL_URL=$PORTAL_URL
 DATABASE_URL="$DATABASE_URL"
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
+# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
 SELF_HOSTED=true
 NEXT_PUBLIC_SELF_HOSTED=true
 
@@ -80,8 +86,8 @@ AUTH_GOOGLE_SECRET=FILL_ME
 
 # --- Email (resend.com) ---
 RESEND_API_KEY=FILL_ME
-RESEND_FROM_SYSTEM=Comp <noreply@FILL_ME_DOMAIN>
-RESEND_FROM_DEFAULT=Comp <hello@FILL_ME_DOMAIN>
+RESEND_FROM_SYSTEM="Comp <noreply@FILL_ME_DOMAIN>"
+RESEND_FROM_DEFAULT="Comp <hello@FILL_ME_DOMAIN>"
 
 # --- Background jobs: the "comp-api" Trigger.dev project (ref + dev key) ---
 TRIGGER_PROJECT_REF=FILL_ME
@@ -113,6 +119,8 @@ write "$ROOT/apps/app/.env" <<EOF
 # --- Core ---
 NODE_ENV=development
 DATABASE_URL="$DATABASE_URL"
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
+# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
 BETTER_AUTH_URL=$API_URL
 NEXT_PUBLIC_BETTER_AUTH_URL=$API_URL
 NEXT_PUBLIC_API_URL=$API_URL
@@ -171,6 +179,8 @@ write "$ROOT/apps/portal/.env" <<EOF
 # --- Core ---
 NODE_ENV=development
 DATABASE_URL="$DATABASE_URL"
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
+# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
 BETTER_AUTH_URL=$API_URL
 NEXT_PUBLIC_BETTER_AUTH_URL=$API_URL
 NEXT_PUBLIC_API_URL=$API_URL
