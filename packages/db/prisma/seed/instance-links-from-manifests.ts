@@ -16,9 +16,11 @@ function groupBy<T>({ rows, key }: { rows: T[]; key: (row: T) => string }): Map<
 }
 
 /**
- * Instance-level links for pinned instances: the exact set implied by the pinned manifest
- * (insert missing, delete extra). Unpinned instances are handled by seed.ts's insert-only
- * organization-level fallback.
+ * Instance-level links for pinned instances: insert-only from the pinned manifest; never
+ * deletes. User-authored instance links (custom policies, custom controls, links added from
+ * the framework control page) are preserved. A template link the user removed from a control
+ * is re-added by the next seed run, the same limitation as the unpinned fallback handled by
+ * seed.ts's insert-only organization-level backfill.
  */
 export async function backfillInstanceLinksFromManifests({ prisma }: { prisma: PrismaClient }): Promise<{ instances: number; skippedTemplates: number }> {
   const instances = await prisma.frameworkInstance.findMany({
@@ -61,17 +63,16 @@ export async function backfillInstanceLinksFromManifests({ prisma }: { prisma: P
     }
     skippedTemplates += missingTemplateIds.size;
 
-    await reconcilePolicyLinks({ prisma, instanceId: instance.id, target: targetPolicy });
-    await reconcileTaskLinks({ prisma, instanceId: instance.id, target: targetTask });
-    await reconcileDocumentTypeLinks({ prisma, instanceId: instance.id, target: targetDoc });
+    await insertMissingPolicyLinks({ prisma, instanceId: instance.id, target: targetPolicy });
+    await insertMissingTaskLinks({ prisma, instanceId: instance.id, target: targetTask });
+    await insertMissingDocumentTypeLinks({ prisma, instanceId: instance.id, target: targetDoc });
   }
   return { instances: instances.length, skippedTemplates };
 }
 
-async function reconcilePolicyLinks({ prisma, instanceId, target }: { prisma: PrismaClient; instanceId: string; target: Set<string> }): Promise<void> {
-  const existing = await prisma.frameworkControlPolicyLink.findMany({ where: { frameworkInstanceId: instanceId }, select: { id: true, controlId: true, policyId: true } });
+async function insertMissingPolicyLinks({ prisma, instanceId, target }: { prisma: PrismaClient; instanceId: string; target: Set<string> }): Promise<void> {
+  const existing = await prisma.frameworkControlPolicyLink.findMany({ where: { frameworkInstanceId: instanceId }, select: { controlId: true, policyId: true } });
   const have = new Set(existing.map((l) => pairKey({ a: l.controlId, b: l.policyId })));
-  await prisma.frameworkControlPolicyLink.deleteMany({ where: { id: { in: existing.filter((l) => !target.has(pairKey({ a: l.controlId, b: l.policyId }))).map((l) => l.id) } } });
   await prisma.frameworkControlPolicyLink.createMany({
     data: [...target].filter((k) => !have.has(k)).map((k) => {
       const [controlId, policyId] = splitKey(k);
@@ -81,10 +82,9 @@ async function reconcilePolicyLinks({ prisma, instanceId, target }: { prisma: Pr
   });
 }
 
-async function reconcileTaskLinks({ prisma, instanceId, target }: { prisma: PrismaClient; instanceId: string; target: Set<string> }): Promise<void> {
-  const existing = await prisma.frameworkControlTaskLink.findMany({ where: { frameworkInstanceId: instanceId }, select: { id: true, controlId: true, taskId: true } });
+async function insertMissingTaskLinks({ prisma, instanceId, target }: { prisma: PrismaClient; instanceId: string; target: Set<string> }): Promise<void> {
+  const existing = await prisma.frameworkControlTaskLink.findMany({ where: { frameworkInstanceId: instanceId }, select: { controlId: true, taskId: true } });
   const have = new Set(existing.map((l) => pairKey({ a: l.controlId, b: l.taskId })));
-  await prisma.frameworkControlTaskLink.deleteMany({ where: { id: { in: existing.filter((l) => !target.has(pairKey({ a: l.controlId, b: l.taskId }))).map((l) => l.id) } } });
   await prisma.frameworkControlTaskLink.createMany({
     data: [...target].filter((k) => !have.has(k)).map((k) => {
       const [controlId, taskId] = splitKey(k);
@@ -94,10 +94,9 @@ async function reconcileTaskLinks({ prisma, instanceId, target }: { prisma: Pris
   });
 }
 
-async function reconcileDocumentTypeLinks({ prisma, instanceId, target }: { prisma: PrismaClient; instanceId: string; target: Set<string> }): Promise<void> {
-  const existing = await prisma.frameworkControlDocumentTypeLink.findMany({ where: { frameworkInstanceId: instanceId }, select: { id: true, controlId: true, formType: true } });
+async function insertMissingDocumentTypeLinks({ prisma, instanceId, target }: { prisma: PrismaClient; instanceId: string; target: Set<string> }): Promise<void> {
+  const existing = await prisma.frameworkControlDocumentTypeLink.findMany({ where: { frameworkInstanceId: instanceId }, select: { controlId: true, formType: true } });
   const have = new Set(existing.map((l) => pairKey({ a: l.controlId, b: l.formType })));
-  await prisma.frameworkControlDocumentTypeLink.deleteMany({ where: { id: { in: existing.filter((l) => !target.has(pairKey({ a: l.controlId, b: l.formType }))).map((l) => l.id) } } });
   await prisma.frameworkControlDocumentTypeLink.createMany({
     data: [...target].filter((k) => !have.has(k)).map((k) => {
       const [controlId, formType] = splitKey(k);
