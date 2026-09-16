@@ -112,5 +112,6 @@ The seed ships SOC 2 and NIST CSF 2.0, both visible and mapped to the control li
 CSF 2.0 is defined by `packages/db/prisma/seed/crosswalks/nist-csf-2.0.json` (subcategory to control mapping, new templates, CSF-only policy/task links) and the official core text in `nist-csf-2.0-core.json`.
 
 - Change a mapping: edit the crosswalk JSON, run `bun run crosswalk:csf` in `packages/db`, run `bun run db:seed` (the seed reconciles CSF to the file), then publish a new version from the framework editor and sync organizations.
+- Reseeding never deletes instance-level links; links you removed from a control in the app are re-added if the pinned framework version still lists them.
 - `bun run crosswalk:csf:check` fails when the committed seed files differ from the crosswalk; CI runs it through `bun run test`.
 - The design and the full per-subcategory rationale are in `docs/specs/2026-09-15-nist-csf-2-crosswalk-design.md`.
