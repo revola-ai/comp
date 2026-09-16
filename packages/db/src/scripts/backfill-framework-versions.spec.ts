@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { beforeEach, describe, expect, it } from 'bun:test';
 import { db } from '../client';
 import { backfillFrameworkVersions } from './backfill-framework-versions';
 
@@ -27,7 +27,7 @@ describe.skipIf(!isScratchDb)('backfillFrameworkVersions', () => {
     expect(v1!.manifest).toBeTruthy();
   });
 
-  it('is idempotent — running twice creates no additional versions', async () => {
+  it('is idempotent - running twice creates no additional versions', async () => {
     await backfillFrameworkVersions();
     const after1 = await db.frameworkVersion.count();
     await backfillFrameworkVersions();
@@ -36,9 +36,13 @@ describe.skipIf(!isScratchDb)('backfillFrameworkVersions', () => {
   });
 
   it('backfills FrameworkInstance.currentVersionId', async () => {
-    const instance = await db.frameworkInstance.findFirst({ where: { frameworkId: { not: null } } });
+    const instance = await db.frameworkInstance.findFirst({
+      where: { frameworkId: { not: null } },
+    });
     if (!instance) {
-      console.warn('backfill-framework-versions.spec: no FrameworkInstance in this database; currentVersionId backfill not exercised');
+      console.warn(
+        'backfill-framework-versions.spec: no FrameworkInstance in this database; currentVersionId backfill not exercised',
+      );
       return;
     }
     await db.frameworkInstance.update({

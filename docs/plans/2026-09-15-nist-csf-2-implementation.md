@@ -18,7 +18,7 @@
 - No em dashes in any file.
 - `packages/db` tests use `bun:test` against the local database and must keep the existing destructive-test guard (`DATABASE_URL` must contain `localhost`, `127.0.0.1` or `test`, and not `prod`/`staging`).
 - Database tests never run against the working database `comp`. They run against a scratch database `comp_test` (created in Task 4 step 0) via `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/comp_test`, and skip themselves when `DATABASE_URL` does not contain `test`. The working database is touched only by the rollout in Task 6.
-- Seed JSON files are written with 4-space indentation and no trailing newline, matching the existing files byte-for-byte in format.
+- Seed JSON files are written with 2-space indentation and no trailing newline, matching the existing files byte-for-byte in format.
 - The stack is stopped while implementing: `scripts/local-run.sh stop`; start containers only: `bun docker:up` in `packages/db` (Postgres) when a task needs the database.
 - Ids for new templates are deterministic: prefix + first 24 hex characters of `sha256(name)`, matching the shape of existing ids (`frk_ct_683f42c71eea99f22f9df060`).
 - CSF framework id: `frk_6820090a1653380dd386c5eb`. SOC 2 framework id: `frk_683f377429b8408d1c85f9bd`.
@@ -227,9 +227,9 @@ export function readJsonArray<T>(filePath: string): T[] {
   return parsed as T[];
 }
 
-/** Matches the existing seed files: 4-space indentation, no trailing newline. */
+/** Matches the existing seed files: 2-space indentation, no trailing newline. */
 export function serializeJsonArray(rows: unknown[]): string {
-  return JSON.stringify(rows, null, 4);
+  return JSON.stringify(rows, null, 2);
 }
 
 export function writeJsonArray(filePath: string, rows: unknown[]): void {
@@ -688,7 +688,7 @@ if (require.main === module) {
 }
 ```
 
-File formatting: the existing seed JSON files use 4-space indentation and end without a trailing newline; `serializeJsonArray` reproduces that, so a generator run on already-generated files is byte-for-byte a no-op and `git diff` shows only real changes.
+File formatting: the existing seed JSON files use 2-space indentation and end without a trailing newline; `serializeJsonArray` reproduces that, so a generator run on already-generated files is byte-for-byte a no-op and `git diff` shows only real changes.
 
 - [ ] **Step 5: Add the package scripts**
 

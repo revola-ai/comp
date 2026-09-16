@@ -50,7 +50,11 @@ describe('crosswalk coverage', () => {
 
   it('references controls, policies and tasks that exist with exactly the recorded names', () => {
     const controls = new Map(state.controls.map((c) => [c.id, c]));
-    const policies = new Map(readJsonArray<PolicyTemplate>(path.join(PRIMITIVES_DIR, 'FrameworkEditorPolicyTemplate.json')).map((p) => [p.id, p]));
+    const policies = new Map(
+      readJsonArray<PolicyTemplate>(
+        path.join(PRIMITIVES_DIR, 'FrameworkEditorPolicyTemplate.json'),
+      ).map((p) => [p.id, p]),
+    );
     const tasks = new Map(state.tasks.map((t) => [t.id, t]));
     for (const s of crosswalk.subcategories) {
       for (const ref of s.controls) expect(controls.get(ref.id)?.name).toBe(ref.name);
@@ -78,8 +82,12 @@ describe('crosswalk coverage', () => {
     };
     state.controlPolicyPairs.forEach((p) => add({ map: policyOf, a: p.A, b: p.B }));
     state.controlTaskPairs.forEach((p) => add({ map: taskOf, a: p.A, b: p.B }));
-    crosswalk.csfLinks.policies.forEach((l) => add({ map: policyOf, a: l.controlTemplateId, b: l.policyTemplateId }));
-    crosswalk.csfLinks.tasks.forEach((l) => add({ map: taskOf, a: l.controlTemplateId, b: l.taskTemplateId }));
+    crosswalk.csfLinks.policies.forEach((l) =>
+      add({ map: policyOf, a: l.controlTemplateId, b: l.policyTemplateId }),
+    );
+    crosswalk.csfLinks.tasks.forEach((l) =>
+      add({ map: taskOf, a: l.controlTemplateId, b: l.taskTemplateId }),
+    );
     const used = new Set(crosswalk.subcategories.flatMap((s) => s.controls.map((c) => c.id)));
     for (const id of used) {
       expect(policyOf.get(id)?.size ?? 0).toBeGreaterThan(0);
@@ -91,13 +99,36 @@ describe('crosswalk coverage', () => {
 describe('generated seed files', () => {
   it('committed files equal the generator output (no hand edits)', () => {
     const committed = {
-      frameworks: readJsonArray<Framework>(path.join(PRIMITIVES_DIR, 'FrameworkEditorFramework.json')),
-      requirements: readJsonArray<Requirement>(path.join(PRIMITIVES_DIR, 'FrameworkEditorRequirement.json')),
-      controls: readJsonArray<ControlTemplate>(path.join(PRIMITIVES_DIR, 'FrameworkEditorControlTemplate.json')),
-      tasks: readJsonArray<TaskTemplate>(path.join(PRIMITIVES_DIR, 'FrameworkEditorTaskTemplate.json')),
-      controlRequirementPairs: readJsonArray<Pair>(path.join(RELATIONS_DIR, '_FrameworkEditorControlTemplateToFrameworkEditorRequirement.json')),
-      controlPolicyPairs: readJsonArray<Pair>(path.join(RELATIONS_DIR, '_FrameworkEditorControlTemplateToFrameworkEditorPolicyTemplate.json')),
-      controlTaskPairs: readJsonArray<Pair>(path.join(RELATIONS_DIR, '_FrameworkEditorControlTemplateToFrameworkEditorTaskTemplate.json')),
+      frameworks: readJsonArray<Framework>(
+        path.join(PRIMITIVES_DIR, 'FrameworkEditorFramework.json'),
+      ),
+      requirements: readJsonArray<Requirement>(
+        path.join(PRIMITIVES_DIR, 'FrameworkEditorRequirement.json'),
+      ),
+      controls: readJsonArray<ControlTemplate>(
+        path.join(PRIMITIVES_DIR, 'FrameworkEditorControlTemplate.json'),
+      ),
+      tasks: readJsonArray<TaskTemplate>(
+        path.join(PRIMITIVES_DIR, 'FrameworkEditorTaskTemplate.json'),
+      ),
+      controlRequirementPairs: readJsonArray<Pair>(
+        path.join(
+          RELATIONS_DIR,
+          '_FrameworkEditorControlTemplateToFrameworkEditorRequirement.json',
+        ),
+      ),
+      controlPolicyPairs: readJsonArray<Pair>(
+        path.join(
+          RELATIONS_DIR,
+          '_FrameworkEditorControlTemplateToFrameworkEditorPolicyTemplate.json',
+        ),
+      ),
+      controlTaskPairs: readJsonArray<Pair>(
+        path.join(
+          RELATIONS_DIR,
+          '_FrameworkEditorControlTemplateToFrameworkEditorTaskTemplate.json',
+        ),
+      ),
     };
     expect(committed).toEqual({
       frameworks: state.frameworks,
@@ -112,7 +143,15 @@ describe('generated seed files', () => {
   });
 
   it('keeps the 1453 pre-existing non-CSF requirement links untouched', () => {
-    const committed = JSON.parse(fs.readFileSync(path.join(RELATIONS_DIR, '_FrameworkEditorControlTemplateToFrameworkEditorRequirement.json'), 'utf8')) as Pair[];
+    const committed = JSON.parse(
+      fs.readFileSync(
+        path.join(
+          RELATIONS_DIR,
+          '_FrameworkEditorControlTemplateToFrameworkEditorRequirement.json',
+        ),
+        'utf8',
+      ),
+    ) as Pair[];
     const nonCsfCommitted = committed.filter((p) => !csfIds.has(p.B));
     const nonCsfGenerated = state.controlRequirementPairs.filter((p) => !csfIds.has(p.B));
     expect(nonCsfCommitted).toHaveLength(1453);
@@ -136,15 +175,23 @@ describe('generated seed files', () => {
 
   it('every quoted span in a rationale is an exact substring of a text belonging to a mapped control', () => {
     const controls = new Map(state.controls.map((c) => [c.id, c]));
-    const policies = new Map(readJsonArray<PolicyTemplate>(path.join(PRIMITIVES_DIR, 'FrameworkEditorPolicyTemplate.json')).map((p) => [p.id, p]));
+    const policies = new Map(
+      readJsonArray<PolicyTemplate>(
+        path.join(PRIMITIVES_DIR, 'FrameworkEditorPolicyTemplate.json'),
+      ).map((p) => [p.id, p]),
+    );
     const tasks = new Map(state.tasks.map((t) => [t.id, t]));
     const policyIdsOf = (id: string) => [
       ...state.controlPolicyPairs.filter((p) => p.A === id).map((p) => p.B),
-      ...crosswalk.csfLinks.policies.filter((l) => l.controlTemplateId === id).map((l) => l.policyTemplateId),
+      ...crosswalk.csfLinks.policies
+        .filter((l) => l.controlTemplateId === id)
+        .map((l) => l.policyTemplateId),
     ];
     const taskIdsOf = (id: string) => [
       ...state.controlTaskPairs.filter((p) => p.A === id).map((p) => p.B),
-      ...crosswalk.csfLinks.tasks.filter((l) => l.controlTemplateId === id).map((l) => l.taskTemplateId),
+      ...crosswalk.csfLinks.tasks
+        .filter((l) => l.controlTemplateId === id)
+        .map((l) => l.taskTemplateId),
     ];
     for (const s of crosswalk.subcategories) {
       const texts: string[] = [];

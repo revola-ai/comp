@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { CSF_FRAMEWORK_ID, loadCrosswalk } from '../../src/scripts/csf-crosswalk';
+import { pairKey, splitKey } from './pair-key';
 
 export interface ScopedLinkCounts {
   policies: number;
@@ -39,16 +40,6 @@ export async function syncFrameworkScopedEditorLinks({ prisma }: { prisma: Prism
     ON CONFLICT ("frameworkId", "controlTemplateId", "formType") DO NOTHING
   `);
   return { policies, tasks, documentTypes };
-}
-
-function pairKey({ a, b }: { a: string; b: string }): string {
-  return `${a}|${b}`;
-}
-
-function splitKey(key: string): [string, string] {
-  const [a, b] = key.split('|');
-  if (!a || !b) throw new Error(`Malformed pair key: ${key}`);
-  return [a, b];
 }
 
 /**

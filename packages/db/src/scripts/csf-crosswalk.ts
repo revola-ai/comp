@@ -23,7 +23,10 @@ const subcategorySchema = z.object({
 const coreSchema = z.object({
   source: z.string(),
   functions: z.record(z.string(), z.object({ name: z.string(), text: z.string() })),
-  categories: z.record(z.string(), z.object({ name: z.string(), function: z.string(), text: z.string() })),
+  categories: z.record(
+    z.string(),
+    z.object({ name: z.string(), function: z.string(), text: z.string() }),
+  ),
   subcategories: z.array(subcategorySchema),
 });
 
@@ -77,7 +80,13 @@ export function loadCrosswalk(): Crosswalk {
   return crosswalkSchema.parse(JSON.parse(fs.readFileSync(CROSSWALK_PATH, 'utf8')));
 }
 
-export function mintTemplateId({ prefix, name }: { prefix: 'frk_ct' | 'frk_tt'; name: string }): string {
+export function mintTemplateId({
+  prefix,
+  name,
+}: {
+  prefix: 'frk_ct' | 'frk_tt';
+  name: string;
+}): string {
   const digest = createHash('sha256').update(name).digest('hex').slice(0, 24);
   return `${prefix}_${digest}`;
 }

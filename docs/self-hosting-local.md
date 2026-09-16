@@ -96,5 +96,9 @@ New organizations are auto-approved and the Stripe / booking flow is skipped.
 
 ## Frameworks
 
-The seed ships SOC 2 (visible, 63 requirements, fully mapped to controls) and NIST CSF 2.0 (hidden, 106 subcategories, no control mappings yet).
-Enabling and mapping CSF 2.0 is tracked on the `revola/self-host` branch.
+The seed ships SOC 2 and NIST CSF 2.0, both visible and mapped to the control library.
+CSF 2.0 is defined by `packages/db/prisma/seed/crosswalks/nist-csf-2.0.json` (subcategory to control mapping, new templates, CSF-only policy/task links) and the official core text in `nist-csf-2.0-core.json`.
+
+- Change a mapping: edit the crosswalk JSON, run `bun run crosswalk:csf` in `packages/db`, run `bun run db:seed` (the seed reconciles CSF to the file), then publish a new version from the framework editor and sync organizations.
+- `bun run crosswalk:csf:check` fails when the committed seed files differ from the crosswalk; CI runs it through `bun run test`.
+- The design and the full per-subcategory rationale are in `docs/specs/2026-09-15-nist-csf-2-crosswalk-design.md`.

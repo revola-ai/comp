@@ -192,10 +192,10 @@ async function seedJsonFiles(subDirectory: string) {
 }
 
 // ISMS foundational document templates (CS-437). Mirrors
-// apps/api/src/isms/utils/document-types.ts ISMS_TYPE_DEFINITIONS — that file is
+// apps/api/src/isms/utils/document-types.ts ISMS_TYPE_DEFINITIONS - that file is
 // the single source of truth; this is kept in sync here because the seed (in
 // @trycompai/db) cannot import the API's `@db`-aliased module. Requirement links
-// are NOT seeded — the clause fallback resolves them and links are authored in
+// are NOT seeded - the clause fallback resolves them and links are authored in
 // the editor.
 const ISMS_DOCUMENT_TEMPLATES = [
   {
@@ -245,7 +245,7 @@ const ISMS_DOCUMENT_TEMPLATES = [
     name: 'Risk Assessment Methodology',
     clause: '6.1.2',
     description:
-      'How information-security risks are identified, analysed and evaluated — the scales, risk level matrix, acceptance thresholds and treatment options used (ISO 27001 clause 6.1.2).',
+      'How information-security risks are identified, analysed and evaluated - the scales, risk level matrix, acceptance thresholds and treatment options used (ISO 27001 clause 6.1.2).',
   },
   {
     documentType: 'risk_treatment_plan',
@@ -266,7 +266,7 @@ const ISMS_DOCUMENT_TEMPLATES = [
     name: 'Monitoring, Measurement, Analysis and Evaluation',
     clause: '9.1',
     description:
-      'The metrics the organization monitors — what is measured, how, when, by whom, and who analyses the results (ISO 27001 clause 9.1).',
+      'The metrics the organization monitors - what is measured, how, when, by whom, and who analyses the results (ISO 27001 clause 9.1).',
   },
   {
     documentType: 'internal_audit',
@@ -280,7 +280,7 @@ const ISMS_DOCUMENT_TEMPLATES = [
     name: 'Management Review',
     clause: '9.3',
     description:
-      'The management review procedure and the minutes of each review — inputs considered, outputs, actions arising and chair sign-off (ISO 27001 clause 9.3).',
+      'The management review procedure and the minutes of each review - inputs considered, outputs, actions arising and chair sign-off (ISO 27001 clause 9.3).',
   },
 ] as const;
 

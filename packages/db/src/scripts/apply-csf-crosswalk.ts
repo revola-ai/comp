@@ -41,9 +41,18 @@ const FILES = {
   requirements: path.join(PRIMITIVES_DIR, 'FrameworkEditorRequirement.json'),
   controls: path.join(PRIMITIVES_DIR, 'FrameworkEditorControlTemplate.json'),
   tasks: path.join(PRIMITIVES_DIR, 'FrameworkEditorTaskTemplate.json'),
-  controlRequirementPairs: path.join(RELATIONS_DIR, '_FrameworkEditorControlTemplateToFrameworkEditorRequirement.json'),
-  controlPolicyPairs: path.join(RELATIONS_DIR, '_FrameworkEditorControlTemplateToFrameworkEditorPolicyTemplate.json'),
-  controlTaskPairs: path.join(RELATIONS_DIR, '_FrameworkEditorControlTemplateToFrameworkEditorTaskTemplate.json'),
+  controlRequirementPairs: path.join(
+    RELATIONS_DIR,
+    '_FrameworkEditorControlTemplateToFrameworkEditorRequirement.json',
+  ),
+  controlPolicyPairs: path.join(
+    RELATIONS_DIR,
+    '_FrameworkEditorControlTemplateToFrameworkEditorPolicyTemplate.json',
+  ),
+  controlTaskPairs: path.join(
+    RELATIONS_DIR,
+    '_FrameworkEditorControlTemplateToFrameworkEditorTaskTemplate.json',
+  ),
 } as const;
 
 const SEED_TIMESTAMP = '2026-09-15 00:00:00.000';
@@ -52,7 +61,13 @@ function byPair({ a, b }: { a: Pair; b: Pair }): number {
   return a.A.localeCompare(b.A) || a.B.localeCompare(b.B);
 }
 
-function upsertRows<T extends { id: string }>({ rows, additions }: { rows: T[]; additions: T[] }): T[] {
+function upsertRows<T extends { id: string }>({
+  rows,
+  additions,
+}: {
+  rows: T[];
+  additions: T[];
+}): T[] {
   const byId = new Map(rows.map((r) => [r.id, r]));
   for (const row of additions) byId.set(row.id, { ...byId.get(row.id), ...row });
   return [...byId.values()];
@@ -98,7 +113,8 @@ export function computeSeedState(): SeedState {
   const requirements = readJsonArray<Requirement>(FILES.requirements).map((r) => {
     const update = requirementUpdates.get(r.id);
     if (!update) return r;
-    if (r.frameworkId !== CSF_FRAMEWORK_ID) throw new Error(`Requirement ${r.id} is not a CSF requirement`);
+    if (r.frameworkId !== CSF_FRAMEWORK_ID)
+      throw new Error(`Requirement ${r.id} is not a CSF requirement`);
     return { ...r, ...update };
   });
   const csfRequirementIds = new Set(requirementUpdates.keys());
@@ -144,7 +160,15 @@ export function computeSeedState(): SeedState {
     additions: crosswalk.newControls.flatMap((c) => c.tasks.map((t) => ({ A: c.id, B: t.id }))),
   });
 
-  return { frameworks, requirements, controls, tasks, controlRequirementPairs, controlPolicyPairs, controlTaskPairs };
+  return {
+    frameworks,
+    requirements,
+    controls,
+    tasks,
+    controlRequirementPairs,
+    controlPolicyPairs,
+    controlTaskPairs,
+  };
 }
 
 export interface ApplyResult {
@@ -176,6 +200,9 @@ export function applyCsfCrosswalk({ dryRun }: { dryRun: boolean }): ApplyResult 
 if (require.main === module) {
   const dryRun = process.argv.includes('--check');
   const result = applyCsfCrosswalk({ dryRun });
-  console.log(dryRun ? 'Would change:' : 'Changed:', result.changedFiles.length ? result.changedFiles : '(nothing)');
+  console.log(
+    dryRun ? 'Would change:' : 'Changed:',
+    result.changedFiles.length ? result.changedFiles : '(nothing)',
+  );
   process.exit(dryRun && result.changedFiles.length > 0 ? 1 : 0);
 }

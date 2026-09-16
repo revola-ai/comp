@@ -117,6 +117,7 @@ It does not write scoped-link primitives; the scoped links are applied by the se
 ### 5.3 Seed, manifest builder and backfill changes
 
 One manifest builder.
+The API's `@db` alias is its own generated Prisma client, so the shared builder is a pure function over a query result (`buildManifestFromFramework(framework)`) with the query shape exported as `manifestFrameworkQuery(frameworkId)`, and each side runs the query with its own client.
 `buildManifestForFramework` and the `FrameworkManifest` types move from `apps/api/src/framework-editor-versions/` and `apps/api/src/frameworks/framework-versioning/manifest.types.ts` into `packages/db/src/framework-manifest/` and are re-exported from `@trycompai/db`; the API imports them from there.
 The move is not purely mechanical: the current builder imports `NotFoundException` from `@nestjs/common` and the client through the API's `@db` alias. In `packages/db` it uses the package's own client import and returns `null` for an unknown framework; the API wrapper translates `null` into `NotFoundException`.
 The shared builder sorts every array it emits (requirement ids, controls, policy ids, task ids, document types, policies, tasks) by id, so two builds of the same state are deep-equal; the current builder orders only requirements.

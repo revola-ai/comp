@@ -38,7 +38,7 @@ export interface ManifestPolicy {
   id: string; // frk_pt_*
   name: string;
   description: string | null;
-  content: unknown; // TipTap JSON — opaque here
+  content: unknown; // TipTap JSON - opaque here
   frequency: string | null;
   department: string | null;
 }

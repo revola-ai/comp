@@ -32,7 +32,7 @@ export async function backfillFrameworkVersions(): Promise<BackfillResult> {
       versionsCreated += 1;
     } catch (err: unknown) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        // Raced with another backfill run — already created. Not counted.
+        // Raced with another backfill run - already created. Not counted.
       } else {
         throw err;
       }

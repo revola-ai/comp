@@ -1,18 +1,9 @@
 import { EvidenceFormType, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import type { FrameworkManifest } from '../../src/framework-manifest';
+import { pairKey, splitKey } from './pair-key';
 
 const formTypeSchema = z.nativeEnum(EvidenceFormType);
-
-function pairKey({ a, b }: { a: string; b: string }): string {
-  return `${a}|${b}`;
-}
-
-function splitKey(key: string): [string, string] {
-  const [a, b] = key.split('|');
-  if (!a || !b) throw new Error(`Malformed pair key: ${key}`);
-  return [a, b];
-}
 
 function groupBy<T>({ rows, key }: { rows: T[]; key: (row: T) => string }): Map<string, T[]> {
   const map = new Map<string, T[]>();
@@ -50,23 +41,25 @@ export async function backfillInstanceLinksFromManifests({ prisma }: { prisma: P
     const targetPolicy = new Set<string>();
     const targetTask = new Set<string>();
     const targetDoc = new Set<string>();
+    const missingTemplateIds = new Set<string>();
     for (const mc of manifest.controls) {
       const orgControls = controlsByTemplate.get(mc.id) ?? [];
-      if (orgControls.length === 0) skippedTemplates += 1;
+      if (orgControls.length === 0) missingTemplateIds.add(mc.id);
       for (const control of orgControls) {
         for (const pid of mc.policyIds) {
           const rows = policiesByTemplate.get(pid) ?? [];
-          if (rows.length === 0) skippedTemplates += 1;
+          if (rows.length === 0) missingTemplateIds.add(pid);
           rows.forEach((p) => targetPolicy.add(pairKey({ a: control.id, b: p.id })));
         }
         for (const tid of mc.taskIds) {
           const rows = tasksByTemplate.get(tid) ?? [];
-          if (rows.length === 0) skippedTemplates += 1;
+          if (rows.length === 0) missingTemplateIds.add(tid);
           rows.forEach((t) => targetTask.add(pairKey({ a: control.id, b: t.id })));
         }
         (mc.documentTypes ?? []).forEach((formType) => targetDoc.add(pairKey({ a: control.id, b: formType })));
       }
     }
+    skippedTemplates += missingTemplateIds.size;
 
     await reconcilePolicyLinks({ prisma, instanceId: instance.id, target: targetPolicy });
     await reconcileTaskLinks({ prisma, instanceId: instance.id, target: targetTask });

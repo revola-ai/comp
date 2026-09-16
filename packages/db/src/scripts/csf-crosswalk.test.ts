@@ -2,7 +2,15 @@ import { describe, expect, it } from 'bun:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadCrosswalk, loadCsfCore, mintTemplateId, CSF_FRAMEWORK_ID, readJsonArray, writeJsonArray, serializeJsonArray } from './csf-crosswalk';
+import {
+  CSF_FRAMEWORK_ID,
+  loadCrosswalk,
+  loadCsfCore,
+  mintTemplateId,
+  readJsonArray,
+  serializeJsonArray,
+  writeJsonArray,
+} from './csf-crosswalk';
 
 describe('csf-crosswalk loaders', () => {
   it('loads the official core with 106 subcategories in six functions', () => {
@@ -31,7 +39,10 @@ describe('csf-crosswalk loaders', () => {
   it('round-trips JSON arrays with correct formatting via writeJsonArray and readJsonArray', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csf-'));
     const filePath = path.join(tmpDir, 'test.json');
-    const testData = [{ id: 'test-1', name: 'Test Item' }, { id: 'test-2', name: 'Another Item' }];
+    const testData = [
+      { id: 'test-1', name: 'Test Item' },
+      { id: 'test-2', name: 'Another Item' },
+    ];
     try {
       writeJsonArray({ filePath, rows: testData });
       const readData = readJsonArray<{ id: string; name: string }>(filePath);
