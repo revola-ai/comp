@@ -3,6 +3,8 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { frameworkEditorModelSchemas } from './frameworkEditorSchemas';
+import { syncCsfCrosswalk, syncFrameworkScopedEditorLinks } from './sync-framework-scoped-links';
+import { backfillInstanceLinksFromManifests } from './instance-links-from-manifests';
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
@@ -307,8 +309,8 @@ async function seedIsmsDocumentTemplates() {
   );
 }
 
-async function backfillFrameworkScopedLinks() {
-  const fis = await prisma.frameworkInstance.findMany({ select: { id: true } });
+async function backfillUnpinnedInstanceLinks() {
+  const fis = await prisma.frameworkInstance.findMany({ where: { currentVersionId: null }, select: { id: true } });
   for (const fi of fis) {
     await prisma.$executeRawUnsafe(`
       INSERT INTO "FrameworkControlPolicyLink" ("frameworkInstanceId", "controlId", "policyId")
@@ -362,6 +364,10 @@ async function main() {
     await seedJsonFiles('primitives');
     await seedIsmsDocumentTemplates();
     await seedJsonFiles('relations');
+
+    console.log('Scoped editor links:', await syncFrameworkScopedEditorLinks({ prisma }));
+    console.log('CSF crosswalk sync:', await syncCsfCrosswalk({ prisma }));
+
     // Build v1.0.0 FrameworkVersion snapshots for any framework without one.
     // On a fresh `migrate reset`, the backfill data migration runs against empty
     // tables and is a no-op; seed then creates the framework rows. Without this
@@ -369,11 +375,11 @@ async function main() {
     const { backfillFrameworkVersions } = await import(
       '../../src/scripts/backfill-framework-versions'
     );
-    const result = await backfillFrameworkVersions();
-    console.log('FrameworkVersion backfill:', result);
+    console.log('FrameworkVersion backfill:', await backfillFrameworkVersions());
 
-    await backfillFrameworkScopedLinks();
-    console.log('Framework-scoped link backfill complete.');
+    console.log('Instance links from manifests:', await backfillInstanceLinksFromManifests({ prisma }));
+    await backfillUnpinnedInstanceLinks();
+    console.log('Unpinned instance link backfill complete.');
 
     await prisma.$disconnect();
     console.log('Seeding completed successfully for primitives and relations.');
