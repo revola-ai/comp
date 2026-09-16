@@ -10,8 +10,8 @@ import { asSchema, generateObject, JSONParseError, NoObjectGeneratedError } from
 export type GoogleModelRole = 'onboarding' | 'policyUpdate' | 'rerank';
 
 export const DEFAULT_GOOGLE_MODEL_IDS: Record<GoogleModelRole, string> = {
-  onboarding: 'gemini-3.5-flash',
-  policyUpdate: 'gemini-3.5-flash',
+  onboarding: 'gemini-3.8-flash',
+  policyUpdate: 'gemini-3.8-flash',
   rerank: 'gemini-flash-lite-latest',
 };
 

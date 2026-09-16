@@ -99,7 +99,7 @@ describe('generateObjectStrict', () => {
     const provider = createGoogleGenerativeAI({ apiKey: 'test-key', fetch: fetchImpl });
 
     const result = await generateObjectStrict({
-      model: provider('gemini-3.5-flash'),
+      model: provider('gemini-3.8-flash'),
       schema: fiveSentences,
       system: 'You write sentences.',
       prompt: 'Write five sentences.',
@@ -108,7 +108,7 @@ describe('generateObjectStrict', () => {
     expect(result.object.sentences).toHaveLength(5);
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toContain('generativelanguage.googleapis.com');
-    expect(calls[0].url).toContain('models/gemini-3.5-flash:generateContent');
+    expect(calls[0].url).toContain('models/gemini-3.8-flash:generateContent');
     const generationConfig = calls[0].body.generationConfig as Record<string, unknown>;
     expect(generationConfig.responseMimeType).toBe('application/json');
     expect(generationConfig.responseSchema).toBeDefined();
@@ -119,7 +119,7 @@ describe('generateObjectStrict', () => {
     const provider = createGoogleGenerativeAI({ apiKey: 'test-key', fetch: fetchImpl });
 
     const result = await generateObjectStrict({
-      model: provider('gemini-3.5-flash'),
+      model: provider('gemini-3.8-flash'),
       schema: fiveSentences,
       prompt: 'Write five sentences.',
     });
@@ -139,7 +139,7 @@ describe('generateObjectStrict', () => {
     const provider = createGoogleGenerativeAI({ apiKey: 'test-key', fetch: fetchImpl });
 
     const result = await generateObjectStrict({
-      model: provider('gemini-3.5-flash'),
+      model: provider('gemini-3.8-flash'),
       schema: fiveSentences,
       prompt: 'Write five sentences.',
     });
@@ -160,7 +160,7 @@ describe('generateObjectStrict', () => {
 
     await expect(
       generateObjectStrict({
-        model: provider('gemini-3.5-flash'),
+        model: provider('gemini-3.8-flash'),
         schema: fiveSentences,
         prompt: 'Write five sentences.',
       }),
@@ -174,7 +174,7 @@ describe('generateObjectStrict', () => {
 
     await expect(
       generateObjectStrict({
-        model: provider('gemini-3.5-flash'),
+        model: provider('gemini-3.8-flash'),
         schema: fiveSentences,
         prompt: 'Write five sentences.',
         maxValidationAttempts: 1,
@@ -189,7 +189,7 @@ describe('generateObjectStrict', () => {
 
     await expect(
       generateObjectStrict({
-        model: provider('gemini-3.5-flash'),
+        model: provider('gemini-3.8-flash'),
         schema: fiveSentences,
         prompt: 'Write five sentences.',
         maxValidationAttempts: Number.NaN,
@@ -207,7 +207,7 @@ describe('generateObjectStrict', () => {
 
     await expect(
       generateObjectStrict({
-        model: provider('gemini-3.5-flash'),
+        model: provider('gemini-3.8-flash'),
         schema: fiveSentences,
         prompt: 'Write five sentences.',
       }),
@@ -221,7 +221,7 @@ describe('generateObjectStrict', () => {
 
     await expect(
       generateObjectStrict({
-        model: provider('gemini-3.5-flash'),
+        model: provider('gemini-3.8-flash'),
         schema: fiveSentences,
         prompt: 'Write five sentences.',
         maxRetries: 0,
