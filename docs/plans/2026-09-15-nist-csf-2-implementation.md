@@ -17,7 +17,8 @@
 - Max 300 lines per file; no `as any`; no `@ts-ignore`; zod for runtime validation; early returns; named parameters for functions with 2+ arguments.
 - No em dashes in any file.
 - `packages/db` tests use `bun:test` against the local database and must keep the existing destructive-test guard (`DATABASE_URL` must contain `localhost`, `127.0.0.1` or `test`, and not `prod`/`staging`).
-- Database tests run against this machine's seeded database (`postgresql://postgres:postgres@127.0.0.1:5432/comp`); they must be idempotent and must not delete the organization `org_6aa9b0797c69fd27a4fc05ad` or its SOC 2 instance.
+- Database tests never run against the working database `comp`. They run against a scratch database `comp_test` (created in Task 4 step 0) via `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/comp_test`, and skip themselves when `DATABASE_URL` does not contain `test`. The working database is touched only by the rollout in Task 6.
+- Seed JSON files are written with 4-space indentation and no trailing newline, matching the existing files byte-for-byte in format.
 - The stack is stopped while implementing: `scripts/local-run.sh stop`; start containers only: `bun docker:up` in `packages/db` (Postgres) when a task needs the database.
 - Ids for new templates are deterministic: prefix + first 24 hex characters of `sha256(name)`, matching the shape of existing ids (`frk_ct_683f42c71eea99f22f9df060`).
 - CSF framework id: `frk_6820090a1653380dd386c5eb`. SOC 2 framework id: `frk_683f377429b8408d1c85f9bd`.
@@ -70,7 +71,7 @@ Modified:
 
 **Interfaces:**
 - Consumes: `.local/sources/csf-2.0-core.json` (parsed NIST export, produced during design) and `.local/csf-crosswalk-source.py` (authoring source, validated by `.local/gen-csf-spec.py`).
-- Produces: `loadCrosswalk(): Crosswalk`, `loadCsfCore(): CsfCore`, `CROSSWALK_PATH`, `CORE_PATH`, `CSF_FRAMEWORK_ID`, `mintTemplateId({ prefix, name })`, and the `Crosswalk` type below.
+- Produces: `loadCrosswalk(): Crosswalk`, `loadCsfCore(): CsfCore`, `CROSSWALK_PATH`, `CORE_PATH`, `PRIMITIVES_DIR`, `RELATIONS_DIR`, `CSF_FRAMEWORK_ID`, `mintTemplateId({ prefix, name })`, `readJsonArray`, `writeJsonArray`, `serializeJsonArray`, and the `Crosswalk` type below.
 
 - [ ] **Step 1: Copy the parsed NIST core into the repo**
 
@@ -85,7 +86,7 @@ out = {
   'categories': d['categories'],
   'subcategories': [{k: s[k] for k in ('id', 'category', 'function', 'text', 'sp800_53', 'iso27001')} for s in d['subcategories']],
 }
-json.dump(out, open('packages/db/prisma/seed/crosswalks/nist-csf-2.0-core.json', 'w'), indent=2, ensure_ascii=False)
+json.dump(out, open('packages/db/prisma/seed/crosswalks/nist-csf-2.0-core.json', 'w'), indent=4, ensure_ascii=False)
 print(len(out['subcategories']), 'subcategories written')
 PY
 ```
@@ -226,8 +227,13 @@ export function readJsonArray<T>(filePath: string): T[] {
   return parsed as T[];
 }
 
+/** Matches the existing seed files: 4-space indentation, no trailing newline. */
+export function serializeJsonArray(rows: unknown[]): string {
+  return JSON.stringify(rows, null, 4);
+}
+
 export function writeJsonArray(filePath: string, rows: unknown[]): void {
-  fs.writeFileSync(filePath, `${JSON.stringify(rows, null, 2)}\n`);
+  fs.writeFileSync(filePath, serializeJsonArray(rows));
 }
 ```
 
@@ -273,7 +279,7 @@ out = {
     'tasks': [{'controlTemplateId': ctrl_id[k], 'taskTemplateId': task_ref(t)['id']} for k, add in src.CSF_LINKS.items() for t in add['tasks']],
   },
 }
-json.dump(out, open('packages/db/prisma/seed/crosswalks/nist-csf-2.0.json', 'w'), indent=2, ensure_ascii=False)
+json.dump(out, open('packages/db/prisma/seed/crosswalks/nist-csf-2.0.json', 'w'), indent=4, ensure_ascii=False)
 print(len(out['subcategories']), 'subcategories,', len(out['newControls']), 'new controls,', len(out['newTasks']), 'new tasks,', len(out['csfLinks']['policies']) + len(out['csfLinks']['tasks']), 'csf links')
 PY
 python3 .local/gen-csf-spec.py && python3 .local/emit-crosswalk-json.py
@@ -431,11 +437,13 @@ describe('generated seed files', () => {
     });
   });
 
-  it('does not touch relation rows of other frameworks', () => {
-    const original = JSON.parse(fs.readFileSync(path.join(RELATIONS_DIR, '_FrameworkEditorControlTemplateToFrameworkEditorRequirement.json'), 'utf8')) as Pair[];
-    const nonCsfBefore = original.filter((p) => !csfIds.has(p.B));
-    const nonCsfAfter = state.controlRequirementPairs.filter((p) => !csfIds.has(p.B));
-    expect(nonCsfAfter).toEqual(nonCsfBefore);
+  it('keeps the 1453 pre-existing non-CSF requirement links untouched', () => {
+    const committed = JSON.parse(fs.readFileSync(path.join(RELATIONS_DIR, '_FrameworkEditorControlTemplateToFrameworkEditorRequirement.json'), 'utf8')) as Pair[];
+    const nonCsfCommitted = committed.filter((p) => !csfIds.has(p.B));
+    const nonCsfGenerated = state.controlRequirementPairs.filter((p) => !csfIds.has(p.B));
+    expect(nonCsfCommitted).toHaveLength(1453);
+    expect(nonCsfGenerated).toEqual(nonCsfCommitted);
+    expect(state.controlRequirementPairs.length - nonCsfGenerated.length).toBe(172);
   });
 
   it('writes NIST text, category name, Function name and order into the 106 rows', () => {
@@ -497,6 +505,7 @@ Expected: FAIL, cannot resolve `./apply-csf-crosswalk`.
 `packages/db/src/scripts/apply-csf-crosswalk.ts`:
 
 ```ts
+import fs from 'node:fs';
 import path from 'node:path';
 import {
   CSF_FRAMEWORK_ID,
@@ -505,6 +514,7 @@ import {
   loadCrosswalk,
   loadCsfCore,
   readJsonArray,
+  serializeJsonArray,
   writeJsonArray,
 } from './csf-crosswalk';
 
@@ -661,9 +671,9 @@ export function applyCsfCrosswalk({ dryRun }: { dryRun: boolean }): ApplyResult 
   ];
   const changedFiles: string[] = [];
   for (const [filePath, rows] of outputs) {
-    const next = `${JSON.stringify(rows, null, 2)}\n`;
-    const current = readJsonArray<unknown>(filePath);
-    if (`${JSON.stringify(current, null, 2)}\n` === next) continue;
+    const next = serializeJsonArray(rows);
+    const current = fs.readFileSync(filePath, 'utf8');
+    if (current === next) continue;
     changedFiles.push(filePath);
     if (!dryRun) writeJsonArray(filePath, rows);
   }
@@ -678,7 +688,7 @@ if (require.main === module) {
 }
 ```
 
-Note on file formatting: the existing seed JSON files use 2-space indentation; confirm with `head -c 200 packages/db/prisma/seed/primitives/FrameworkEditorFramework.json` before running. If they differ, adjust `JSON.stringify(rows, null, 2)` to match so the "no hand edits" test compares like with like.
+File formatting: the existing seed JSON files use 4-space indentation and end without a trailing newline; `serializeJsonArray` reproduces that, so a generator run on already-generated files is byte-for-byte a no-op and `git diff` shows only real changes.
 
 - [ ] **Step 5: Add the package scripts**
 
@@ -1078,10 +1088,12 @@ export interface BackfillResult {
 
 3. Replace `const manifest = buildManifestFromFramework(framework);` (existing call to the local function) so it now calls the imported function; delete the local `buildManifestFromFramework` and `dedupeById` functions (lines ~100-175).
 
-- [ ] **Step 9: Typecheck and run the existing backfill spec**
+- [ ] **Step 9: Typecheck (do not run the backfill spec here)**
 
-Run: `cd packages/db && bun run check-types && bun docker:up && bun test src/scripts/backfill-framework-versions.spec.ts`
-Expected: typecheck clean; spec passes. (The spec clears and recreates versions on the local database, then Task 6's rollout recreates the state; that is acceptable because the CSF rollout deletes and recreates the CSF version anyway. Do not run this spec against any database you cannot reseed.)
+Run: `cd packages/db && bun run check-types`
+Expected: clean.
+
+`backfill-framework-versions.spec.ts` deletes every `FrameworkVersion` and unpins every instance before recreating `1.0.0`. With the new builder that reads framework-scoped links, running it now, while those tables are still empty, would recreate SOC 2's manifest with no policy or task ids and re-pin the organization's instance to it. It runs in Task 4 against the scratch database only.
 
 - [ ] **Step 10: Commit**
 
@@ -1103,9 +1115,29 @@ git commit -m "refactor(db): share one manifest builder between the API and the 
 - Consumes: `loadCrosswalk`, `CSF_FRAMEWORK_ID` (Task 1); `manifestFrameworkQuery`, `buildManifestFromFramework`, `FrameworkManifest` (Task 3).
 - Produces: `syncFrameworkScopedEditorLinks({ prisma })`, `syncCsfCrosswalk({ prisma })`, `backfillInstanceLinksFromManifests({ prisma })`, each returning a small count object described in the code.
 
+- [ ] **Step 0: Create the scratch database and tighten the destructive-test guard**
+
+```bash
+PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d postgres -c 'create database comp_test;'
+cd packages/db && DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/comp_test bunx prisma migrate deploy
+```
+
+Expected: `All migrations have been successfully applied.` (`prisma.config.ts` loads `.env` through `dotenv/config`, which does not override a variable already set in the environment, so the explicit `DATABASE_URL` wins.)
+
+In `packages/db/src/scripts/backfill-framework-versions.spec.ts`, replace the guard block (the `if (...) { throw new Error(...) }` at the top) with a skip so `bun run test` against the working database never reaches its `deleteMany` calls:
+
+```ts
+const dbUrl = process.env.DATABASE_URL ?? '';
+const isScratchDb = dbUrl.includes('test') && !dbUrl.includes('prod') && !dbUrl.includes('staging');
+
+describe.skipIf(!isScratchDb)('backfillFrameworkVersions', () => {
+```
+
+(keep the body of the describe unchanged, and add `skipIf` usage: `import { beforeEach, describe, expect, it } from 'bun:test';` already provides `describe.skipIf`). Run `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/comp_test bun test src/scripts/backfill-framework-versions.spec.ts` after the seed has run once against the scratch database (step 5) and confirm it passes there; run `bun test src/scripts/backfill-framework-versions.spec.ts` with the default `.env` and confirm it reports the suite as skipped.
+
 - [ ] **Step 1: Write the failing database tests**
 
-`packages/db/src/scripts/csf-seed.spec.ts`:
+`packages/db/src/scripts/csf-seed.spec.ts` (the guard skips the suite unless `DATABASE_URL` contains `test`):
 
 ```ts
 import { beforeAll, describe, expect, it } from 'bun:test';
@@ -1116,13 +1148,7 @@ import { buildManifestFromFramework, manifestFrameworkQuery, type FrameworkManif
 import { CSF_FRAMEWORK_ID, loadCrosswalk } from './csf-crosswalk';
 
 const dbUrl = process.env.DATABASE_URL ?? '';
-if (
-  dbUrl.includes('prod') ||
-  dbUrl.includes('staging') ||
-  (!dbUrl.includes('test') && !dbUrl.includes('localhost') && !dbUrl.includes('127.0.0.1'))
-) {
-  throw new Error(`Refusing to run destructive tests. DATABASE_URL must target a local/test DB; got: ${dbUrl}`);
-}
+const isScratchDb = dbUrl.includes('test') && !dbUrl.includes('prod') && !dbUrl.includes('staging');
 
 const SOC2_FRAMEWORK_ID = 'frk_683f377429b8408d1c85f9bd';
 const SEED = path.resolve(__dirname, '..', '..', 'prisma', 'seed', 'seed.ts');
@@ -1150,7 +1176,7 @@ async function requirementControlPairs(frameworkId: string) {
   return rows.flatMap((r) => r.controlTemplates.map((c) => `${r.id}|${c.id}`)).sort();
 }
 
-describe('CSF seed', () => {
+describe.skipIf(!isScratchDb)('CSF seed', () => {
   beforeAll(() => {
     runSeed();
   });
@@ -1227,35 +1253,14 @@ describe('CSF seed', () => {
     expect(await requirementControlPairs(SOC2_FRAMEWORK_ID)).toEqual(soc2PairsBefore);
   });
 
-  it('12: pinned instances get exactly the links their manifest implies', async () => {
-    const instances = await db.frameworkInstance.findMany({
-      where: { currentVersionId: { not: null } },
-      select: { id: true, organizationId: true, currentVersion: { select: { manifest: true } } },
-    });
-    for (const instance of instances) {
-      const manifest = instance.currentVersion!.manifest as unknown as FrameworkManifest;
-      const controls = await db.control.findMany({ where: { organizationId: instance.organizationId }, select: { id: true, controlTemplateId: true } });
-      const tasks = await db.task.findMany({ where: { organizationId: instance.organizationId }, select: { id: true, taskTemplateId: true } });
-      const expected = new Set<string>();
-      for (const mc of manifest.controls) {
-        for (const control of controls.filter((c) => c.controlTemplateId === mc.id)) {
-          for (const task of tasks.filter((t) => t.taskTemplateId && mc.taskIds.includes(t.taskTemplateId))) {
-            expected.add(`${control.id}|${task.id}`);
-          }
-        }
-      }
-      const actual = await db.frameworkControlTaskLink.findMany({ where: { frameworkInstanceId: instance.id }, select: { controlId: true, taskId: true } });
-      expect(new Set(actual.map((l) => `${l.controlId}|${l.taskId}`))).toEqual(expected);
-    }
-  });
 });
 ```
 
-Test 10 relies on the fact that "Security Incident Management" (`frk_ct_683f47cc2faa426603d6bee8`) is mapped by many CSF subcategories and that "Asset Inventory" (`frk_ct_683f42c71eea99f22f9df060`) is not mapped to the victim requirement; both hold in the committed crosswalk (check with `grep -c 683f47cc2faa426603d6bee8 packages/db/prisma/seed/crosswalks/nist-csf-2.0.json`, expected 23).
+Spec test 12 (instance isolation) needs an organization with pinned instances, which the scratch database does not have; it is run as a read-only acceptance query against the working database in Task 6 step 4b. Test 10 relies on the fact that "Security Incident Management" (`frk_ct_683f47cc2faa426603d6bee8`) is mapped by many CSF subcategories and that "Asset Inventory" (`frk_ct_683f42c71eea99f22f9df060`) is not mapped to the victim requirement; both hold in the committed crosswalk (check with `grep -c 683f47cc2faa426603d6bee8 packages/db/prisma/seed/crosswalks/nist-csf-2.0.json`, expected 23).
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd packages/db && bun test src/scripts/csf-seed.spec.ts`
+Run: `cd packages/db && DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/comp_test bun test src/scripts/csf-seed.spec.ts`
 Expected: FAIL. Test 8 fails because the stored CSF manifest has 0 controls (the seed has not yet been changed); tests 10-12 fail on scoped links being empty.
 
 - [ ] **Step 3: Write the seed step module**
@@ -1306,7 +1311,7 @@ export async function syncFrameworkScopedEditorLinks({ prisma }: { prisma: Prism
   return { policies, tasks, documentTypes };
 }
 
-function pairKey(a: string, b: string): string {
+function pairKey({ a, b }: { a: string; b: string }): string {
   return `${a}|${b}`;
 }
 
@@ -1338,11 +1343,11 @@ export async function syncCsfCrosswalk({ prisma }: { prisma: PrismaClient }): Pr
   const targetPolicies = new Set<string>();
   const targetTasks = new Set<string>();
   for (const control of controls) {
-    control.policyTemplates.forEach((p) => targetPolicies.add(pairKey(control.id, p.id)));
-    control.taskTemplates.forEach((t) => targetTasks.add(pairKey(control.id, t.id)));
+    control.policyTemplates.forEach((p) => targetPolicies.add(pairKey({ a: control.id, b: p.id })));
+    control.taskTemplates.forEach((t) => targetTasks.add(pairKey({ a: control.id, b: t.id })));
   }
-  crosswalk.csfLinks.policies.forEach((l) => targetPolicies.add(pairKey(l.controlTemplateId, l.policyTemplateId)));
-  crosswalk.csfLinks.tasks.forEach((l) => targetTasks.add(pairKey(l.controlTemplateId, l.taskTemplateId)));
+  crosswalk.csfLinks.policies.forEach((l) => targetPolicies.add(pairKey({ a: l.controlTemplateId, b: l.policyTemplateId })));
+  crosswalk.csfLinks.tasks.forEach((l) => targetTasks.add(pairKey({ a: l.controlTemplateId, b: l.taskTemplateId })));
 
   const existingPolicies = await prisma.frameworkEditorControlPolicyTemplateLink.findMany({
     where: { frameworkId: CSF_FRAMEWORK_ID },
@@ -1353,13 +1358,13 @@ export async function syncCsfCrosswalk({ prisma }: { prisma: PrismaClient }): Pr
     select: { id: true, controlTemplateId: true, taskTemplateId: true },
   });
 
-  const stalePolicyIds = existingPolicies.filter((l) => !targetPolicies.has(pairKey(l.controlTemplateId, l.policyTemplateId))).map((l) => l.id);
-  const staleTaskIds = existingTasks.filter((l) => !targetTasks.has(pairKey(l.controlTemplateId, l.taskTemplateId))).map((l) => l.id);
+  const stalePolicyIds = existingPolicies.filter((l) => !targetPolicies.has(pairKey({ a: l.controlTemplateId, b: l.policyTemplateId }))).map((l) => l.id);
+  const staleTaskIds = existingTasks.filter((l) => !targetTasks.has(pairKey({ a: l.controlTemplateId, b: l.taskTemplateId }))).map((l) => l.id);
   await prisma.frameworkEditorControlPolicyTemplateLink.deleteMany({ where: { id: { in: stalePolicyIds } } });
   await prisma.frameworkEditorControlTaskTemplateLink.deleteMany({ where: { id: { in: staleTaskIds } } });
 
-  const havePolicies = new Set(existingPolicies.map((l) => pairKey(l.controlTemplateId, l.policyTemplateId)));
-  const haveTasks = new Set(existingTasks.map((l) => pairKey(l.controlTemplateId, l.taskTemplateId)));
+  const havePolicies = new Set(existingPolicies.map((l) => pairKey({ a: l.controlTemplateId, b: l.policyTemplateId })));
+  const haveTasks = new Set(existingTasks.map((l) => pairKey({ a: l.controlTemplateId, b: l.taskTemplateId })));
   const newPolicies = [...targetPolicies].filter((k) => !havePolicies.has(k)).map((k) => {
     const [controlTemplateId, policyTemplateId] = splitKey(k);
     return { frameworkId: CSF_FRAMEWORK_ID, controlTemplateId, policyTemplateId };
@@ -1388,7 +1393,7 @@ import type { FrameworkManifest } from '../../src/framework-manifest';
 
 const formTypeSchema = z.nativeEnum(EvidenceFormType);
 
-function pairKey(a: string, b: string): string {
+function pairKey({ a, b }: { a: string; b: string }): string {
   return `${a}|${b}`;
 }
 
@@ -1398,7 +1403,7 @@ function splitKey(key: string): [string, string] {
   return [a, b];
 }
 
-function groupBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
+function groupBy<T>({ rows, key }: { rows: T[]; key: (row: T) => string }): Map<string, T[]> {
   const map = new Map<string, T[]>();
   for (const row of rows) {
     const k = key(row);
@@ -1427,9 +1432,9 @@ export async function backfillInstanceLinksFromManifests({ prisma }: { prisma: P
       prisma.policy.findMany({ where: { organizationId: instance.organizationId, policyTemplateId: { not: null } }, select: { id: true, policyTemplateId: true } }),
       prisma.task.findMany({ where: { organizationId: instance.organizationId, taskTemplateId: { not: null } }, select: { id: true, taskTemplateId: true } }),
     ]);
-    const controlsByTemplate = groupBy(controls, (c) => c.controlTemplateId!);
-    const policiesByTemplate = groupBy(policies, (p) => p.policyTemplateId!);
-    const tasksByTemplate = groupBy(tasks, (t) => t.taskTemplateId!);
+    const controlsByTemplate = groupBy({ rows: controls, key: (c) => c.controlTemplateId! });
+    const policiesByTemplate = groupBy({ rows: policies, key: (p) => p.policyTemplateId! });
+    const tasksByTemplate = groupBy({ rows: tasks, key: (t) => t.taskTemplateId! });
 
     const targetPolicy = new Set<string>();
     const targetTask = new Set<string>();
@@ -1441,14 +1446,14 @@ export async function backfillInstanceLinksFromManifests({ prisma }: { prisma: P
         for (const pid of mc.policyIds) {
           const rows = policiesByTemplate.get(pid) ?? [];
           if (rows.length === 0) skippedTemplates += 1;
-          rows.forEach((p) => targetPolicy.add(pairKey(control.id, p.id)));
+          rows.forEach((p) => targetPolicy.add(pairKey({ a: control.id, b: p.id })));
         }
         for (const tid of mc.taskIds) {
           const rows = tasksByTemplate.get(tid) ?? [];
           if (rows.length === 0) skippedTemplates += 1;
-          rows.forEach((t) => targetTask.add(pairKey(control.id, t.id)));
+          rows.forEach((t) => targetTask.add(pairKey({ a: control.id, b: t.id })));
         }
-        (mc.documentTypes ?? []).forEach((formType) => targetDoc.add(pairKey(control.id, formType)));
+        (mc.documentTypes ?? []).forEach((formType) => targetDoc.add(pairKey({ a: control.id, b: formType })));
       }
     }
 
@@ -1461,8 +1466,8 @@ export async function backfillInstanceLinksFromManifests({ prisma }: { prisma: P
 
 async function reconcilePolicyLinks({ prisma, instanceId, target }: { prisma: PrismaClient; instanceId: string; target: Set<string> }): Promise<void> {
   const existing = await prisma.frameworkControlPolicyLink.findMany({ where: { frameworkInstanceId: instanceId }, select: { id: true, controlId: true, policyId: true } });
-  const have = new Set(existing.map((l) => pairKey(l.controlId, l.policyId)));
-  await prisma.frameworkControlPolicyLink.deleteMany({ where: { id: { in: existing.filter((l) => !target.has(pairKey(l.controlId, l.policyId))).map((l) => l.id) } } });
+  const have = new Set(existing.map((l) => pairKey({ a: l.controlId, b: l.policyId })));
+  await prisma.frameworkControlPolicyLink.deleteMany({ where: { id: { in: existing.filter((l) => !target.has(pairKey({ a: l.controlId, b: l.policyId }))).map((l) => l.id) } } });
   await prisma.frameworkControlPolicyLink.createMany({
     data: [...target].filter((k) => !have.has(k)).map((k) => {
       const [controlId, policyId] = splitKey(k);
@@ -1474,8 +1479,8 @@ async function reconcilePolicyLinks({ prisma, instanceId, target }: { prisma: Pr
 
 async function reconcileTaskLinks({ prisma, instanceId, target }: { prisma: PrismaClient; instanceId: string; target: Set<string> }): Promise<void> {
   const existing = await prisma.frameworkControlTaskLink.findMany({ where: { frameworkInstanceId: instanceId }, select: { id: true, controlId: true, taskId: true } });
-  const have = new Set(existing.map((l) => pairKey(l.controlId, l.taskId)));
-  await prisma.frameworkControlTaskLink.deleteMany({ where: { id: { in: existing.filter((l) => !target.has(pairKey(l.controlId, l.taskId))).map((l) => l.id) } } });
+  const have = new Set(existing.map((l) => pairKey({ a: l.controlId, b: l.taskId })));
+  await prisma.frameworkControlTaskLink.deleteMany({ where: { id: { in: existing.filter((l) => !target.has(pairKey({ a: l.controlId, b: l.taskId }))).map((l) => l.id) } } });
   await prisma.frameworkControlTaskLink.createMany({
     data: [...target].filter((k) => !have.has(k)).map((k) => {
       const [controlId, taskId] = splitKey(k);
@@ -1487,8 +1492,8 @@ async function reconcileTaskLinks({ prisma, instanceId, target }: { prisma: Pris
 
 async function reconcileDocumentTypeLinks({ prisma, instanceId, target }: { prisma: PrismaClient; instanceId: string; target: Set<string> }): Promise<void> {
   const existing = await prisma.frameworkControlDocumentTypeLink.findMany({ where: { frameworkInstanceId: instanceId }, select: { id: true, controlId: true, formType: true } });
-  const have = new Set(existing.map((l) => pairKey(l.controlId, l.formType)));
-  await prisma.frameworkControlDocumentTypeLink.deleteMany({ where: { id: { in: existing.filter((l) => !target.has(pairKey(l.controlId, l.formType))).map((l) => l.id) } } });
+  const have = new Set(existing.map((l) => pairKey({ a: l.controlId, b: l.formType })));
+  await prisma.frameworkControlDocumentTypeLink.deleteMany({ where: { id: { in: existing.filter((l) => !target.has(pairKey({ a: l.controlId, b: l.formType }))).map((l) => l.id) } } });
   await prisma.frameworkControlDocumentTypeLink.createMany({
     data: [...target].filter((k) => !have.has(k)).map((k) => {
       const [controlId, formType] = splitKey(k);
@@ -1536,27 +1541,18 @@ import { backfillInstanceLinksFromManifests } from './instance-links-from-manife
 
 Order matters: scoped links before the version backfill (the builder reads scoped links), CSF sync after the baseline (so its deletions are authoritative), instance links after versions exist.
 
-- [ ] **Step 5: Delete the stale CSF version on this machine, then run the seed and the tests**
-
-The stored CSF `1.0.0` has 0 controls and is unreferenced (spec 5.7 preconditions). Verify, then delete:
+- [ ] **Step 5: Run the tests against the scratch database**
 
 ```bash
-PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d comp -Atc "select v.id, (select count(*) from \"FrameworkInstance\" i where i.\"currentVersionId\"=v.id), (select count(*) from \"FrameworkSyncOperation\" s where s.\"fromVersionId\"=v.id or s.\"toVersionId\"=v.id) from \"FrameworkVersion\" v where v.\"frameworkId\"='frk_6820090a1653380dd386c5eb';"
+cd packages/db && DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/comp_test bun test src/scripts/csf-seed.spec.ts
 ```
 
-Expected: one row, both counts `0`. Then:
+Expected: 4 pass (the `beforeAll` runs the seed against the scratch database; on a fresh database the version backfill creates CSF `1.0.0` from the mapped data, so no deletion step is needed here).
 
-```bash
-PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d comp -c "delete from \"FrameworkVersion\" where \"frameworkId\"='frk_6820090a1653380dd386c5eb' and version='1.0.0';"
-cd packages/db && bun test src/scripts/csf-seed.spec.ts
-```
+- [ ] **Step 6: Run the whole package test suite both ways, and typecheck**
 
-Expected: 5 pass (the `beforeAll` runs the seed).
-
-- [ ] **Step 6: Run the whole package test suite and typecheck**
-
-Run: `cd packages/db && bun run test && bun run check-types`
-Expected: all pass; typecheck clean.
+Run: `cd packages/db && DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/comp_test bun run test && bun run test && bun run check-types`
+Expected: first run, all suites pass including the two database suites; second run (working database from `.env`), the two database suites are reported as skipped and every static test passes; typecheck clean.
 
 - [ ] **Step 7: Commit**
 
@@ -1621,6 +1617,33 @@ union all select 'D', \"controlId\"||'|'||\"formType\" from \"FrameworkControlDo
 
 Expected: `148` lines (63 + 76 + 9).
 
+- [ ] **Step 1b: Delete the stale CSF version and seed the working database**
+
+The stored CSF `1.0.0` has 0 controls and is unreferenced (spec 5.7 preconditions). Verify, delete, seed:
+
+```bash
+PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d comp -Atc "select v.id, (select count(*) from \"FrameworkInstance\" i where i.\"currentVersionId\"=v.id), (select count(*) from \"FrameworkSyncOperation\" s where s.\"fromVersionId\"=v.id or s.\"toVersionId\"=v.id) from \"FrameworkVersion\" v where v.\"frameworkId\"='frk_6820090a1653380dd386c5eb';"
+```
+
+Expected: one row, both counts `0`. Then:
+
+```bash
+PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d comp -c "delete from \"FrameworkVersion\" where \"frameworkId\"='frk_6820090a1653380dd386c5eb' and version='1.0.0';"
+cd packages/db && bun run db:seed && cd ../..
+PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d comp -Atc "select 'csf_manifest', jsonb_array_length(manifest->'requirements'), jsonb_array_length(manifest->'controls') from \"FrameworkVersion\" where \"frameworkId\"='frk_6820090a1653380dd386c5eb'; select 'scoped_links', (select count(*) from \"FrameworkEditorControlPolicyTemplateLink\"), (select count(*) from \"FrameworkEditorControlTaskTemplateLink\");" | tee -a .local/rollout-2026-09-15.txt
+```
+
+Expected: `csf_manifest|106|48`; scoped link counts greater than 0. Then compare SOC 2 edges immediately (before adding CSF):
+
+```bash
+PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d comp -Atc "
+select 'P', \"controlId\"||'|'||\"policyId\" from \"FrameworkControlPolicyLink\" where \"frameworkInstanceId\"='frm_6aa9b0791d35af29c6305e45'
+union all select 'T', \"controlId\"||'|'||\"taskId\" from \"FrameworkControlTaskLink\" where \"frameworkInstanceId\"='frm_6aa9b0791d35af29c6305e45'
+union all select 'D', \"controlId\"||'|'||\"formType\" from \"FrameworkControlDocumentTypeLink\" where \"frameworkInstanceId\"='frm_6aa9b0791d35af29c6305e45' order by 1,2" > .local/soc2-edges-after-seed.txt; diff .local/soc2-edges-before.txt .local/soc2-edges-after-seed.txt && echo "SOC 2 edge sets identical after seed"
+```
+
+Expected: `SOC 2 edge sets identical after seed`. If the diff is non-empty, stop: the instance backfill produced a different set than the stored manifest implies, and the rollout must not continue until that is understood.
+
 - [ ] **Step 2: Build and start the stack**
 
 ```bash
@@ -1653,6 +1676,28 @@ union all select 'D', \"controlId\"||'|'||\"formType\" from \"FrameworkControlDo
 ```
 
 Expected: `SOC 2 edge sets identical`.
+
+- [ ] **Step 4b: Instance isolation (spec test 12) as a read-only acceptance query**
+
+```bash
+cd packages/db && bun -e '
+import { db } from "./src/client";
+const instances = await db.frameworkInstance.findMany({ where: { organizationId: "org_6aa9b0797c69fd27a4fc05ad", currentVersionId: { not: null } }, select: { id: true, frameworkId: true, organizationId: true, currentVersion: { select: { manifest: true } } } });
+for (const instance of instances) {
+  const manifest = instance.currentVersion!.manifest as { controls: { id: string; taskIds: string[] }[] };
+  const controls = await db.control.findMany({ where: { organizationId: instance.organizationId }, select: { id: true, controlTemplateId: true } });
+  const tasks = await db.task.findMany({ where: { organizationId: instance.organizationId }, select: { id: true, taskTemplateId: true } });
+  const expected = new Set<string>();
+  for (const mc of manifest.controls) for (const c of controls.filter((x) => x.controlTemplateId === mc.id)) for (const t of tasks.filter((x) => x.taskTemplateId && mc.taskIds.includes(x.taskTemplateId))) expected.add(`${c.id}|${t.id}`);
+  const actual = new Set((await db.frameworkControlTaskLink.findMany({ where: { frameworkInstanceId: instance.id }, select: { controlId: true, taskId: true } })).map((l) => `${l.controlId}|${l.taskId}`));
+  const same = expected.size === actual.size && [...expected].every((k) => actual.has(k));
+  console.log(instance.frameworkId, "task links match manifest:", same, expected.size);
+}
+await db.$disconnect();
+' | tee -a ../../.local/rollout-2026-09-15.txt
+```
+
+Expected: one line per instance (SOC 2 and CSF), each `task links match manifest: true`.
 
 - [ ] **Step 5: Visual acceptance**
 
