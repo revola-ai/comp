@@ -92,6 +92,6 @@ export function serializeJsonArray(rows: unknown[]): string {
   return JSON.stringify(rows, null, 4);
 }
 
-export function writeJsonArray(filePath: string, rows: unknown[]): void {
+export function writeJsonArray({ filePath, rows }: { filePath: string; rows: unknown[] }): void {
   fs.writeFileSync(filePath, serializeJsonArray(rows));
 }
