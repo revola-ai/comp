@@ -113,3 +113,6 @@ dbq_*.js
 
 # local run state (scripts/local-run.sh)
 .local/
+
+# TLS CA certificates for hosted databases (downloaded per environment, never committed)
+packages/db/certs/*.crt

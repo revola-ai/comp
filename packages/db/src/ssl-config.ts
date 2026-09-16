@@ -1,5 +1,10 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { rootCertificates } from 'node:tls';
+
 export type SslConfig =
   | undefined
+  | { ca: string[] }
   | { checkServerIdentity: () => undefined }
   | { rejectUnauthorized: false };
 
@@ -22,6 +27,7 @@ export function resolveSslConfig(
   env: Partial<NodeJS.ProcessEnv> = process.env,
 ): SslConfig {
   if (isLocalhostUrl(databaseUrl)) return undefined;
+  if (env.DATABASE_SSL_CA) return { ca: trustStoreWith(env.DATABASE_SSL_CA) };
   if (env.PRISMA_ALLOW_INSECURE_TLS === '1') return { rejectUnauthorized: false };
   // Verified TLS via Node's default trust store, which includes Amazon Root
   // CA 1 — where AWS RDS Proxy chains terminate. Hostname check is skipped
@@ -34,4 +40,17 @@ export function resolveSslConfig(
   // only contains regional RDS CAs (not Amazon Root CA 1), so RDS Proxy
   // chain validation failed at runtime (P1011 / TlsConnectionError).
   return { checkServerIdentity: () => undefined };
+}
+
+// Full verification (chain and hostname) against Node's default trust store plus the
+// CA file named by DATABASE_SSL_CA, for providers whose server certificate is signed
+// by their own root (Supabase). `ssl.ca` replaces the trust store, so the defaults
+// are included explicitly. Relative paths resolve against the working directory;
+// use an absolute path in .env files.
+function trustStoreWith(caPath: string): string[] {
+  const absolute = resolve(caPath);
+  if (!existsSync(absolute)) {
+    throw new Error(`DATABASE_SSL_CA points to a file that does not exist: ${absolute}`);
+  }
+  return [...rootCertificates, readFileSync(absolute, 'utf8')];
 }
