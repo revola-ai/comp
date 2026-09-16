@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-
-function stripSslMode(connectionString: string): string {
-  const url = new URL(connectionString);
-  url.searchParams.delete('sslmode');
-  return url.toString();
-}
+import { stripSslMode } from './ssl-config';
 
 describe('stripSslMode', () => {
   it('removes sslmode=require from the connection string', () => {
