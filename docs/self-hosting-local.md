@@ -87,6 +87,18 @@ Redis is required (not optional as the upstream env example says): `/setup` sess
 `SELF_HOSTED=true` (api) and `NEXT_PUBLIC_SELF_HOSTED=true` (app) are already set.
 New organizations are auto-approved and the Stripe / booking flow is skipped.
 
+### Platform admin role
+
+Adding a framework to an organization (Overview, Add Framework) is gated in the app on the better-auth platform role `User.role = 'admin'`, the role Comp AI staff use to manage customer organizations.
+The API only checks the organization permission `framework:create`, so the gate is client-side.
+On a self-hosted install the operator is that staff; grant the role once after the first login:
+
+```bash
+PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d comp -c "update \"User\" set role='admin' where email='you@example.com';"
+```
+
+Reload the app afterwards; the session is re-read from the database, so no new login is needed.
+
 ## Known gaps
 
 - `link-risks-and-vendors-to-work` (auto-suggesting evidence tasks for each risk and vendor) needs Upstash Vector (`UPSTASH_VECTOR_REST_URL` / `UPSTASH_VECTOR_REST_TOKEN`), a hosted vector database with no local facade.
