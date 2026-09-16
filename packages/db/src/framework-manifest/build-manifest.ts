@@ -75,26 +75,20 @@ export function buildManifestFromFramework(framework: ManifestFrameworkSource): 
     for (const ct of requirement.controlTemplates) {
       const policyTemplates = ct.frameworkPolicyLinks.map((link) => link.policyTemplate);
       const taskTemplates = ct.frameworkTaskLinks.map((link) => link.taskTemplate);
-      // A control template can be nested under more than one requirement in
-      // this framework; merge (rather than overwrite) so the aggregate
-      // fields reflect every occurrence, not just the first one seen.
-      const existing = controls.get(ct.id);
-      controls.set(ct.id, {
-        id: ct.id,
-        name: ct.name,
-        description: ct.description,
-        controlFamily: ct.controlFamily || null,
-        requirementIds: sortedIds([
-          ...(existing?.requirementIds ?? []),
-          ...ct.requirements.map((r) => r.id).filter((id) => ownRequirementIds.has(id)),
-        ]),
-        policyIds: sortedIds([...(existing?.policyIds ?? []), ...policyTemplates.map((p) => p.id)]),
-        taskIds: sortedIds([...(existing?.taskIds ?? []), ...taskTemplates.map((t) => t.id)]),
-        documentTypes: sortedIds([
-          ...(existing?.documentTypes ?? []),
-          ...ct.frameworkDocumentLinks.map((link) => link.formType),
-        ]),
-      });
+      if (!controls.has(ct.id)) {
+        controls.set(ct.id, {
+          id: ct.id,
+          name: ct.name,
+          description: ct.description,
+          controlFamily: ct.controlFamily || null,
+          requirementIds: sortedIds(
+            ct.requirements.map((r) => r.id).filter((id) => ownRequirementIds.has(id)),
+          ),
+          policyIds: sortedIds(policyTemplates.map((p) => p.id)),
+          taskIds: sortedIds(taskTemplates.map((t) => t.id)),
+          documentTypes: sortedIds(ct.frameworkDocumentLinks.map((link) => link.formType)),
+        });
+      }
       for (const policy of policyTemplates) {
         if (!policies.has(policy.id)) {
           policies.set(policy.id, {
