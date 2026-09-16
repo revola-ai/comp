@@ -5,8 +5,12 @@ import path from 'node:path';
 import { frameworkEditorModelSchemas } from './frameworkEditorSchemas';
 import { syncCsfCrosswalk, syncFrameworkScopedEditorLinks } from './sync-framework-scoped-links';
 import { backfillInstanceLinksFromManifests } from './instance-links-from-manifests';
+import { resolveSslConfig, stripSslMode } from '../../src/ssl-config';
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+// Same TLS policy as the runtime client (localhost off, DATABASE_SSL_CA verified, ...).
+const databaseUrl = process.env.DATABASE_URL!;
+const ssl = resolveSslConfig(databaseUrl);
+const adapter = new PrismaPg({ connectionString: ssl === undefined ? databaseUrl : stripSslMode(databaseUrl), ssl });
 const prisma = new PrismaClient({ adapter });
 
 async function seedJsonFiles(subDirectory: string) {

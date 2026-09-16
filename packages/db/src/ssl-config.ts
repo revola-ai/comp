@@ -54,3 +54,10 @@ function trustStoreWith(caPath: string): string[] {
   }
   return [...rootCertificates, readFileSync(absolute, 'utf8')];
 }
+
+// `sslmode` in the URL conflicts with an explicit `ssl` option; strip it when one is passed.
+export function stripSslMode(connectionString: string): string {
+  const url = new URL(connectionString);
+  url.searchParams.delete('sslmode');
+  return url.toString();
+}
