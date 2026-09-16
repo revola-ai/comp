@@ -1698,5 +1698,45 @@
       "employee_performance_evaluation",
       "rbac_matrix"
     ]
+  },
+  {
+    "id": "frk_ct_86cea95ec8a5cbc4d502dc6f",
+    "name": "Critical Services & Dependencies",
+    "description": "Identify and communicate the critical objectives, capabilities and services that external stakeholders depend on or expect from the organization, and the outcomes, capabilities and services the organization depends on, so that criticality informs cybersecurity risk management and continuity planning.",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "documentTypes": []
+  },
+  {
+    "id": "frk_ct_5d0faa559be322a448e68204",
+    "name": "Risk Appetite & Tolerance",
+    "description": "Establish, communicate and maintain risk appetite and risk tolerance statements, the strategic direction on acceptable risk response options, and the treatment of strategic opportunities (positive risks) in cybersecurity risk discussions.",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "documentTypes": []
+  },
+  {
+    "id": "frk_ct_a5c4ad98b7180673da73ca67",
+    "name": "Supply Chain Risk Management Program",
+    "description": "Establish and operate a cybersecurity supply chain risk management program: strategy, objectives, policies and supplier-facing roles agreed by stakeholders; integration into enterprise risk management; verification of the authenticity and integrity of hardware and software before acquisition and use; supplier inclusion in incident planning, response and recovery; lifecycle-wide monitoring of supply chain security practices; and provisions for concluding supplier relationships.",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "documentTypes": []
+  },
+  {
+    "id": "frk_ct_57d8de27937cb526a83b30d4",
+    "name": "Incident & Recovery Communications",
+    "description": "Maintain a stakeholder communication plan for incidents and recovery: who is notified, what is shared with designated internal and external stakeholders, how recovery progress is reported, and which approved methods and messaging are used for public updates.",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "documentTypes": []
+  },
+  {
+    "id": "frk_ct_58fd3ca20e2cc44afa40b97a",
+    "name": "Technology Asset Lifecycle",
+    "description": "Manage systems, hardware, software, services and data through acquisition, maintenance, replacement and removal, including retirement of unsupported software and secure disposal of hardware and media at end of life.",
+    "createdAt": "2026-09-15 00:00:00.000",
+    "updatedAt": "2026-09-15 00:00:00.000",
+    "documentTypes": []
   }
 ]

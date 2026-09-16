@@ -68,6 +68,8 @@ export const FrameworkEditorRequirementSchema = z.object({
   name: z.string(),
   identifier: z.string().optional(), // @default("")
   description: z.string(),
+  requirementFamily: z.string().optional(),
+  sortOrder: z.number().int().optional(),
   // controlTemplates: FrameworkEditorControlTemplate[] - relational, omitted
   // requirementMaps: RequirementMap[] - relational, omitted
   createdAt: z

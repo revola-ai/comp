@@ -87,6 +87,18 @@ Redis is required (not optional as the upstream env example says): `/setup` sess
 `SELF_HOSTED=true` (api) and `NEXT_PUBLIC_SELF_HOSTED=true` (app) are already set.
 New organizations are auto-approved and the Stripe / booking flow is skipped.
 
+### Platform admin role
+
+Adding a framework to an organization (Overview, Add Framework) is gated in the app on the better-auth platform role `User.role = 'admin'`, the role Comp AI staff use to manage customer organizations.
+The API only checks the organization permission `framework:create`, so the gate is client-side.
+On a self-hosted install the operator is that staff; grant the role once after the first login:
+
+```bash
+PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d comp -c "update \"User\" set role='admin' where email='you@example.com';"
+```
+
+Reload the app afterwards; the session is re-read from the database, so no new login is needed.
+
 ## Known gaps
 
 - `link-risks-and-vendors-to-work` (auto-suggesting evidence tasks for each risk and vendor) needs Upstash Vector (`UPSTASH_VECTOR_REST_URL` / `UPSTASH_VECTOR_REST_TOKEN`), a hosted vector database with no local facade.
@@ -96,5 +108,11 @@ New organizations are auto-approved and the Stripe / booking flow is skipped.
 
 ## Frameworks
 
-The seed ships SOC 2 (visible, 63 requirements, fully mapped to controls) and NIST CSF 2.0 (hidden, 106 subcategories, no control mappings yet).
-Enabling and mapping CSF 2.0 is tracked on the `revola/self-host` branch.
+The seed ships SOC 2 and NIST CSF 2.0, both visible and mapped to the control library.
+CSF 2.0 is defined by `packages/db/prisma/seed/crosswalks/nist-csf-2.0.json` (subcategory to control mapping, new templates, CSF-only policy/task links) and the official core text in `nist-csf-2.0-core.json`.
+
+- Change a mapping: edit the crosswalk JSON, run `bun run crosswalk:csf` in `packages/db`, run `bun run db:seed` (the seed reconciles CSF to the file), then publish a new version from the framework editor and sync organizations.
+- Reseeding never deletes instance-level links; links you removed from a control in the app are re-added if the pinned framework version still lists them.
+- `bun run crosswalk:csf:check` fails when the committed seed files differ from the crosswalk; the root `bun run test` gate (turbo) runs it. No GitHub workflow runs the test gate yet; `check-types.yml` covers types only.
+- Database test suites in `packages/db` (`*.spec.ts`) run only when `DATABASE_URL` names a database ending in `_test` on a non-prod, non-staging host (`isScratchDatabaseUrl`); they skip otherwise, so they can never touch the working database `comp`.
+- The design and the full per-subcategory rationale are in `docs/specs/2026-09-15-nist-csf-2-crosswalk-design.md`.

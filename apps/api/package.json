@@ -180,7 +180,7 @@
             "^@trycompai/auth$": "<rootDir>/../../../packages/auth/src/index.ts",
             "^@trycompai/billing$": "<rootDir>/../../../packages/billing/src/index.ts",
             "^@trycompai/company$": "<rootDir>/../../../packages/company/src/index.ts",
-            "^@trycompai/db$": "@prisma/client",
+            "^@trycompai/db$": "<rootDir>/../../../packages/db/src/index.ts",
             "^@trycompai/email$": "<rootDir>/../../../packages/email/index.ts",
             "^@trycompai/integration-platform$": "<rootDir>/../../../packages/integration-platform/src/index.ts",
             "^@trycompai/utils/(.*)$": "<rootDir>/../../../packages/utils/src/$1.ts"
