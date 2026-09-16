@@ -111,7 +111,8 @@ describe.skipIf(!isScratchDb)('CSF seed', () => {
       .sort();
     expect(await requirementControlPairs(CSF_FRAMEWORK_ID)).toEqual(expectedPairs);
 
-    // Case A: a control used by several requirements loses one of them; scoped rows stay.
+    // Case A: add an unrelated control to a requirement whose control is shared by several
+    // requirements; the seed's set restores the crosswalk and the shared control's scoped rows stay.
     const shared = crosswalk.subcategories.filter((s) =>
       s.controls.some((c) => c.id === 'frk_ct_683f47cc2faa426603d6bee8'),
     );
