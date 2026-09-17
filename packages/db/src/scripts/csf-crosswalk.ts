@@ -1,3 +1,4 @@
+import { EvidenceFormType } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,40 +35,63 @@ const controlRefSchema = z.object({ id: z.string(), name: z.string() });
 const policyRefSchema = z.object({ id: z.string(), name: z.string() });
 const taskRefSchema = z.object({ id: z.string(), name: z.string() });
 
-const crosswalkSchema = z.object({
-  frameworkId: z.literal(CSF_FRAMEWORK_ID),
-  source: z.string(),
-  subcategories: z.array(
-    z.object({
-      id: z.string(),
-      requirementId: z.string().startsWith('frk_rq_'),
-      controls: z.array(controlRefSchema).min(1),
-      rationale: z.string().min(1),
+export const crosswalkSchema = z
+  .object({
+    frameworkId: z.literal(CSF_FRAMEWORK_ID),
+    source: z.string(),
+    subcategories: z.array(
+      z.object({
+        id: z.string().regex(/^[A-Z]{2}\.[A-Z]{2}-\d{2}$/),
+        requirementId: z.string().startsWith('frk_rq_'),
+        controls: z.array(controlRefSchema).min(1),
+        rationale: z.string().min(1),
+      }),
+    ),
+    newControls: z.array(
+      z.object({
+        id: z.string().startsWith('frk_ct_'),
+        name: z.string(),
+        description: z.string(),
+        policies: z.array(policyRefSchema).min(1),
+        tasks: z.array(taskRefSchema).min(1),
+        documentTypes: z.array(z.enum(EvidenceFormType)).default([]),
+      }),
+    ),
+    newTasks: z.array(
+      z.object({
+        id: z.string().startsWith('frk_tt_'),
+        name: z.string(),
+        description: z.string(),
+        frequency: z.enum(['monthly', 'quarterly', 'yearly']),
+        department: z.enum(['none', 'admin', 'gov', 'hr', 'it', 'itsm', 'qms']),
+      }),
+    ),
+    csfLinks: z.object({
+      policies: z.array(z.object({ controlTemplateId: z.string(), policyTemplateId: z.string() })),
+      tasks: z.array(z.object({ controlTemplateId: z.string(), taskTemplateId: z.string() })),
     }),
-  ),
-  newControls: z.array(
-    z.object({
-      id: z.string().startsWith('frk_ct_'),
-      name: z.string(),
-      description: z.string(),
-      policies: z.array(policyRefSchema).min(1),
-      tasks: z.array(taskRefSchema).min(1),
-    }),
-  ),
-  newTasks: z.array(
-    z.object({
-      id: z.string().startsWith('frk_tt_'),
-      name: z.string(),
-      description: z.string(),
-      frequency: z.enum(['monthly', 'quarterly', 'yearly']),
-      department: z.enum(['none', 'admin', 'gov', 'hr', 'it', 'itsm', 'qms']),
-    }),
-  ),
-  csfLinks: z.object({
-    policies: z.array(z.object({ controlTemplateId: z.string(), policyTemplateId: z.string() })),
-    tasks: z.array(z.object({ controlTemplateId: z.string(), taskTemplateId: z.string() })),
-  }),
-});
+  })
+  .superRefine((crosswalk, ctx) => {
+    // A csfLinks entry for a control no subcategory maps would become a dead scoped row:
+    // syncCsfCrosswalk only reconciles scoped links for controls mapped by >= 1 subcategory.
+    const mappedControlIds = new Set(crosswalk.subcategories.flatMap((s) => s.controls.map((c) => c.id)));
+    crosswalk.csfLinks.policies.forEach((link, index) => {
+      if (mappedControlIds.has(link.controlTemplateId)) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `csfLinks.policies references control ${link.controlTemplateId}, which is not mapped by any subcategory`,
+        path: ['csfLinks', 'policies', index, 'controlTemplateId'],
+      });
+    });
+    crosswalk.csfLinks.tasks.forEach((link, index) => {
+      if (mappedControlIds.has(link.controlTemplateId)) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `csfLinks.tasks references control ${link.controlTemplateId}, which is not mapped by any subcategory`,
+        path: ['csfLinks', 'tasks', index, 'controlTemplateId'],
+      });
+    });
+  });
 
 export type CsfCore = z.infer<typeof coreSchema>;
 export type Crosswalk = z.infer<typeof crosswalkSchema>;

@@ -6,9 +6,11 @@ import {
   CSF_FRAMEWORK_ID,
   PRIMITIVES_DIR,
   RELATIONS_DIR,
+  crosswalkSchema,
   loadCrosswalk,
   loadCsfCore,
   readJsonArray,
+  type Crosswalk,
 } from './csf-crosswalk';
 
 type Framework = { id: string; visible: boolean };
@@ -93,6 +95,42 @@ describe('crosswalk coverage', () => {
       expect(policyOf.get(id)?.size ?? 0).toBeGreaterThan(0);
       expect(taskOf.get(id)?.size ?? 0).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('newControls documentTypes', () => {
+  function fixtureCrosswalk(newControlOverrides: Record<string, unknown>): Crosswalk {
+    return crosswalkSchema.parse({
+      frameworkId: CSF_FRAMEWORK_ID,
+      source: 'test-fixture',
+      subcategories: [],
+      newControls: [
+        {
+          id: 'frk_ct_test0000000000000000',
+          name: 'Fixture control',
+          description: 'A control created only for this test',
+          policies: [{ id: 'frk_pt_fixture', name: 'Fixture policy' }],
+          tasks: [{ id: 'frk_tt_fixture', name: 'Fixture task' }],
+          ...newControlOverrides,
+        },
+      ],
+      newTasks: [],
+      csfLinks: { policies: [], tasks: [] },
+    });
+  }
+
+  it('carries an explicit documentTypes value onto the generated control row', () => {
+    const crosswalk = fixtureCrosswalk({ documentTypes: ['infrastructure_inventory'] });
+    const state = computeSeedState({ crosswalk });
+    const row = state.controls.find((c) => c.id === 'frk_ct_test0000000000000000');
+    expect(row?.documentTypes).toEqual(['infrastructure_inventory']);
+  });
+
+  it('defaults documentTypes to an empty array when the key is absent', () => {
+    const crosswalk = fixtureCrosswalk({});
+    const state = computeSeedState({ crosswalk });
+    const row = state.controls.find((c) => c.id === 'frk_ct_test0000000000000000');
+    expect(row?.documentTypes).toEqual([]);
   });
 });
 
