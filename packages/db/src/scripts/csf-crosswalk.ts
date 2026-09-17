@@ -41,7 +41,7 @@ export const crosswalkSchema = z
     source: z.string(),
     subcategories: z.array(
       z.object({
-        id: z.string(),
+        id: z.string().regex(/^[A-Z]{2}\.[A-Z]{2}-\d{2}$/),
         requirementId: z.string().startsWith('frk_rq_'),
         controls: z.array(controlRefSchema).min(1),
         rationale: z.string().min(1),
@@ -70,6 +70,27 @@ export const crosswalkSchema = z
       policies: z.array(z.object({ controlTemplateId: z.string(), policyTemplateId: z.string() })),
       tasks: z.array(z.object({ controlTemplateId: z.string(), taskTemplateId: z.string() })),
     }),
+  })
+  .superRefine((crosswalk, ctx) => {
+    // A csfLinks entry for a control no subcategory maps would become a dead scoped row:
+    // syncCsfCrosswalk only reconciles scoped links for controls mapped by >= 1 subcategory.
+    const mappedControlIds = new Set(crosswalk.subcategories.flatMap((s) => s.controls.map((c) => c.id)));
+    crosswalk.csfLinks.policies.forEach((link, index) => {
+      if (mappedControlIds.has(link.controlTemplateId)) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `csfLinks.policies references control ${link.controlTemplateId}, which is not mapped by any subcategory`,
+        path: ['csfLinks', 'policies', index, 'controlTemplateId'],
+      });
+    });
+    crosswalk.csfLinks.tasks.forEach((link, index) => {
+      if (mappedControlIds.has(link.controlTemplateId)) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `csfLinks.tasks references control ${link.controlTemplateId}, which is not mapped by any subcategory`,
+        path: ['csfLinks', 'tasks', index, 'controlTemplateId'],
+      });
+    });
   });
 
 export type CsfCore = z.infer<typeof coreSchema>;
