@@ -9,6 +9,7 @@ import {
   readJsonArray,
   serializeJsonArray,
   writeJsonArray,
+  type Crosswalk,
 } from './csf-crosswalk';
 
 type Framework = { id: string; visible: boolean; [key: string]: unknown };
@@ -84,9 +85,8 @@ function mergePairs({ existing, additions }: { existing: Pair[]; additions: Pair
   return merged;
 }
 
-export function computeSeedState(): SeedState {
+export function computeSeedState({ crosswalk = loadCrosswalk() }: { crosswalk?: Crosswalk } = {}): SeedState {
   const core = loadCsfCore();
-  const crosswalk = loadCrosswalk();
   const subById = new Map(core.subcategories.map((s) => [s.id, s]));
   const orderIndex = new Map(core.subcategories.map((s, i) => [s.id, i]));
 
@@ -127,7 +127,7 @@ export function computeSeedState(): SeedState {
       description: c.description,
       createdAt: SEED_TIMESTAMP,
       updatedAt: SEED_TIMESTAMP,
-      documentTypes: [],
+      documentTypes: c.documentTypes,
     })),
   });
   const tasks = upsertRows({

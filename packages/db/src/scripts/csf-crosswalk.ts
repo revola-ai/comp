@@ -1,3 +1,4 @@
+import { EvidenceFormType } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,40 +35,42 @@ const controlRefSchema = z.object({ id: z.string(), name: z.string() });
 const policyRefSchema = z.object({ id: z.string(), name: z.string() });
 const taskRefSchema = z.object({ id: z.string(), name: z.string() });
 
-const crosswalkSchema = z.object({
-  frameworkId: z.literal(CSF_FRAMEWORK_ID),
-  source: z.string(),
-  subcategories: z.array(
-    z.object({
-      id: z.string(),
-      requirementId: z.string().startsWith('frk_rq_'),
-      controls: z.array(controlRefSchema).min(1),
-      rationale: z.string().min(1),
+export const crosswalkSchema = z
+  .object({
+    frameworkId: z.literal(CSF_FRAMEWORK_ID),
+    source: z.string(),
+    subcategories: z.array(
+      z.object({
+        id: z.string(),
+        requirementId: z.string().startsWith('frk_rq_'),
+        controls: z.array(controlRefSchema).min(1),
+        rationale: z.string().min(1),
+      }),
+    ),
+    newControls: z.array(
+      z.object({
+        id: z.string().startsWith('frk_ct_'),
+        name: z.string(),
+        description: z.string(),
+        policies: z.array(policyRefSchema).min(1),
+        tasks: z.array(taskRefSchema).min(1),
+        documentTypes: z.array(z.enum(EvidenceFormType)).default([]),
+      }),
+    ),
+    newTasks: z.array(
+      z.object({
+        id: z.string().startsWith('frk_tt_'),
+        name: z.string(),
+        description: z.string(),
+        frequency: z.enum(['monthly', 'quarterly', 'yearly']),
+        department: z.enum(['none', 'admin', 'gov', 'hr', 'it', 'itsm', 'qms']),
+      }),
+    ),
+    csfLinks: z.object({
+      policies: z.array(z.object({ controlTemplateId: z.string(), policyTemplateId: z.string() })),
+      tasks: z.array(z.object({ controlTemplateId: z.string(), taskTemplateId: z.string() })),
     }),
-  ),
-  newControls: z.array(
-    z.object({
-      id: z.string().startsWith('frk_ct_'),
-      name: z.string(),
-      description: z.string(),
-      policies: z.array(policyRefSchema).min(1),
-      tasks: z.array(taskRefSchema).min(1),
-    }),
-  ),
-  newTasks: z.array(
-    z.object({
-      id: z.string().startsWith('frk_tt_'),
-      name: z.string(),
-      description: z.string(),
-      frequency: z.enum(['monthly', 'quarterly', 'yearly']),
-      department: z.enum(['none', 'admin', 'gov', 'hr', 'it', 'itsm', 'qms']),
-    }),
-  ),
-  csfLinks: z.object({
-    policies: z.array(z.object({ controlTemplateId: z.string(), policyTemplateId: z.string() })),
-    tasks: z.array(z.object({ controlTemplateId: z.string(), taskTemplateId: z.string() })),
-  }),
-});
+  });
 
 export type CsfCore = z.infer<typeof coreSchema>;
 export type Crosswalk = z.infer<typeof crosswalkSchema>;
