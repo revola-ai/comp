@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   CSF_FRAMEWORK_ID,
+  crosswalkSchema,
   loadCrosswalk,
   loadCsfCore,
   mintTemplateId,
@@ -11,6 +12,25 @@ import {
   serializeJsonArray,
   writeJsonArray,
 } from './csf-crosswalk';
+
+function minimalCrosswalk(overrides: Record<string, unknown> = {}): unknown {
+  return {
+    frameworkId: CSF_FRAMEWORK_ID,
+    source: 'test-fixture',
+    subcategories: [
+      {
+        id: 'GV.OC-01',
+        requirementId: 'frk_rq_test0000000000000000',
+        controls: [{ id: 'frk_ct_test0000000000000000', name: 'Fixture control' }],
+        rationale: 'Because "fixture text" says so',
+      },
+    ],
+    newControls: [],
+    newTasks: [],
+    csfLinks: { policies: [], tasks: [] },
+    ...overrides,
+  };
+}
 
 describe('csf-crosswalk loaders', () => {
   it('loads the official core with 106 subcategories in six functions', () => {
@@ -34,6 +54,70 @@ describe('csf-crosswalk loaders', () => {
     const b = mintTemplateId({ prefix: 'frk_ct', name: 'Risk Appetite & Tolerance' });
     expect(a).toBe(b);
     expect(a).toMatch(/^frk_ct_[0-9a-f]{24}$/);
+  });
+
+  it('accepts a well-formed minimal crosswalk fixture', () => {
+    expect(() => crosswalkSchema.parse(minimalCrosswalk())).not.toThrow();
+  });
+
+  it('rejects a subcategory id that does not match the official NIST id shape', () => {
+    expect(() =>
+      crosswalkSchema.parse(
+        minimalCrosswalk({
+          subcategories: [
+            {
+              id: 'not-a-valid-id',
+              requirementId: 'frk_rq_test0000000000000000',
+              controls: [{ id: 'frk_ct_test0000000000000000', name: 'Fixture control' }],
+              rationale: 'Because "fixture text" says so',
+            },
+          ],
+        }),
+      ),
+    ).toThrow();
+  });
+
+  it('rejects a csfLinks.policies entry whose control is not mapped by any subcategory', () => {
+    expect(() =>
+      crosswalkSchema.parse(
+        minimalCrosswalk({
+          csfLinks: {
+            policies: [{ controlTemplateId: 'frk_ct_unmapped00000000000000', policyTemplateId: 'frk_pt_x' }],
+            tasks: [],
+          },
+        }),
+      ),
+    ).toThrow();
+  });
+
+  it('rejects a csfLinks.tasks entry whose control is not mapped by any subcategory', () => {
+    expect(() =>
+      crosswalkSchema.parse(
+        minimalCrosswalk({
+          csfLinks: {
+            policies: [],
+            tasks: [{ controlTemplateId: 'frk_ct_unmapped00000000000000', taskTemplateId: 'frk_tt_x' }],
+          },
+        }),
+      ),
+    ).toThrow();
+  });
+
+  it('accepts a csfLinks entry whose control is mapped by a subcategory', () => {
+    expect(() =>
+      crosswalkSchema.parse(
+        minimalCrosswalk({
+          csfLinks: {
+            policies: [{ controlTemplateId: 'frk_ct_test0000000000000000', policyTemplateId: 'frk_pt_x' }],
+            tasks: [{ controlTemplateId: 'frk_ct_test0000000000000000', taskTemplateId: 'frk_tt_x' }],
+          },
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('still loads the committed crosswalk', () => {
+    expect(() => loadCrosswalk()).not.toThrow();
   });
 
   it('round-trips JSON arrays with correct formatting via writeJsonArray and readJsonArray', () => {
