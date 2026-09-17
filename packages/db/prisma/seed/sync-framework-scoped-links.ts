@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { EvidenceFormType, PrismaClient } from '@prisma/client';
 import { CSF_FRAMEWORK_ID, loadCrosswalk } from '../../src/scripts/csf-crosswalk';
 import { pairKey, splitKey } from './pair-key';
 
@@ -59,13 +59,22 @@ export async function syncCsfCrosswalk({ prisma }: { prisma: PrismaClient }): Pr
   const controlIds = [...new Set(crosswalk.subcategories.flatMap((s) => s.controls.map((c) => c.id)))];
   const controls = await prisma.frameworkEditorControlTemplate.findMany({
     where: { id: { in: controlIds } },
-    select: { id: true, policyTemplates: { select: { id: true } }, taskTemplates: { select: { id: true } } },
+    select: {
+      id: true,
+      policyTemplates: { select: { id: true } },
+      taskTemplates: { select: { id: true } },
+      documentTypes: true,
+    },
   });
   const targetPolicies = new Set<string>();
   const targetTasks = new Set<string>();
+  const targetDocTypes = new Map<string, { controlTemplateId: string; formType: EvidenceFormType }>();
   for (const control of controls) {
     control.policyTemplates.forEach((p) => targetPolicies.add(pairKey({ a: control.id, b: p.id })));
     control.taskTemplates.forEach((t) => targetTasks.add(pairKey({ a: control.id, b: t.id })));
+    control.documentTypes.forEach((formType) =>
+      targetDocTypes.set(pairKey({ a: control.id, b: formType }), { controlTemplateId: control.id, formType }),
+    );
   }
   crosswalk.csfLinks.policies.forEach((l) => targetPolicies.add(pairKey({ a: l.controlTemplateId, b: l.policyTemplateId })));
   crosswalk.csfLinks.tasks.forEach((l) => targetTasks.add(pairKey({ a: l.controlTemplateId, b: l.taskTemplateId })));
@@ -78,12 +87,18 @@ export async function syncCsfCrosswalk({ prisma }: { prisma: PrismaClient }): Pr
     where: { frameworkId: CSF_FRAMEWORK_ID },
     select: { id: true, controlTemplateId: true, taskTemplateId: true },
   });
+  const existingDocTypes = await prisma.frameworkEditorControlDocumentTypeLink.findMany({
+    where: { frameworkId: CSF_FRAMEWORK_ID },
+    select: { id: true, controlTemplateId: true, formType: true },
+  });
 
   const stalePolicyIds = existingPolicies.filter((l) => !targetPolicies.has(pairKey({ a: l.controlTemplateId, b: l.policyTemplateId }))).map((l) => l.id);
   const staleTaskIds = existingTasks.filter((l) => !targetTasks.has(pairKey({ a: l.controlTemplateId, b: l.taskTemplateId }))).map((l) => l.id);
+  const staleDocTypeIds = existingDocTypes.filter((l) => !targetDocTypes.has(pairKey({ a: l.controlTemplateId, b: l.formType }))).map((l) => l.id);
 
   const havePolicies = new Set(existingPolicies.map((l) => pairKey({ a: l.controlTemplateId, b: l.policyTemplateId })));
   const haveTasks = new Set(existingTasks.map((l) => pairKey({ a: l.controlTemplateId, b: l.taskTemplateId })));
+  const haveDocTypes = new Set(existingDocTypes.map((l) => pairKey({ a: l.controlTemplateId, b: l.formType })));
   const newPolicies = [...targetPolicies].filter((k) => !havePolicies.has(k)).map((k) => {
     const [controlTemplateId, policyTemplateId] = splitKey(k);
     return { frameworkId: CSF_FRAMEWORK_ID, controlTemplateId, policyTemplateId };
@@ -92,17 +107,23 @@ export async function syncCsfCrosswalk({ prisma }: { prisma: PrismaClient }): Pr
     const [controlTemplateId, taskTemplateId] = splitKey(k);
     return { frameworkId: CSF_FRAMEWORK_ID, controlTemplateId, taskTemplateId };
   });
+  const newDocTypes = [...targetDocTypes.entries()]
+    .filter(([k]) => !haveDocTypes.has(k))
+    .map(([, v]) => ({ frameworkId: CSF_FRAMEWORK_ID, controlTemplateId: v.controlTemplateId, formType: v.formType }));
+
   // Delete and insert atomically so a failed insert cannot leave CSF stripped of its links.
   await prisma.$transaction(async (tx) => {
     await tx.frameworkEditorControlPolicyTemplateLink.deleteMany({ where: { id: { in: stalePolicyIds } } });
     await tx.frameworkEditorControlTaskTemplateLink.deleteMany({ where: { id: { in: staleTaskIds } } });
+    await tx.frameworkEditorControlDocumentTypeLink.deleteMany({ where: { id: { in: staleDocTypeIds } } });
     await tx.frameworkEditorControlPolicyTemplateLink.createMany({ data: newPolicies, skipDuplicates: true });
     await tx.frameworkEditorControlTaskTemplateLink.createMany({ data: newTasks, skipDuplicates: true });
+    await tx.frameworkEditorControlDocumentTypeLink.createMany({ data: newDocTypes, skipDuplicates: true });
   });
 
   return {
     requirements: crosswalk.subcategories.length,
-    removedLinks: stalePolicyIds.length + staleTaskIds.length,
-    addedLinks: newPolicies.length + newTasks.length,
+    removedLinks: stalePolicyIds.length + staleTaskIds.length + staleDocTypeIds.length,
+    addedLinks: newPolicies.length + newTasks.length + newDocTypes.length,
   };
 }
