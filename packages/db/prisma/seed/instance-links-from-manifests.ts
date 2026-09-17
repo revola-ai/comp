@@ -1,9 +1,9 @@
 import { EvidenceFormType, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
-import type { FrameworkManifest } from '../../src/framework-manifest';
+import { manifestSchema } from '../../src/framework-manifest';
 import { pairKey, splitKey } from './pair-key';
 
-const formTypeSchema = z.nativeEnum(EvidenceFormType);
+const formTypeSchema = z.enum(EvidenceFormType);
 
 function groupBy<T>({ rows, key }: { rows: T[]; key: (row: T) => string }): Map<string, T[]> {
   const map = new Map<string, T[]>();
@@ -30,7 +30,11 @@ export async function backfillInstanceLinksFromManifests({ prisma }: { prisma: P
   let skippedTemplates = 0;
 
   for (const instance of instances) {
-    const manifest = instance.currentVersion!.manifest as unknown as FrameworkManifest;
+    const parsed = manifestSchema.safeParse(instance.currentVersion!.manifest);
+    if (!parsed.success) {
+      throw new Error(`Invalid manifest for framework instance ${instance.id}: ${parsed.error.message}`);
+    }
+    const manifest = parsed.data;
     const [controls, policies, tasks] = await Promise.all([
       prisma.control.findMany({ where: { organizationId: instance.organizationId, controlTemplateId: { not: null } }, select: { id: true, controlTemplateId: true } }),
       prisma.policy.findMany({ where: { organizationId: instance.organizationId, policyTemplateId: { not: null } }, select: { id: true, policyTemplateId: true } }),
