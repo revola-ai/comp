@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { rootCertificates } from 'node:tls';
+import type * as NodeFs from 'node:fs';
+import type * as NodePath from 'node:path';
+import type * as NodeTls from 'node:tls';
 
 export type SslConfig =
   | undefined
@@ -47,12 +47,20 @@ export function resolveSslConfig(
 // by their own root (Supabase). `ssl.ca` replaces the trust store, so the defaults
 // are included explicitly. Relative paths resolve against the working directory;
 // use an absolute path in .env files.
+//
+// The built-ins are loaded through process.getBuiltinModule (Node 22, Bun) instead of
+// static imports: this package's index is reachable from Next.js client bundles through
+// the apps' `@db` re-exports, and a static `node:fs` import breaks those bundles even
+// though this function only ever runs on the server.
 function trustStoreWith(caPath: string): string[] {
-  const absolute = resolve(caPath);
-  if (!existsSync(absolute)) {
+  const fs = process.getBuiltinModule('node:fs') as typeof NodeFs;
+  const path = process.getBuiltinModule('node:path') as typeof NodePath;
+  const tls = process.getBuiltinModule('node:tls') as typeof NodeTls;
+  const absolute = path.resolve(caPath);
+  if (!fs.existsSync(absolute)) {
     throw new Error(`DATABASE_SSL_CA points to a file that does not exist: ${absolute}`);
   }
-  return [...rootCertificates, readFileSync(absolute, 'utf8')];
+  return [...tls.rootCertificates, fs.readFileSync(absolute, 'utf8')];
 }
 
 // `sslmode` in the URL conflicts with an explicit `ssl` option; strip it when one is passed.
