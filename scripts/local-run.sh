@@ -25,9 +25,39 @@ SERVICES=(api app trigger-api trigger-app)
 
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 
+# Select the Node major from .nvmrc through nvm when nvm is installed, then check the
+# node on PATH, so a missing nvm or a wrong Node fails with a message instead of silently.
 use_node() {
-  # shellcheck disable=SC1090
-  [[ -s "$HOME/.nvm/nvm.sh" ]] && source "$HOME/.nvm/nvm.sh" && nvm use >/dev/null
+  local want nvm_sh found
+  want="$(tr -d '[:space:]' <"$ROOT/.nvmrc")"
+  for nvm_sh in "${NVM_DIR:-$HOME/.nvm}/nvm.sh" /opt/homebrew/opt/nvm/nvm.sh /usr/local/opt/nvm/nvm.sh; do
+    [[ -s "$nvm_sh" ]] || continue
+    # shellcheck disable=SC1090
+    source "$nvm_sh"
+    if ! nvm use "$want" >/dev/null; then
+      echo "ERROR: nvm could not switch to Node $want; run: nvm install $want" >&2
+      exit 1
+    fi
+    break
+  done
+  if ! command -v node >/dev/null 2>&1; then
+    echo "ERROR: Node $want is required and no node is on PATH; install it (nvm install $want)" >&2
+    exit 1
+  fi
+  found="$(node -v)"
+  if [[ "$found" != "v$want."* ]]; then
+    echo "ERROR: Node $want is required, found $found; run: nvm install $want && nvm use $want" >&2
+    exit 1
+  fi
+}
+
+# NODE_OPTIONS for builds: the API's tsc compile exceeds Node's default heap on 8 GB
+# machines. Appends a 4 GB heap unless the caller already set one.
+build_node_options() {
+  case " ${NODE_OPTIONS:-} " in
+    *--max-old-space-size*) printf '%s' "$NODE_OPTIONS" ;;
+    *) printf '%s' "${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=4096" ;;
+  esac
 }
 
 pid_of() { [[ -f "$RUN_DIR/$1.pid" ]] && cat "$RUN_DIR/$1.pid" || true; }
@@ -96,8 +126,12 @@ wait_for_url() {
 
 cmd_build() {
   use_node
-  echo "== building packages/db (apps resolve @trycompai/db from its dist)"
-  ( cd "$ROOT/packages/db" && bun run build )
+  NODE_OPTIONS="$(build_node_options)"
+  export NODE_OPTIONS
+  # The api and app import the workspace libraries (auth, email, integration-platform,
+  # billing, company, db, ...) from their dist folders; turbo builds exactly those.
+  echo "== building workspace libraries"
+  ( cd "$ROOT" && bunx turbo run build --filter='@trycompai/api^...' --filter='@trycompai/app^...' )
   echo "== building api"
   ( cd "$ROOT/apps/api" && bun run build )
   echo "== building app"
@@ -171,14 +205,21 @@ cmd_logs() {
   tail -n 100 -f "$LOG_DIR/$name.log"
 }
 
-case "${1:-}" in
-  build)  cmd_build ;;
-  start)  cmd_start ;;
-  stop)   cmd_stop ;;
-  status) cmd_status ;;
-  logs)   cmd_logs "${2:-}" ;;
-  *)
-    echo "usage: scripts/local-run.sh <build|start|stop|status|logs <service>>" >&2
-    exit 1
-    ;;
-esac
+main() {
+  case "${1:-}" in
+    build)  cmd_build ;;
+    start)  cmd_start ;;
+    stop)   cmd_stop ;;
+    status) cmd_status ;;
+    logs)   cmd_logs "${2:-}" ;;
+    *)
+      echo "usage: scripts/local-run.sh <build|start|stop|status|logs <service>>" >&2
+      exit 1
+      ;;
+  esac
+}
+
+# Run only when executed, so the tests can source the helpers.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

@@ -6,7 +6,7 @@ It runs every app from source with hot reload against local Postgres and MinIO.
 ## Prerequisites
 
 - Docker Desktop (Postgres + MinIO run as containers)
-- Node 22 LTS (`nvm use` picks it up from `.nvmrc`; Prisma refuses Node 23)
+- Node 22 LTS (Prisma refuses Node 23). With nvm the runner switches to the version in `.nvmrc`; without nvm it checks the `node` on `PATH` and stops with a message if it is not 22.
 - Bun >= 1.1.36 (`npm i -g bun`)
 
 ## One-time setup
@@ -64,7 +64,7 @@ Use the compiled runner. Dev-mode watchers (`bun run dev`) keep Turbopack and
 `tsc --watch` resident and need ~16 GB of RAM; this needs ~4 GB.
 
 ```bash
-scripts/local-run.sh build    # compile api + app; rerun after pulling or editing code
+scripts/local-run.sh build    # workspace libraries (turbo), then api + app; rerun after pulling or editing code
 scripts/local-run.sh start    # local containers (only when DATABASE_URL is local), api :3333, app :3000, both Trigger workers
 scripts/local-run.sh status
 scripts/local-run.sh logs app # or api, trigger-api, trigger-app
@@ -72,6 +72,8 @@ scripts/local-run.sh stop
 ```
 
 Dashboard: http://localhost:3000. API docs: http://localhost:3333/api/docs.
+`build` first compiles the workspace libraries the api and app import from `dist` (`@trycompai/auth`, `email`, `integration-platform`, `billing`, `company`, `db`, `utils`) with turbo, then the two apps, and runs with a 4 GB Node heap (`--max-old-space-size=4096`, appended to any `NODE_OPTIONS` you set) because the API compile exceeds the default heap on 8 GB machines.
+Tests for the runner's helpers: `bash scripts/tests/local-run.test.sh`.
 Start order matters: the app checks the session against the API on every render, so the script waits for the API before starting the app.
 
 For active development on one app, run only that app's dev script in its own terminal (`cd apps/app && bun run dev`) and keep the rest compiled.
