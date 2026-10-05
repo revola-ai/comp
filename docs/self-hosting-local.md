@@ -6,7 +6,7 @@ It runs every app from source with hot reload against local Postgres and MinIO.
 ## Prerequisites
 
 - Docker Desktop (Postgres + MinIO run as containers)
-- Node 22 LTS (`nvm use` picks it up from `.nvmrc`; Prisma refuses Node 23)
+- Node 22.12 or newer 22.x (Prisma 7.6 requires `^22.12`; `.nvmrc` pins the major). The runner uses the `node` on `PATH` when it qualifies, however it was installed; otherwise it asks nvm (if installed) for the `.nvmrc` major, and stops with a message if neither works.
 - Bun >= 1.1.36 (`npm i -g bun`)
 
 ## One-time setup
@@ -64,7 +64,7 @@ Use the compiled runner. Dev-mode watchers (`bun run dev`) keep Turbopack and
 `tsc --watch` resident and need ~16 GB of RAM; this needs ~4 GB.
 
 ```bash
-scripts/local-run.sh build    # compile api + app; rerun after pulling or editing code
+scripts/local-run.sh build    # workspace libraries (turbo), then api + app; rerun after pulling or editing code
 scripts/local-run.sh start    # local containers (only when DATABASE_URL is local), api :3333, app :3000, both Trigger workers
 scripts/local-run.sh status
 scripts/local-run.sh logs app # or api, trigger-api, trigger-app
@@ -72,10 +72,12 @@ scripts/local-run.sh stop
 ```
 
 Dashboard: http://localhost:3000. API docs: http://localhost:3333/api/docs.
+`build` first compiles, with turbo, every workspace package the api and app depend on (they import those from `dist`), then the two apps. The API compile runs with a 4 GB Node heap (`--max-old-space-size=4096`, appended to any `NODE_OPTIONS` you set unless that already sets a heap size or percentage) because it exceeds the default heap on 8 GB machines.
 Start order matters: the app checks the session against the API on every render, so the script waits for the API before starting the app.
 
 For active development on one app, run only that app's dev script in its own terminal (`cd apps/app && bun run dev`) and keep the rest compiled.
 Never run the root `bun run dev`: it launches 13 watchers including Electron and seven library rebuilders.
+Changing the runner: its tests are `bash scripts/tests/local-run.test.sh`; the Node minimum and build heap are `NODE_MIN` and `BUILD_HEAP_MB` at the top of `scripts/local-run.sh`.
 
 Portal (`cd apps/portal && bun run dev`, :3002) and framework-editor (`cd apps/framework-editor && bun run dev`, :3004) are only needed for the employee/trust portal and template editing.
 
