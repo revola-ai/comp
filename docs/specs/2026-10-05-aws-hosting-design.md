@@ -46,7 +46,7 @@ Logs go to CloudWatch log groups `/ecs/comp-api`, `/ecs/comp-app`, `/ecs/comp-po
 
 ### 3.2 Configuration and secrets
 
-- A chamber service `comp-prod` in SSM Parameter Store (KMS `alias/aws/ssm`) holds every secret; task definitions reference them as ECS `secrets`, the same way the other Revola services do.
+- A Secrets Manager secret `comp/production/config` (one JSON object of key/value pairs) holds every secret; task definitions reference individual keys as ECS `secrets` (`<secret-arn>:KEY::`), the same way the other Revola production services do (for example `interaction-service/production/config`). The shared `ecsTaskExecutionRole` already carries a `SecretsManagerRead` policy; the plan checks its resource scope covers `comp/*`.
 - Shared values are the ones colleagues already use (Supabase, Upstash, Google OAuth, Resend, Gemini, OpenAI), plus `ENCRYPTION_KEY` and `SECRET_KEY`, which must equal the values the team already uses because integration credentials in the shared database are encrypted with `ENCRYPTION_KEY`.
 - Public URLs: `BASE_URL`/`BETTER_AUTH_URL` = `https://api.comp.revola.ai`, `NEXT_PUBLIC_APP_URL`/`APP_URL` = `https://app.comp.revola.ai`, `PORTAL_URL` = `https://portal.comp.revola.ai`, `AUTH_TRUSTED_ORIGINS` = those three origins.
 - `NEXT_PUBLIC_*` values are compiled into the app and portal images at build time, so the images are built for this domain.
@@ -58,9 +58,10 @@ Logs go to CloudWatch log groups `/ecs/comp-api`, `/ecs/comp-app`, `/ecs/comp-po
 - An ACM certificate for `*.comp.revola.ai` in `us-east-2`, validated with a CNAME in Cloudflare, attached to the ALB's 443 listener as an additional certificate.
 - Cloudflare Access application covering `*.comp.revola.ai`, Google as identity provider, policy: allow emails ending in `@revola.ai`.
   This is what stops strangers from signing in, which matters because `SELF_HOSTED=true` auto-approves every new organization.
+- ALB rule priorities: the production listener's existing rules are path-based at priorities 5 to 36 and its default action forwards to another service, so Comp's host-and-header rules take priorities 1 to 3 and a priority-4 rule answers `403` for any `*.comp.revola.ai` request that lacks the origin header.
 - Origin lock: a Cloudflare Transform Rule adds `X-Comp-Origin-Auth: <secret>` to requests for `*.comp.revola.ai`, and every ALB listener rule for the three hosts requires that header.
   Without it, anyone who learns the ALB address could send `Host: app.comp.revola.ai` straight to the ALB and skip Access.
-  Requests without the header fall through to the ALB's default action; ALB target health checks do not pass through listener rules, so they are unaffected.
+  Requests without the header get the priority-4 `403`; ALB target health checks do not pass through listener rules, so they are unaffected.
 - Machine callers: Trigger.dev tasks call the API (internal email sending, revalidation) and cannot pass Access.
   The plan enumerates every endpoint called from Trigger tasks or external webhooks (the API's `@Public()` routes and the internal routes guarded by `INTERNAL_API_TOKEN` or service tokens) and adds Access Bypass policies for exactly those paths; those routes keep their own token checks.
 
@@ -100,7 +101,7 @@ Logs go to CloudWatch log groups `/ecs/comp-api`, `/ecs/comp-app`, `/ecs/comp-po
 ## 4. Security notes
 
 - Access at the edge plus the origin-lock header means the app is unreachable to anyone outside `@revola.ai`, including the sign-up flow that would otherwise auto-approve organizations.
-- Secrets live only in SSM and in task memory; images contain no secrets (the Supabase CA is public).
+- Secrets live only in Secrets Manager and in task memory; images contain no secrets (the Supabase CA is public).
 - Bypass paths for machine callers stay narrow and keep their own token checks.
 - Outside parties (an auditor, employees signing policies in the portal) need an Access policy entry before they can reach the site.
 
@@ -115,7 +116,7 @@ Logs go to CloudWatch log groups `/ecs/comp-api`, `/ecs/comp-app`, `/ecs/comp-po
 ## 6. Acceptance criteria
 
 1. `https://app.comp.revola.ai` asks for Revola Google sign-in through Cloudflare Access, then loads the Revola AI organization with the same 28 policies and both frameworks as today.
-2. A request to the ALB with `Host: app.comp.revola.ai` but without the origin header gets the default response, not the app.
+2. A request to the ALB with `Host: app.comp.revola.ai` but without the origin header gets `403`, not the app and not another Revola service.
 3. Signing in on `app.comp.revola.ai` keeps the session across app, API and portal (cookie domain `.comp.revola.ai`).
 4. A background job started from the hosted app (for example policy regeneration) completes on Trigger.dev `prod` with no laptop running `trigger dev`.
 5. Evidence upload to Supabase Storage and download back work from the hosted app.
