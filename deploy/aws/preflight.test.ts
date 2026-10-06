@@ -1,106 +1,21 @@
-import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { config } from './config.ts';
 import { runPreflight } from './preflight.ts';
+import {
+  AWS_STUB,
+  calls,
+  failureMessage,
+  install,
+  NAT_ROUTES,
+  stubDirectory,
+  useStubbedTools,
+} from './tests/preflight-stubs.ts';
 
 // Spawning a freshly written script can take a second on a scanned machine; allow for it.
 setDefaultTimeout(30_000);
-
-// Every external tool is a fake executable on a PATH that contains nothing else.
-// Behaviour is steered by STUB_* variables; every call is appended to calls.log.
-const AWS_STUB = `#!/bin/sh
-echo "aws $*" >> "$STUB_DIR/calls.log"
-case "$1 $2" in
-  "sts get-caller-identity") [ -n "$STUB_ACCOUNT" ] || exit 255; echo "$STUB_ACCOUNT" ;;
-  "configure get") [ -n "$STUB_REGION" ] || exit 1; echo "$STUB_REGION" ;;
-  "ec2 describe-route-tables")
-    for arg in "$@"; do
-      case "$arg" in
-        Name=association.subnet-id,Values=*)
-          subnet="\${arg#*Values=}"
-          # PATH holds only the stubs, so use shell builtins (no cat).
-          [ -f "$STUB_DIR/rt-$subnet.json" ] && { IFS= read -r line < "$STUB_DIR/rt-$subnet.json"; echo "$line"; exit 0; } ;;
-      esac
-    done
-    echo '{"RouteTables":[]}' ;;
-  *) echo "unexpected aws call: $*" >&2; exit 2 ;;
-esac
-`;
-const BUN_STUB = `#!/bin/sh
-echo "bun $*" >> "$STUB_DIR/calls.log"
-case "$*" in
-  *whoami*) [ "$STUB_TRIGGER" = "out" ] && { echo "not logged in" >&2; exit 1; } ;;
-esac
-exit 0
-`;
-const PLAIN_STUB = (name: string) =>
-  `#!/bin/sh\necho "${name} $*" >> "$STUB_DIR/calls.log"\nexit 0\n`;
-
-const NAT_ROUTES = {
-  RouteTables: [
-    {
-      Routes: [
-        { DestinationCidrBlock: '10.0.0.0/16', GatewayId: 'local', State: 'active' },
-        {
-          DestinationCidrBlock: '0.0.0.0/0',
-          NatGatewayId: 'nat-0123456789abcdef0',
-          State: 'active',
-        },
-      ],
-    },
-  ],
-};
-
-const saved = { ...process.env };
-let stubDir = '';
-
-function install({ tool, body }: { tool: string; body: string }): void {
-  const file = join(stubDir, tool);
-  writeFileSync(file, body);
-  chmodSync(file, 0o755);
-}
-
-function calls(): string {
-  try {
-    return readFileSync(join(stubDir, 'calls.log'), 'utf8');
-  } catch {
-    return '';
-  }
-}
-
-beforeEach(() => {
-  stubDir = mkdtempSync(join(tmpdir(), 'preflight-'));
-  install({ tool: 'aws', body: AWS_STUB });
-  install({ tool: 'bun', body: BUN_STUB });
-  for (const tool of ['git', 'curl', 'docker']) install({ tool, body: PLAIN_STUB(tool) });
-  for (const subnet of config.subnetIds) {
-    writeFileSync(join(stubDir, `rt-${subnet}.json`), JSON.stringify(NAT_ROUTES));
-  }
-  process.env = {
-    HOME: saved.HOME ?? '',
-    PATH: stubDir,
-    STUB_DIR: stubDir,
-    STUB_ACCOUNT: config.accountId,
-    STUB_REGION: config.region,
-    CLOUDFLARE_API_TOKEN: 'cf-token-value',
-  };
-});
-
-afterEach(() => {
-  process.env = { ...saved };
-  rmSync(stubDir, { recursive: true, force: true });
-});
-
-async function failureMessage(needs: Parameters<typeof runPreflight>[0]['needs']): Promise<string> {
-  try {
-    await runPreflight({ needs });
-  } catch (error) {
-    return error instanceof Error ? error.message : String(error);
-  }
-  throw new Error('runPreflight resolved but was expected to fail');
-}
+useStubbedTools();
 
 describe('runPreflight', () => {
   test('passes when everything is in order', async () => {
@@ -146,12 +61,12 @@ describe('runPreflight', () => {
   });
 
   test('a missing tool is named', async () => {
-    rmSync(join(stubDir, 'git'));
+    rmSync(join(stubDirectory(), 'git'));
     expect(await failureMessage(['aws'])).toContain('missing tool: git');
   });
 
   test('a missing docker is named only when docker is needed', async () => {
-    rmSync(join(stubDir, 'docker'));
+    rmSync(join(stubDirectory(), 'docker'));
     await runPreflight({ needs: ['aws'] });
     expect(await failureMessage(['docker'])).toContain('missing tool: docker');
   });
@@ -175,7 +90,7 @@ describe('runPreflight', () => {
   test('a subnet without a NAT route is named', async () => {
     const bad = config.subnetIds[1] as string;
     writeFileSync(
-      join(stubDir, `rt-${bad}.json`),
+      join(stubDirectory(), `rt-${bad}.json`),
       JSON.stringify({
         RouteTables: [
           {
@@ -193,7 +108,7 @@ describe('runPreflight', () => {
   test('a blackholed NAT route does not count', async () => {
     const bad = config.subnetIds[0] as string;
     writeFileSync(
-      join(stubDir, `rt-${bad}.json`),
+      join(stubDirectory(), `rt-${bad}.json`),
       JSON.stringify({
         RouteTables: [
           {
@@ -213,10 +128,10 @@ describe('runPreflight', () => {
 
   test('a subnet on the main route table is checked through the VPC main table', async () => {
     const bad = config.subnetIds[2] as string;
-    rmSync(join(stubDir, `rt-${bad}.json`));
+    rmSync(join(stubDirectory(), `rt-${bad}.json`));
     // No explicit association: preflight must fall back to the VPC main route table.
     const main = JSON.stringify(NAT_ROUTES);
-    writeFileSync(join(stubDir, 'rt-main.json'), main);
+    writeFileSync(join(stubDirectory(), 'rt-main.json'), main);
     const body = AWS_STUB.replace(
       '    echo \'{"RouteTables":[]}\' ;;',
       '    case "$*" in *association.main*) IFS= read -r line < "$STUB_DIR/rt-main.json"; echo "$line" ;; *) echo \'{"RouteTables":[]}\' ;; esac ;;',

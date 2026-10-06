@@ -78,6 +78,8 @@ const TLS_MESSAGE_CODES: Record<string, string> = {
   'certificate not trusted': 'CERT_UNTRUSTED',
   'certificate rejected': 'CERT_REJECTED',
   'hostname mismatch': 'HOSTNAME_MISMATCH',
+  // Node's own check of the certificate's subjectAltName (not an OpenSSL verify result).
+  'invalid subject alternative name string': 'ERR_TLS_CERT_ALTNAME_FORMAT',
 };
 const ALTNAME_MESSAGE_PREFIX = "hostname/ip does not match certificate's altnames";
 const MAX_CHAIN_NODES = 32;

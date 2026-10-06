@@ -17,8 +17,9 @@ export class PreflightError extends Error {
   }
 }
 
-type RunResult = { code: number; stdout: string };
+type RunResult = { code: number; stdout: string; stderr: string };
 
+// Both pipes are drained while the command runs, so a chatty tool can never fill one and stall.
 async function run({ cmd }: { cmd: string[] }): Promise<RunResult> {
   try {
     const proc = Bun.spawn({
@@ -28,11 +29,24 @@ async function run({ cmd }: { cmd: string[] }): Promise<RunResult> {
       stderr: 'pipe',
       timeout: 60_000,
     });
-    const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-    return { code, stdout: stdout.trim() };
-  } catch {
-    return { code: 127, stdout: '' };
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    return { code, stdout: stdout.trim(), stderr };
+  } catch (error) {
+    return { code: 127, stdout: '', stderr: error instanceof Error ? error.message : '' };
   }
+}
+
+/** ` (<first non-empty stderr line, trimmed>)`, or nothing when the tool said nothing. */
+function stderrHint({ result }: { result: RunResult }): string {
+  const first = result.stderr
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  return first ? ` (${first})` : '';
 }
 
 function hasTool({ tool }: { tool: string }): boolean {
@@ -52,7 +66,7 @@ async function checkAccount(): Promise<string | undefined> {
   });
   if (result.code !== 0) {
     return (
-      'aws sts get-caller-identity failed; run aws sso login or set AWS_PROFILE=<profile for account ' +
+      `aws sts get-caller-identity failed${stderrHint({ result })}; run aws sso login or set AWS_PROFILE=<profile for account ` +
       `${config.accountId}>`
     );
   }
@@ -60,8 +74,9 @@ async function checkAccount(): Promise<string | undefined> {
   return `wrong AWS account ${result.stdout}, expected ${config.accountId}; set AWS_PROFILE=<profile for account ${config.accountId}>`;
 }
 
+// The AWS CLI's own order: AWS_REGION, then AWS_DEFAULT_REGION, then the profile.
 async function checkRegion(): Promise<string | undefined> {
-  const fromEnv = process.env.AWS_REGION?.trim();
+  const fromEnv = process.env.AWS_REGION?.trim() || process.env.AWS_DEFAULT_REGION?.trim();
   const region =
     fromEnv || (await run({ cmd: ['aws', 'configure', 'get', 'region'] })).stdout || '<unset>';
   if (region === config.region) return undefined;
@@ -82,7 +97,13 @@ const routeTablesSchema = z.object({
   ),
 });
 
-async function describeRouteTables({ filters }: { filters: string[] }) {
+type RouteTables = z.infer<typeof routeTablesSchema>['RouteTables'];
+
+async function describeRouteTables({
+  filters,
+}: {
+  filters: string[];
+}): Promise<{ tables: RouteTables } | { failure: string }> {
   const result = await run({
     cmd: [
       'aws',
@@ -96,27 +117,30 @@ async function describeRouteTables({ filters }: { filters: string[] }) {
       'json',
     ],
   });
-  if (result.code !== 0) return undefined;
+  if (result.code !== 0) {
+    return { failure: `aws ec2 describe-route-tables failed${stderrHint({ result })}` };
+  }
   try {
-    return routeTablesSchema.parse(JSON.parse(result.stdout)).RouteTables;
+    return { tables: routeTablesSchema.parse(JSON.parse(result.stdout)).RouteTables };
   } catch {
-    return undefined;
+    return { failure: 'aws ec2 describe-route-tables returned unexpected JSON' };
   }
 }
 
 async function checkSubnetNat({ subnetId }: { subnetId: string }): Promise<string | undefined> {
   // A subnet with no explicit association uses its VPC's main route table.
-  let tables = await describeRouteTables({
+  let read = await describeRouteTables({
     filters: [`Name=association.subnet-id,Values=${subnetId}`],
   });
-  if (tables?.length === 0) {
-    tables = await describeRouteTables({
+  if ('tables' in read && read.tables.length === 0) {
+    read = await describeRouteTables({
       filters: ['Name=association.main,Values=true', `Name=vpc-id,Values=${config.vpcId}`],
     });
   }
-  if (tables === undefined)
-    return `could not read the route table for subnet ${subnetId} (aws ec2 describe-route-tables failed)`;
-  const hasNat = tables.some((table) =>
+  if ('failure' in read) {
+    return `could not read the route table for subnet ${subnetId} (${read.failure})`;
+  }
+  const hasNat = read.tables.some((table) =>
     table.Routes.some(
       (route) =>
         route.DestinationCidrBlock === '0.0.0.0/0' &&
@@ -132,14 +156,14 @@ async function checkTriggerLogin(): Promise<string | undefined> {
   const version = config.triggerCliVersion;
   const result = await run({ cmd: ['bun', 'x', `trigger.dev@${version}`, 'whoami'] });
   if (result.code === 0) return undefined;
-  return `Trigger.dev is not logged in; run: bunx trigger.dev@${version} login`;
+  return `Trigger.dev is not logged in${stderrHint({ result })}; run: bunx trigger.dev@${version} login`;
 }
 
 async function checkDocker(): Promise<string | undefined> {
   const result = await run({ cmd: ['docker', 'buildx', 'version'] });
   return result.code === 0
     ? undefined
-    : 'docker buildx is unavailable; install Docker with the buildx plugin';
+    : `docker buildx is unavailable${stderrHint({ result })}; install Docker with the buildx plugin`;
 }
 
 export async function runPreflight({ needs }: { needs: readonly Need[] }): Promise<void> {

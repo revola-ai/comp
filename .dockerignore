@@ -15,11 +15,13 @@ packages/db/certs/*
 **/*.tsbuildinfo
 **/src/generated
 **/.prisma-clientjs-*
+**/.trigger
 apps/*/prisma/schema/*.prisma
 !apps/*/prisma/schema/schema.prisma
 
 # Version control, worktrees and tooling not needed to build
 .git
+deploy/aws/terraform/.terraform
 .worktrees
 .claude
 .superpowers

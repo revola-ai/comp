@@ -72,6 +72,7 @@ describe('readinessReason', () => {
       "Hostname/IP does not match certificate's altnames: Host: db. is not in the cert's altnames",
       'ERR_TLS_CERT_ALTNAME_INVALID',
     ],
+    ['Invalid subject alternative name string', 'ERR_TLS_CERT_ALTNAME_FORMAT'],
   ])('maps the adapter TLS reason %p to its Node code', (reason, code) => {
     const error = Object.assign(new Error('Raw query failed'), {
       code: 'P2010',
