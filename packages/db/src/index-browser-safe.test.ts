@@ -7,8 +7,10 @@ import { dirname, resolve } from 'node:path';
 // anywhere in that module graph breaks the browser bundle at runtime
 // ("Cannot find module 'node:fs'"), so server-only code must load built-ins
 // lazily (process.getBuiltinModule) or live outside the index's graph.
-const STATIC_IMPORT = /^\s*import\s+(?!type\s)[^;]*?from\s+['"](node:[a-z_/]+|fs|path|tls|os|child_process|crypto)['"]/gm;
-const RELATIVE_IMPORT = /^\s*(?:import|export)\s+(?!type\s)[^;]*?from\s+['"](\.{1,2}\/[^'"]+)['"]/gm;
+const STATIC_IMPORT =
+  /^\s*import\s+(?!type\s)[^;]*?from\s+['"](node:[a-z_/]+|fs|path|tls|os|child_process|crypto)['"]/gm;
+const RELATIVE_IMPORT =
+  /^\s*(?:import|export)\s+(?!type\s)[^;]*?from\s+['"](\.{1,2}\/[^'"]+)['"]/gm;
 
 function resolveModule(fromFile: string, specifier: string): string {
   const base = resolve(dirname(fromFile), specifier);
@@ -34,9 +36,11 @@ function collectGraph({ entry, seen }: { entry: string; seen: Set<string> }): Se
 }
 
 describe('package index module graph', () => {
-  it('has no static Node built-in imports (browser bundles reach it via the apps\' @db re-exports)', () => {
+  it("has no static Node built-in imports (browser bundles reach it via the apps' @db re-exports)", () => {
     const files = collectGraph({ entry: resolve(import.meta.dir, 'index.ts'), seen: new Set() });
     expect(files.size).toBeGreaterThan(3);
+    // The connection policy is exported from the index, so it is held to the same rule.
+    expect([...files].some((file) => file.endsWith('pg-adapter-options.ts'))).toBe(true);
     const offenders = [...files].flatMap((file) =>
       [...readFileSync(file, 'utf8').matchAll(STATIC_IMPORT)].map((m) => `${file}: ${m[0].trim()}`),
     );

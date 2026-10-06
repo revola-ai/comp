@@ -103,6 +103,22 @@ TLS: the pooler's certificate is signed by Supabase's own CA, which is not in No
 Download it (Database, SSL, "Download certificate"), save it as `packages/db/certs/prod-ca-2021.crt` (gitignored) and set `DATABASE_SSL_CA` to its absolute path.
 `resolveSslConfig` then verifies the chain and the hostname against Node's roots plus that CA; a wrong CA is rejected (`self signed certificate in certificate chain`).
 Do not use `PRISMA_ALLOW_INSECURE_TLS=1` for a shared database.
+Every Prisma client builds its connection through `buildPgAdapterOptions` (`packages/db/src/pg-adapter-options.ts`), which logs the TLS mode once at startup and never the URL.
+With `NODE_ENV=production` and a non-local host it refuses to start without `DATABASE_SSL_CA` (error code `ca_file_missing`); `PRISMA_ALLOW_INSECURE_TLS=1` is the only explicit opt-out.
+`DATABASE_POOL_MAX` (a whole number from 1 to 50) caps each process's pool; unset keeps the driver default.
+
+### Schema changes against the shared database
+
+Laptops and production share this database, so `bun run db:migrate`, `db:migrate:reset`, `db:push` and `db:seed` in `packages/db` (and `db:migrate` in the apps) refuse to run when `DATABASE_URL` points at the production project recorded in `packages/db/production-target.json`.
+`COMP_I_AM_TOUCHING_PROD=1` runs them anyway; use it only when you mean to change production by hand.
+Calling `bunx prisma migrate dev` directly skips that guard, so always go through the scripts.
+
+The schema flow:
+
+1. Start the local Postgres (`bun docker:up` in `packages/db`), edit the schema, then run `bun run db:migrate:create --name <change>` in `packages/db`.
+   It runs `prisma migrate dev --create-only` against `postgresql://postgres:postgres@127.0.0.1:5432/comp_dev` (Prisma creates the database if it is missing), whatever `DATABASE_URL` your env files hold, and refuses any non-local `--url`.
+2. Review the generated SQL and commit the migration folder with the schema change.
+3. After review and merge, production applies it with `release.sh migrate --sha <commit>`; nothing else migrates the shared database.
 
 Moving an existing local database to Supabase (done once, 2026-09-16):
 
@@ -121,9 +137,10 @@ Onboarding a colleague: they clone the fork, run the one-time setup up to `./scr
 Their Google OAuth client must list `http://localhost:3000` and `http://localhost:3333` too, or they use the same client.
 Every member of a Trigger.dev project has their own Development environment and dev key, so jobs a person starts (onboarding, policy regeneration) run on that person's own `trigger dev`; invite colleagues to the Trigger.dev organization and have each create their own dev keys for `comp-app` and `comp-api`.
 `ENCRYPTION_KEY` must be identical on every machine: it encrypts integration credentials stored in the shared database, so a colleague with a different key cannot read credentials someone else saved. Share `SECRET_KEY` too (it is also `AUTH_SECRET` in `apps/app` and `BETTER_AUTH_SECRET` in `apps/portal`) so auth behaves the same everywhere; `INTERNAL_API_TOKEN` and the `SERVICE_TOKEN_*` values only connect one person's own API and app and can stay per machine.
-Deploying the workers with `trigger deploy` removes that dependency on someone's laptop being up, but it does not work for this fork yet: the deploy build (`apps/api/customPrismaExtension.ts`) installs `@trycompai/db` from npm, which is upstream's package and lacks this fork's exports (`resolveSslConfig`, `buildManifestFromFramework`), so deployed tasks would fail at first database access.
-Making it work means vendoring `packages/db/dist` into the worker image (or publishing the fork's package), shipping the Supabase CA alongside the RDS bundle in `apps/api/caBundleExtension.ts`, and setting `DATABASE_SSL_CA` to its path inside the image.
-Until then, run `trigger dev` locally.
+Deploying the workers with `trigger deploy` removes that dependency on someone's laptop being up.
+The deploy build of both projects vendors this fork's `packages/db/dist` into the worker image (`customPrismaExtension.ts`, via `packages/db/scripts/vendor-db-for-trigger.ts`) instead of installing upstream's `@trycompai/db` from npm, so run `bun run build` in `packages/db` first; the build stops if `dist/index.js` is missing.
+`caBundleExtension.ts` copies the committed Supabase CA (`deploy/aws/certs/supabase-ca.crt`) to `/app/certs/supabase-ca.crt` and sets `DATABASE_SSL_CA` (and `NODE_EXTRA_CA_CERTS`) to that path for deployed tasks.
+Tasks reach application storage through `createAppStorageClient` (`src/trigger/lib/app-storage-client.ts`), which honours `APP_AWS_ENDPOINT` with path-style access.
 
 Tests keep their guard: `packages/db` database suites only run when `DATABASE_URL` names a database ending in `_test`, so `bun test` never touches the shared database; keep a local Postgres for `comp_test`.
 

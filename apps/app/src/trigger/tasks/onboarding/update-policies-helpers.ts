@@ -182,15 +182,17 @@ export async function updatePolicyInDatabase(
     if (pdfUrlsToDelete.length > 0) {
       try {
         // Dynamic import to work in Trigger.dev context
-        const { BUCKET_NAME, s3Client } = await import('@/app/s3');
+        const { createAppStorageClient } = await import('@/trigger/lib/app-storage-client');
         const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+        const bucketName = process.env.APP_AWS_BUCKET_NAME;
 
-        if (s3Client && BUCKET_NAME) {
+        if (bucketName) {
+          const s3Client = createAppStorageClient();
           await Promise.allSettled(
             pdfUrlsToDelete.map((pdfUrl) =>
               s3Client.send(
                 new DeleteObjectCommand({
-                  Bucket: BUCKET_NAME,
+                  Bucket: bucketName,
                   Key: pdfUrl,
                 }),
               ),

@@ -50,14 +50,15 @@
     "scripts": {
         "backfill:framework-versions": "bun src/scripts/backfill-framework-versions.ts",
         "build": "rm -rf dist && node scripts/generate-prisma-client-js.js && tsc && node scripts/build-dist-schema.js",
-        "check-types": "tsc --noEmit",
+        "check-types": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
         "crosswalk:csf": "bun src/scripts/apply-csf-crosswalk.ts",
         "crosswalk:csf:check": "bun src/scripts/apply-csf-crosswalk.ts --check",
         "db:generate": "node scripts/generate-prisma-client-js.js",
-        "db:migrate": "prisma migrate dev",
-        "db:migrate:reset": "prisma migrate reset",
-        "db:push": "prisma db push",
-        "db:seed": "bun prisma/seed/seed.ts",
+        "db:migrate": "bun scripts/prod-guard.ts prisma migrate dev",
+        "db:migrate:create": "bun scripts/migrate-create.ts",
+        "db:migrate:reset": "bun scripts/prod-guard.ts prisma migrate reset",
+        "db:push": "bun scripts/prod-guard.ts prisma db push",
+        "db:seed": "bun scripts/prod-guard.ts bun prisma/seed/seed.ts",
         "db:studio": "prisma studio",
         "docker:clean": "docker compose down -v",
         "docker:down": "docker compose down",
@@ -65,6 +66,6 @@
         "lint": "prettier --check 'src/**/*.{ts,tsx,js,jsx,json}' 'prisma/**/*.prisma' && tsc --noEmit",
         "postinstall": "node scripts/generate-prisma-client-js.js || true",
         "prepublishOnly": "bun run build",
-        "test": "bun test src"
+        "test": "bun test src scripts"
     }
 }

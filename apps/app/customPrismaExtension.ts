@@ -4,22 +4,30 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { cp, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import {
+  assertWorkspaceDbBuilt,
+  vendorWorkspaceDb,
+} from '../../packages/db/scripts/vendor-db-for-trigger';
+import { resolvePrismaSchemaPath } from './prismaSchemaPaths';
 
 export type PrismaExtensionOptions = {
   version?: string;
   migrate?: boolean;
   directUrlEnvVarName?: string;
-  /**
-   * The version of the @trycompai/db package to use
-   */
-  dbPackageVersion?: string;
 };
 
+// @trycompai/db stays external (resolved at runtime from node_modules), but it is the
+// fork's own build, vendored from packages/db by vendorWorkspaceDb, never npm's
+// upstream package.
+const WORKSPACE_DB = '@trycompai/db';
+
 type ExtendedBuildContext = BuildContext & { workspaceDir?: string };
-type SchemaResolution = {
-  path?: string;
-  searched: string[];
-};
+
+// apps/<name> sits two levels below the repository root. context.workspaceDir is not
+// used: in a git worktree it can point at the main checkout.
+function repoRootOf(context: BuildContext): string {
+  return resolve(context.workingDir, '..', '..');
+}
 
 export function prismaExtension(options: PrismaExtensionOptions = {}): PrismaExtension {
   return new PrismaExtension(options);
@@ -31,13 +39,10 @@ export class PrismaExtension implements BuildExtension {
   private _resolvedSchemaPath?: string;
 
   constructor(private options: PrismaExtensionOptions) {
-    this.moduleExternals = [
-      '@prisma/client',
-      '@trycompai/db',
-    ];
+    this.moduleExternals = ['@prisma/client', WORKSPACE_DB];
   }
 
-  externalsForTarget(target: any) {
+  externalsForTarget(target: BuildContext['target']) {
     if (target === 'dev') {
       return [];
     }
@@ -49,7 +54,11 @@ export class PrismaExtension implements BuildExtension {
       return;
     }
 
-    const resolution = this.tryResolveSchemaPath(context as ExtendedBuildContext);
+    // Errors thrown in onBuildComplete are only logged by the CLI, so the
+    // missing-build check runs here, where it stops the deploy.
+    assertWorkspaceDbBuilt({ repoRoot: repoRootOf(context) });
+
+    const resolution = resolvePrismaSchemaPath(context as ExtendedBuildContext);
 
     if (!resolution.path) {
       context.logger.debug(
@@ -70,13 +79,13 @@ export class PrismaExtension implements BuildExtension {
     }
 
     if (!this._resolvedSchemaPath || !existsSync(this._resolvedSchemaPath)) {
-      const resolution = this.tryResolveSchemaPath(context as ExtendedBuildContext);
+      const resolution = resolvePrismaSchemaPath(context as ExtendedBuildContext);
 
       if (!resolution.path) {
         throw new Error(
           [
-            'PrismaExtension could not find the prisma schema. Make sure @trycompai/db is installed',
-            `with version ${this.options.dbPackageVersion || 'latest'} and that its dist files are built.`,
+            'PrismaExtension could not find the prisma schema. Make sure packages/db is built',
+            '(run bun run build in packages/db).',
             'Searched the following locations:',
             ...resolution.searched.map((candidate) => ` - ${candidate}`),
           ].join('\n'),
@@ -107,7 +116,7 @@ export class PrismaExtension implements BuildExtension {
     }
 
     context.logger.debug(
-      `PrismaExtension is generating the Prisma client for version ${version} from @trycompai/db package`,
+      `PrismaExtension is generating the Prisma client for version ${version} from the workspace schema`,
     );
 
     const commands: string[] = [];
@@ -133,13 +142,10 @@ export class PrismaExtension implements BuildExtension {
       `${binaryForRuntime(manifest.runtime)} node_modules/prisma/build/index.js generate --schema=./prisma/schema`,
     );
 
-    // Only handle migrations if requested
     if (this.options.migrate) {
-      context.logger.debug(
-        'Migration support not implemented for published package - please handle migrations separately',
+      context.logger.warn(
+        'PrismaExtension never migrates during a deploy; production migrations ship with release.sh migrate',
       );
-      // You could add migration commands here if needed
-      // commands.push(`${binaryForRuntime(manifest.runtime)} npx prisma migrate deploy`);
     }
 
     // Set up environment variables
@@ -165,22 +171,27 @@ export class PrismaExtension implements BuildExtension {
       );
     }
 
+    // Vendor the fork's @trycompai/db into the build output and drop the npm entry the
+    // externals collector recorded for it; its runtime dependencies are installed instead.
+    const { dependencies: dbDependencies } = vendorWorkspaceDb({
+      repoRoot: repoRootOf(context),
+      outputPath: manifest.outputPath,
+    });
+    manifest.externals = (manifest.externals ?? []).filter(
+      (external) => external.name !== WORKSPACE_DB,
+    );
+    const dependencies = { ...dbDependencies, prisma: version };
+
     context.logger.debug('Adding the prisma layer with the following commands', {
       commands,
       env,
-      dependencies: {
-        prisma: version,
-        '@trycompai/db': this.options.dbPackageVersion || 'latest',
-      },
+      dependencies,
     });
 
     context.addLayer({
       id: 'prisma',
       commands,
-      dependencies: {
-        prisma: version,
-        '@trycompai/db': this.options.dbPackageVersion || 'latest',
-      },
+      dependencies,
       build: {
         env,
       },
@@ -274,60 +285,5 @@ export class PrismaExtension implements BuildExtension {
     }
 
     return binaryPath;
-  }
-
-  private tryResolveSchemaPath(context: ExtendedBuildContext): SchemaResolution {
-    const candidates = this.buildSchemaCandidates(context);
-    const path = candidates.find((candidate) => existsSync(candidate));
-    return { path, searched: candidates };
-  }
-
-  private buildSchemaCandidates(context: ExtendedBuildContext): string[] {
-    const candidates: string[] = [];
-    const seen = new Set<string>();
-    const add = (p: string) => {
-      const resolved = resolve(p);
-      if (!seen.has(resolved)) {
-        seen.add(resolved);
-        candidates.push(resolved);
-      }
-    };
-
-    // Strategy 1: Resolve @trycompai/db via Node module resolution (follows workspace symlinks)
-    try {
-      const dbPkgJson = require.resolve('@trycompai/db/package.json', {
-        paths: [context.workingDir],
-      });
-      const dbRoot = dirname(dbPkgJson);
-      add(join(dbRoot, 'dist', 'schema.prisma'));
-      add(join(dbRoot, 'prisma', 'schema', 'schema.prisma'));
-    } catch {
-      // Package not resolvable yet (pre-install), fall through to other strategies
-    }
-
-    // Strategy 2: Walk up node_modules hierarchy from workingDir and workspaceDir
-    const addNodeModuleCandidates = (start: string | undefined) => {
-      if (!start) return;
-      let current = start;
-      while (true) {
-        const dbDir = resolve(current, 'node_modules', '@trycompai', 'db');
-        add(join(dbDir, 'dist', 'schema.prisma'));
-        add(join(dbDir, 'prisma', 'schema', 'schema.prisma'));
-        const parent = dirname(current);
-        if (parent === current) break;
-        current = parent;
-      }
-    };
-    addNodeModuleCandidates(context.workingDir);
-    addNodeModuleCandidates(context.workspaceDir);
-
-    // Strategy 3: Relative monorepo paths (apps/api → packages/db, apps/app → packages/db)
-    for (const rel of ['../../packages/db', '../packages/db']) {
-      const dbDir = resolve(context.workingDir, rel);
-      add(join(dbDir, 'dist', 'schema.prisma'));
-      add(join(dbDir, 'prisma', 'schema', 'schema.prisma'));
-    }
-
-    return candidates;
   }
 }

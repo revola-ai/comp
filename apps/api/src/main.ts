@@ -7,6 +7,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as express from 'express';
 import helmet from 'helmet';
 import path from 'path';
+import { initDatabaseClient } from '../prisma/client';
 import { AppModule } from './app.module';
 import { initTracing, shutdownTracing } from './inference-tracing';
 import {
@@ -35,6 +36,8 @@ function describeServer(baseUrl: string): string {
 }
 
 async function bootstrap(): Promise<void> {
+  // Fail at boot (exit 1 below) on ca_file_missing rather than on the first query.
+  initDatabaseClient();
   await initTracing();
 
   // Disable body parser - required for better-auth NestJS integration

@@ -2,6 +2,7 @@ import { metadata, schemaTask } from '@trigger.dev/sdk';
 import { z } from 'zod';
 import { PassThrough } from 'node:stream';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { createAppStorageClient } from '@/trigger/lib/app-storage-client';
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import archiver from 'archiver';
@@ -38,23 +39,7 @@ const UPLOAD_PART_SIZE = 10 * 1024 * 1024;
 const UPLOAD_QUEUE_SIZE = 4;
 
 function createS3Client(): S3Client {
-  const region = process.env.APP_AWS_REGION || 'us-east-1';
-  const accessKeyId = process.env.APP_AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.APP_AWS_SECRET_ACCESS_KEY;
-
-  if (!accessKeyId || !secretAccessKey) {
-    throw new Error(
-      'AWS S3 credentials missing. Set APP_AWS_ACCESS_KEY_ID and APP_AWS_SECRET_ACCESS_KEY.',
-    );
-  }
-
-  return new S3Client({
-    region,
-    credentials: { accessKeyId, secretAccessKey },
-    ...(process.env.APP_AWS_ENDPOINT
-      ? { endpoint: process.env.APP_AWS_ENDPOINT, forcePathStyle: true }
-      : {}),
-  });
+  return createAppStorageClient();
 }
 
 function getBucketName(): string {
