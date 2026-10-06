@@ -15,16 +15,14 @@ BUILDER="${COMP_BUILDER:-comp-builder}"
 TAG="${TAG:-smoke}"
 API_ENV_FILE="${API_ENV_FILE:-$ROOT/apps/api/.env}"
 CA_PATH=/app/certs/supabase-ca.crt
-API_HOST=api.comp.revola.ai
 # Variables the image itself sets; the env file must not override them.
 IMAGE_OWNED_ENV=" DATABASE_SSL_CA PRISMA_ALLOW_INSECURE_TLS NODE_ENV PORT HOSTNAME "
-# Throwaway values for the app and portal runtime env checks (a local, unreachable database).
-FAKE_DATABASE_URL=postgresql://smoke:smoke@127.0.0.1:5432/smoke
 
 # Size ceilings in MB of unpacked filesystem (du inside the image, the same on every image
 # store): the first green run's sizes plus about 15%. api 2276 MB and portal 342 MB were
-# measured 2026-10-06; the app has not been built yet (its next build needs more memory
-# than an 8 GB Docker VM), so its ceiling is unrecorded and the check fails until it is.
+# measured 2026-10-06. The app is built and smoked on CodeBuild (Task 5; its next build
+# needs more memory than an 8 GB Docker VM), so its ceiling is recorded after that first
+# green run and the check fails until then.
 max_mb() {
   case "$1" in
     api) echo 2620 ;;
@@ -90,11 +88,20 @@ node_is_22() {
   [[ "$version" == v22.* ]]
 }
 
+# SHA-256 of stdin: shasum on macOS, sha256sum on Linux (CodeBuild).
+sha256_of_stdin() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | cut -d' ' -f1
+  else
+    sha256sum | cut -d' ' -f1
+  fi
+}
+
 ca_is_committed_cert() {
   local inside committed
   inside="$(docker run --rm --entrypoint sh "$(image_of "$1")" -c \
-    "[ \"\$DATABASE_SSL_CA\" = $CA_PATH ] && cat $CA_PATH" | shasum -a 256 | cut -d' ' -f1)"
-  committed="$(shasum -a 256 <"$ROOT/deploy/aws/certs/supabase-ca.crt" | cut -d' ' -f1)"
+    "[ \"\$DATABASE_SSL_CA\" = $CA_PATH ] && cat $CA_PATH" | sha256_of_stdin)"
+  committed="$(sha256_of_stdin <"$ROOT/deploy/aws/certs/supabase-ca.crt")"
   [[ "$inside" == "$committed" ]]
 }
 
@@ -146,68 +153,9 @@ answers_200() {
   return 1
 }
 
-FAKE_NEXT_ENV=(-e "DATABASE_URL=$FAKE_DATABASE_URL" -e AUTH_SECRET=smoke-only
-  -e RESEND_API_KEY=smoke-only -e REVALIDATION_SECRET=smoke-only)
-
-check_portal() {
-  local port
-  CONTAINERS+=("$(container_of portal)")
-  port="$(start portal 3000 "${FAKE_NEXT_ENV[@]}")"
-  check "portal answers /api/health with 200" answers_200 "http://127.0.0.1:$port/api/health"
-  check_bundle portal
-}
-
-static_chunk_answers() {
-  local base="$1" chunk
-  curl -sL --max-time 30 -o "$SCRATCH/root.html" "$base/" || return 1
-  chunk="$(grep -oE '/_next/static/[^"]+\.js' "$SCRATCH/root.html" | head -n1)"
-  [[ -n "$chunk" ]] || return 1
-  [[ "$(curl -s -o /dev/null -w '%{http_code}' "$base$chunk")" == 200 ]]
-}
-
-image_optimizer_answers() {
-  local url="$1/_next/image?url=%2Ffavicon-96x96.png&w=64&q=75"
-  [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$url")" == 200 ]]
-}
-
-# Counts fixed-string matches of $2 across the target's client bundle (.next/static).
-bundle_count() {
-  docker run --rm --entrypoint sh "$(image_of "$1")" -c \
-    'grep -rhoF -- "$1" "apps/$2/.next/static" | wc -l' _ "$2" "$1"
-}
-
-# The client bundle carries the API host as the compiled NEXT_PUBLIC_API_URL value.
-bundle_has_api_url() {
-  (($(bundle_count "$1" "NEXT_PUBLIC_API_URL:\"https://$API_HOST\"") > 0))
-}
-
-# localhost:3333 may appear only as the dead fallback in `env.NEXT_PUBLIC_API_URL ||
-# 'http://localhost:3333'` (the env object holds the compiled API URL, checked above); a
-# fallback minifies away only where code reads process.env directly.
-bundle_has_no_localhost_api() {
-  local total fallbacks
-  total="$(bundle_count "$1" localhost:3333)"
-  fallbacks="$(bundle_count "$1" 'NEXT_PUBLIC_API_URL||"http://localhost:3333"')"
-  printf '      %s: %s localhost:3333 literal(s), %s of them env fallbacks\n' "$1" "$total" "$fallbacks"
-  ((total == fallbacks))
-}
-
-check_bundle() {
-  check "$1 client bundle compiles NEXT_PUBLIC_API_URL as https://$API_HOST" bundle_has_api_url "$1"
-  check "$1 client bundle uses localhost:3333 only as a dead env fallback" \
-    bundle_has_no_localhost_api "$1"
-}
-
-check_app() {
-  local port base
-  CONTAINERS+=("$(container_of app)")
-  port="$(start app 3000 "${FAKE_NEXT_ENV[@]}")"
-  base="http://127.0.0.1:$port"
-  check "app answers /api/health/live with 200" answers_200 "$base/api/health/live"
-  check "app serves a static chunk referenced by /" static_chunk_answers "$base"
-  check "app answers a /_next/image request with 200" image_optimizer_answers "$base"
-  check_bundle app
-}
+# App and portal checks (HTTP, runtime env, build output scan).
+# shellcheck source=deploy/aws/tests/images-smoke-next.sh
+source "$ROOT/deploy/aws/tests/images-smoke-next.sh"
 
 # Prints the names (never values) the env file assigns, minus the ones the image owns.
 env_file_names() {

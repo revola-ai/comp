@@ -124,7 +124,23 @@ EXPOSE 3333
 USER node
 CMD ["node", "src/main.js"]
 
+# Server code reads NEXT_PUBLIC_* from process.env at runtime too (for example the public
+# API URL better-auth gets as the request origin), so the runtime images carry the same
+# values the bundles were compiled with. tests/dockerfile-public-args.test.ts keeps these
+# lists equal to public-env.ts.
 FROM runtime AS app
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_APP_URL
+ARG NEXT_PUBLIC_PORTAL_URL
+ARG NEXT_PUBLIC_BETTER_AUTH_URL
+ARG NEXT_PUBLIC_SELF_HOSTED
+ARG NEXT_PUBLIC_APP_ENV
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
+    NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL} \
+    NEXT_PUBLIC_PORTAL_URL=${NEXT_PUBLIC_PORTAL_URL} \
+    NEXT_PUBLIC_BETTER_AUTH_URL=${NEXT_PUBLIC_BETTER_AUTH_URL} \
+    NEXT_PUBLIC_SELF_HOSTED=${NEXT_PUBLIC_SELF_HOSTED} \
+    NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV}
 COPY --from=app-build /repo/apps/app/.next/standalone/ /app/
 # The image optimizer caches under .next/cache; everything else stays read-only.
 RUN mkdir -p apps/app/.next/cache && chown node:node apps/app/.next/cache
@@ -135,6 +151,14 @@ USER node
 CMD ["node", "apps/app/server.js"]
 
 FROM runtime AS portal
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_APP_URL
+ARG NEXT_PUBLIC_PORTAL_URL
+ARG NEXT_PUBLIC_BETTER_AUTH_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
+    NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL} \
+    NEXT_PUBLIC_PORTAL_URL=${NEXT_PUBLIC_PORTAL_URL} \
+    NEXT_PUBLIC_BETTER_AUTH_URL=${NEXT_PUBLIC_BETTER_AUTH_URL}
 COPY --from=portal-build /repo/apps/portal/.next/standalone/ /app/
 RUN mkdir -p apps/portal/.next/cache && chown node:node apps/portal/.next/cache
 ENV PORT=3000 \

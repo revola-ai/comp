@@ -6,9 +6,12 @@ import { config } from './config.ts';
 
 // NEXT_PUBLIC_* values are compiled into the app and portal bundles at image build time, so
 // each image carries exactly one environment's values (images are not promotable).
-// docker-bake.hcl passes these build args; `bun public-env.ts check <bake --print json>`
-// (run by tests/images.smoke.sh) proves the bake file and this module agree and that every
-// NEXT_PUBLIC_ key the code reads is either passed or deliberately left unset.
+// docker-bake.hcl passes these build args, and the Dockerfile sets them as ENV in the build
+// and runtime stages (server code reads some of them from process.env at runtime).
+// `bun public-env.ts check <bake --print json>` (run by tests/images.smoke.sh) proves the
+// bake file and this module agree and that every NEXT_PUBLIC_ key the code reads is either
+// passed or deliberately left unset; `bun public-env.ts env <target>` lists the NAME=VALUE
+// lines the smoke expects in each runtime image.
 
 export type ImageTarget = 'app' | 'portal';
 export type PublicUrls = Readonly<{ api: string; app: string; portal: string }>;
@@ -60,6 +63,19 @@ export function publicBuildArgs({
     NEXT_PUBLIC_SELF_HOSTED: 'true',
     NEXT_PUBLIC_APP_ENV: 'production',
   };
+}
+
+/** `NAME=VALUE` lines a target's runtime image must carry in its environment, sorted. */
+export function publicEnvLines({
+  target,
+  urls,
+}: {
+  target: ImageTarget;
+  urls: PublicUrls;
+}): string[] {
+  return Object.entries(publicBuildArgs({ target, urls }))
+    .map(([name, value]) => `${name}=${value}`)
+    .sort();
 }
 
 export function findPublicEnvNames({ source }: { source: string }): string[] {
@@ -145,11 +161,24 @@ function runCheck({ bakeJsonPath }: { bakeJsonPath: string }): number {
   return problems.length === 0 ? 0 : 1;
 }
 
+function isImageTarget(value: string | undefined): value is ImageTarget {
+  return TARGETS.some((target) => target === value);
+}
+
+const USAGE = [
+  'usage: bun public-env.ts check <docker buildx bake --print output.json>',
+  '       bun public-env.ts env <app|portal>   (NAME=VALUE lines the runtime image must carry)',
+].join('\n');
+
 if (import.meta.main) {
-  const [command, bakeJsonPath] = process.argv.slice(2);
-  if (command !== 'check' || !bakeJsonPath) {
-    console.error('usage: bun public-env.ts check <docker buildx bake --print output.json>');
-    process.exit(2);
+  const [command, operand] = process.argv.slice(2);
+  if (command === 'check' && operand) {
+    process.exit(runCheck({ bakeJsonPath: operand }));
   }
-  process.exit(runCheck({ bakeJsonPath }));
+  if (command === 'env' && isImageTarget(operand)) {
+    console.log(publicEnvLines({ target: operand, urls: DEFAULT_URLS }).join('\n'));
+    process.exit(0);
+  }
+  console.error(USAGE);
+  process.exit(2);
 }

@@ -6,6 +6,7 @@ import {
   findPublicEnvNames,
   INTENTIONALLY_UNSET,
   publicBuildArgs,
+  publicEnvLines,
   scanReadNames,
 } from '../public-env.ts';
 
@@ -45,6 +46,17 @@ describe('publicBuildArgs', () => {
       const args = Object.keys(publicBuildArgs({ target, urls: DEFAULT_URLS }));
       expect(args.filter((name) => name in INTENTIONALLY_UNSET)).toEqual([]);
     }
+  });
+});
+
+describe('publicEnvLines', () => {
+  test('lists NAME=VALUE for each portal key, sorted', () => {
+    expect(publicEnvLines({ target: 'portal', urls: DEFAULT_URLS })).toEqual([
+      'NEXT_PUBLIC_API_URL=https://api.comp.revola.ai',
+      'NEXT_PUBLIC_APP_URL=https://app.comp.revola.ai',
+      'NEXT_PUBLIC_BETTER_AUTH_URL=https://portal.comp.revola.ai',
+      'NEXT_PUBLIC_PORTAL_URL=https://portal.comp.revola.ai',
+    ]);
   });
 });
 
