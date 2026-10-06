@@ -109,8 +109,9 @@ With `NODE_ENV=production` and a non-local host it refuses to start without `DAT
 
 ### Schema changes against the shared database
 
-Laptops and production share this database, so `prisma migrate dev`, `migrate reset`, `db push` and `db seed` refuse to run when `DATABASE_URL` points at the production project recorded in `packages/db/production-target.json`.
-The check runs inside every `prisma.config.ts` (`packages/db`, `apps/app`, `apps/portal`, `apps/framework-editor`), so it applies to the package scripts and to `bunx prisma ...` alike; `bun run db:seed` checks too.
+Laptops and production share this database, so `prisma migrate dev`, `migrate reset`, `migrate deploy`, `migrate resolve`, `db push`, `db seed` and `db execute` refuse to run when `DATABASE_URL` points at the production project recorded in `packages/db/production-target.json`.
+That file holds the SHA-256 of the project ref, never the ref itself (the fork is public); the guard hashes the ref a URL carries (the pooler user `postgres.<ref>` or the host `db.<ref>.supabase.co`) and compares, so another project on the same regional pooler is not refused.
+The check runs inside every `prisma.config.ts` (`packages/db`, `apps/app`, `apps/portal`, `apps/framework-editor`), so it applies to the package scripts and to `bunx prisma ...` alike; `bun run db:seed`, a direct `bun prisma/seed/seed.ts` and `bun run backfill:framework-versions` check too.
 `COMP_I_AM_TOUCHING_PROD=1` runs them anyway; use it only when you mean to change production by hand.
 
 The schema flow:
@@ -119,6 +120,10 @@ The schema flow:
    It runs `prisma migrate dev --create-only` against `postgresql://postgres:postgres@127.0.0.1:5432/comp_dev` (Prisma creates the database if it is missing), whatever `DATABASE_URL` your env files hold, and refuses any non-local `--url`.
 2. Review the generated SQL and commit the migration folder with the schema change.
 3. After review and merge, production applies it with `release.sh migrate --sha <commit>`; nothing else migrates the shared database.
+
+Until `release.sh migrate` exists, Kyle applies reviewed migrations to the shared database by hand, after review, from `packages/db`: `COMP_I_AM_TOUCHING_PROD=1 bunx prisma migrate deploy`.
+Nobody runs new code that needs a migration the shared database does not have yet: the API, app and portal query the new columns and fail with "column does not exist" until it is applied (for example `ApiKey.organizationOwned`, which API-key validation and member offboarding read).
+The onboarding advice below to skip the migrate step holds only once every committed migration has been applied this way.
 
 Moving an existing local database to Supabase (done once, 2026-09-16):
 
@@ -133,7 +138,7 @@ bunx prisma migrate status   # "Database schema is up to date!"
 The dump carries `_prisma_migrations`, so no migration runs during the restore; Supabase already provides `pgcrypto` in its `extensions` schema, which is on the default `search_path`, so `generate_prefixed_cuid()` keeps working.
 Files are copied bucket by bucket with `aws s3 sync --endpoint-url` from MinIO to the Supabase S3 endpoint (there were none to copy at migration time).
 
-Onboarding a colleague: they clone the fork, run the one-time setup up to `./scripts/local-env-init.sh`, then replace the local values with the shared ones above (share them through a password manager, never in git), download the CA, set `DATABASE_SSL_CA`, and skip the migrate/seed step (the shared database is already migrated).
+Onboarding a colleague: they clone the fork, run the one-time setup up to `./scripts/local-env-init.sh`, then replace the local values with the shared ones above (share them through a password manager, never in git), download the CA, set `DATABASE_SSL_CA`, and skip the migrate/seed step (the shared database is already migrated, once Kyle has applied every committed migration as described under Schema changes against the shared database).
 Their Google OAuth client must list `http://localhost:3000` and `http://localhost:3333` too, or they use the same client.
 Every member of a Trigger.dev project has their own Development environment and dev key, so jobs a person starts (onboarding, policy regeneration) run on that person's own `trigger dev`; invite colleagues to the Trigger.dev organization and have each create their own dev keys for `comp-app` and `comp-api`.
 `ENCRYPTION_KEY` must be identical on every machine: it encrypts integration credentials stored in the shared database, so a colleague with a different key cannot read credentials someone else saved. Share `SECRET_KEY` too (it is also `AUTH_SECRET` in `apps/app` and `BETTER_AUTH_SECRET` in `apps/portal`) so auth behaves the same everywhere; `INTERNAL_API_TOKEN` (API only, never set in `apps/app` or `apps/portal`), `COMP_FORWARDED_IP_TOKEN` (the same value in the API, app and portal) and the `SERVICE_TOKEN_*` values only connect one person's own API and app and can stay per machine.

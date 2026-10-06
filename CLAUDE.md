@@ -136,7 +136,7 @@ Every customer-facing API endpoint MUST have:
 
 - **Schema**: `packages/db/prisma/schema/` (split into files per model)
 - **IDs**: Always use prefixed CUIDs: `@default(dbgenerated("generate_prefixed_cuid('prefix'::text)"))`
-- **Migrations**: `cd packages/db && bunx prisma migrate dev --name your_name`
+- **Migrations**: `cd packages/db && bun run db:migrate:create --name your_name` (writes the migration against the local `comp_dev` database, never the shared one); commit it, and it reaches production only through the release path after review
 - **Multi-tenancy**: Always scope queries by `organizationId`
 - **Transactions**: Use for operations modifying multiple records
 

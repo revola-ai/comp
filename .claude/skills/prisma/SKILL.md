@@ -27,9 +27,11 @@ packages/db/prisma/schema/
 ### Step 2: Create Migration
 
 ```bash
-# Run from packages/db
+# Run from packages/db. Writes the migration against the local comp_dev database,
+# never the shared one; commit it, and it reaches production only through the
+# release path after review.
 cd packages/db
-bunx prisma migrate dev --name your_migration_name
+bun run db:migrate:create --name your_migration_name
 ```
 
 ### Step 3: Regenerate Types in Apps
@@ -48,8 +50,8 @@ bun run prisma:generate
 
 ```bash
 # 1. Make schema changes in packages/db
-# 2. Create migration
-cd packages/db && bunx prisma migrate dev --name add_user_role
+# 2. Create migration (local comp_dev only; commit it, released after review)
+cd packages/db && bun run db:migrate:create --name add_user_role
 
 # 3. Regenerate types in ALL apps that use the db
 bun run -F apps/app db:generate
@@ -64,7 +66,7 @@ bun run -F apps/portal db:generate
 apps/app/prisma/schema.prisma  # ❌ Wrong location
 
 # Don't forget to regenerate types
-bunx prisma migrate dev  # ✅ Created migration
+bun run db:migrate:create --name add_user_role  # ✅ Created migration
 # ... forgot to run db:generate in apps  # ❌ Types out of sync
 ```
 
@@ -141,7 +143,7 @@ model User {
 After schema changes:
 
 - [ ] Schema edited in `packages/db/prisma/schema/`
-- [ ] Migration created with `bunx prisma migrate dev`
+- [ ] Migration created with `bun run db:migrate:create` and committed (applied to production only through the release path after review)
 - [ ] Types regenerated in `apps/app` with `db:generate`
 - [ ] Types regenerated in `apps/api` with `db:generate`
 - [ ] Types regenerated in `apps/portal` with `db:generate`
