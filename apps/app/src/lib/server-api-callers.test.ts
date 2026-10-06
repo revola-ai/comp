@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@/env.mjs', () => ({ env: {} }));
 
 import { auth } from '@/utils/auth';
+import { InvalidApiPathError } from './api-path';
 import { serverApi } from './api-server';
 import { serverApi as legacyServerApi } from './server-api-client';
 
@@ -30,6 +31,7 @@ describe('server-side API callers', () => {
     vi.stubEnv('BACKEND_API_URL', 'http://comp-api.comp.internal:3333');
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.comp.revola.ai');
     vi.stubEnv('INTERNAL_API_TOKEN', 'internal-test-token');
+    vi.stubEnv('COMP_FORWARDED_IP_TOKEN', 'forwarded-test-token');
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockReset();
     fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
@@ -46,7 +48,8 @@ describe('server-side API callers', () => {
 
     expect(fetchMock.mock.calls[0][0]).toBe('http://comp-api.comp.internal:3333/v1/people');
     const sent = sentHeaders();
-    expect(sent.get('x-internal-token')).toBe('internal-test-token');
+    expect(sent.get('x-comp-forwarded-auth')).toBe('forwarded-test-token');
+    expect(sent.get('x-internal-token')).toBeNull();
     expect(sent.get('x-forwarded-for')).toBe('203.0.113.7');
     expect(sent.get('cookie')).toBe('better-auth.session_token=abc');
     expect(sent.get('x-comp-origin-auth')).toBeNull();
@@ -57,8 +60,20 @@ describe('server-side API callers', () => {
 
     expect(fetchMock.mock.calls[0][0]).toBe('http://comp-api.comp.internal:3333/v1/tasks');
     const sent = sentHeaders();
-    expect(sent.get('x-internal-token')).toBe('internal-test-token');
+    expect(sent.get('x-comp-forwarded-auth')).toBe('forwarded-test-token');
+    expect(sent.get('x-internal-token')).toBeNull();
     expect(sent.get('x-forwarded-for')).toBe('203.0.113.7');
+  });
+
+  it.each([
+    [
+      'lib/api-server',
+      () => serverApi.get('/v1/vendors/../internal/integration-debug/connections'),
+    ],
+    ['lib/server-api-client', () => legacyServerApi.post('/v1/vendors/%2e%2e/internal/x', {})],
+  ])('serverApi (%s) refuses a dot-segment path before any request', async (_name, run) => {
+    await expect(run()).rejects.toThrow(InvalidApiPathError);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('auth.api.getSession forwards only the cookie, origin and server headers', async () => {
@@ -68,7 +83,8 @@ describe('server-side API callers', () => {
       'http://comp-api.comp.internal:3333/api/auth/get-session',
     );
     const sent = sentHeaders();
-    expect(sent.get('x-internal-token')).toBe('internal-test-token');
+    expect(sent.get('x-comp-forwarded-auth')).toBe('forwarded-test-token');
+    expect(sent.get('x-internal-token')).toBeNull();
     expect(sent.get('x-forwarded-for')).toBe('203.0.113.7');
     expect(sent.get('cookie')).toBe('better-auth.session_token=abc');
     expect(sent.get('x-comp-origin-auth')).toBeNull();

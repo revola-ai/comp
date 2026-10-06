@@ -1,5 +1,6 @@
 'use server';
 
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import { db } from '@db/server';
 import { revalidatePath, revalidateTag } from 'next/cache';
@@ -64,7 +65,7 @@ export const removeEmployeeRoleOrMember = authActionClient
         if (roles.length === 1 && (roles[0] === 'employee' || roles[0] === 'contractor')) {
           // Only has employee/contractor role — deactivate via API
           // The API handles session cleanup, assignment clearing, and notifications
-          const result = await serverApi.delete(`/v1/people/${memberId}`);
+          const result = await serverApi.delete(`/v1/people/${encodePathSegment(memberId)}`);
 
           if (result.error) {
             return {
@@ -81,7 +82,7 @@ export const removeEmployeeRoleOrMember = authActionClient
           // Has other roles — just remove the employee role via API
           const updatedRoles = roles.filter((role) => role !== 'employee').join(',');
 
-          const result = await serverApi.patch(`/v1/people/${memberId}`, {
+          const result = await serverApi.patch(`/v1/people/${encodePathSegment(memberId)}`, {
             role: updatedRoles,
           });
 

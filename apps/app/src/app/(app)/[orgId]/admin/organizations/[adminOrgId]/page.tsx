@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import { AdminOrgTabs, type AdminOrgDetail } from './components/AdminOrgTabs';
 
@@ -8,7 +9,7 @@ export default async function AdminOrganizationDetailPage({
 }) {
   const { orgId, adminOrgId } = await params;
   const res = await serverApi.get<AdminOrgDetail>(
-    `/v1/admin/organizations/${adminOrgId}`,
+    `/v1/admin/organizations/${encodePathSegment(adminOrgId)}`,
   );
 
   if (!res.data) {

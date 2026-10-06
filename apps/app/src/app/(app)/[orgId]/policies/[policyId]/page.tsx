@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { getFeatureFlags } from '@/app/posthog';
 import { filterAppAccessMembers } from '@/lib/compliance';
 import { serverApi } from '@/lib/api-server';
@@ -48,14 +49,14 @@ export default async function PolicyDetails({
 
   const [policyRes, membersRes, controlsRes, activityRes, versionsRes] =
     await Promise.all([
-      serverApi.get<PolicyDetail>(`/v1/policies/${policyId}`),
+      serverApi.get<PolicyDetail>(`/v1/policies/${encodePathSegment(policyId)}`),
       serverApi.get<{ data: (Member & { user: User })[] }>('/v1/people'),
       serverApi.get<{
         mappedControls: MappedControl[];
         allControls: MappedControl[];
-      }>(`/v1/policies/${policyId}/controls`),
+      }>(`/v1/policies/${encodePathSegment(policyId)}/controls`),
       serverApi.get<{ data: AuditLogWithRelations[] }>(
-        `/v1/audit-logs?entityType=policy&entityId=${policyId}`,
+        `/v1/audit-logs?entityType=policy&entityId=${encodeURIComponent(policyId)}`,
       ),
       serverApi.get<{
         data: {
@@ -63,7 +64,7 @@ export default async function PolicyDetails({
           currentVersionId: string | null;
           pendingVersionId: string | null;
         };
-      }>(`/v1/policies/${policyId}/versions`),
+      }>(`/v1/policies/${encodePathSegment(policyId)}/versions`),
     ]);
 
   const policy = policyRes.data ?? null;

@@ -14,6 +14,7 @@ function eventWithHeaders(): ErrorEvent {
       headers: {
         'X-Comp-Origin-Auth': ORIGIN_SECRET,
         'x-internal-token': 'internal-test-token',
+        'X-Comp-Forwarded-Auth': 'forwarded-test-token',
         'user-agent': 'test-agent',
       },
     },
@@ -30,7 +31,10 @@ function eventWithHeaders(): ErrorEvent {
       trace: {
         trace_id: 't',
         span_id: 's',
-        data: { 'http.request.header.x_comp_origin_auth': [ORIGIN_SECRET] },
+        data: {
+          'http.request.header.x_comp_origin_auth': [ORIGIN_SECRET],
+          'http.request.header.x_comp_forwarded_auth': ['forwarded-test-token'],
+        },
       },
     },
     extra: { requestHeaders: { 'x-comp-origin-auth': ORIGIN_SECRET } },
@@ -38,9 +42,10 @@ function eventWithHeaders(): ErrorEvent {
 }
 
 describe('scrubSensitiveHeaders', () => {
-  it('removes the origin header (any case) and the internal token from the whole event', () => {
+  it('removes the origin header (any case), the forwarded-IP token and the internal token', () => {
     const scrubbed = scrubSensitiveHeaders(eventWithHeaders());
 
+    expect(JSON.stringify(scrubbed)).not.toContain('forwarded-test-token');
     expect(JSON.stringify(scrubbed)).not.toContain(ORIGIN_SECRET);
     expect(JSON.stringify(scrubbed)).not.toContain('internal-test-token');
     expect(JSON.stringify(scrubbed).toLowerCase()).not.toMatch(/x[-_]comp[-_]origin[-_]auth/);

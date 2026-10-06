@@ -6,6 +6,7 @@ describe('buildAuthForwardHeaders', () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.comp.revola.ai');
     vi.stubEnv('BACKEND_API_URL', 'http://comp-api.comp.internal:3333');
     vi.stubEnv('INTERNAL_API_TOKEN', 'internal-test-token');
+    vi.stubEnv('COMP_FORWARDED_IP_TOKEN', 'forwarded-test-token');
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -24,10 +25,11 @@ describe('buildAuthForwardHeaders', () => {
     expect(result.origin).toBe('https://api.comp.revola.ai');
   });
 
-  it('adds the internal token and the sanitized client IP', () => {
+  it('adds the forwarded-IP token and the sanitized client IP, never the internal token', () => {
     const incoming = new Headers({ 'x-forwarded-for': '203.0.113.7, 10.0.0.1' });
     const result = buildAuthForwardHeaders({ incoming });
-    expect(result['X-Internal-Token']).toBe('internal-test-token');
+    expect(result['X-Comp-Forwarded-Auth']).toBe('forwarded-test-token');
+    expect(result).not.toHaveProperty('X-Internal-Token');
     expect(result['X-Forwarded-For']).toBe('203.0.113.7');
   });
 

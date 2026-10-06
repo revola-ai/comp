@@ -2,11 +2,15 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 
 /** Set by the Cloudflare transform rule; proves a request came through Cloudflare. */
 export const ORIGIN_AUTH_HEADER = 'x-comp-origin-auth';
-/** Sent by the app and portal on server-side calls through Service Connect. */
-export const INTERNAL_TOKEN_HEADER = 'x-internal-token';
+/**
+ * Sent by the app and portal on server-side calls through Service Connect.
+ * It only attests the forwarded client IP; it grants no access, unlike the
+ * privileged INTERNAL_API_TOKEN, which the app and portal never hold.
+ */
+export const FORWARDED_AUTH_HEADER = 'x-comp-forwarded-auth';
 
 export type HeaderBag = Record<string, string | string[] | undefined>;
-/** Reads COMP_ORIGIN_AUTH, COMP_ORIGIN_AUTH_PREVIOUS and INTERNAL_API_TOKEN. */
+/** Reads COMP_ORIGIN_AUTH, COMP_ORIGIN_AUTH_PREVIOUS and COMP_FORWARDED_IP_TOKEN. */
 export type SecretEnv = Readonly<Record<string, string | undefined>>;
 
 export function headerValue({
@@ -56,8 +60,8 @@ export function hasValidOriginAuth({
   return current || previous;
 }
 
-/** The request carries INTERNAL_API_TOKEN (never true when it is unset). */
-export function hasValidInternalToken({
+/** The request carries COMP_FORWARDED_IP_TOKEN (never true when it is unset or empty). */
+export function hasValidForwardedAuth({
   headers,
   env,
 }: {
@@ -65,7 +69,7 @@ export function hasValidInternalToken({
   env: SecretEnv;
 }): boolean {
   return secretMatches({
-    presented: headerValue({ headers, name: INTERNAL_TOKEN_HEADER }),
-    expected: env.INTERNAL_API_TOKEN,
+    presented: headerValue({ headers, name: FORWARDED_AUTH_HEADER }),
+    expected: env.COMP_FORWARDED_IP_TOKEN,
   });
 }

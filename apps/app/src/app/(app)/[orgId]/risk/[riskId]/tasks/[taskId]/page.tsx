@@ -1,4 +1,5 @@
 import { TaskOverview } from '@/components/risks/tasks/task-overview';
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
@@ -11,7 +12,7 @@ export default async function RiskPage({ params }: PageProps) {
   const { riskId, taskId } = await params;
 
   const [taskResult, peopleResult] = await Promise.all([
-    serverApi.get<any>(`/v1/tasks/${taskId}`),
+    serverApi.get<any>(`/v1/tasks/${encodePathSegment(taskId)}`),
     serverApi.get<any>('/v1/people'),
   ]);
 

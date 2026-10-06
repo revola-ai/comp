@@ -1,4 +1,5 @@
 import { headers } from 'next/headers';
+import { assertSafeApiPath } from './api-path';
 import { getServerApiBaseUrl, getServerApiHeaders } from './server-api-base-url';
 
 interface ApiResponse<T = unknown> {
@@ -15,12 +16,15 @@ interface CallOptions {
 
 /**
  * Server-side API client for calling our internal NestJS API from server components
- * Forwards cookies for authentication - API handles auth via better-auth
+ * Forwards cookies for authentication - API handles auth via better-auth.
+ * Throws InvalidApiPathError, before any request, for a path that would
+ * resolve to a different route (see api-path.ts).
  */
 async function call<T = unknown>(
   endpoint: string,
   options: CallOptions = {},
 ): Promise<ApiResponse<T>> {
+  assertSafeApiPath(endpoint);
   const { method = 'GET', body, headers: customHeaders } = options;
 
   const headerStore = await headers();

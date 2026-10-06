@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import { PageLayout } from '@trycompai/design-system';
 import type { Metadata } from 'next';
@@ -38,7 +39,7 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
   // GET /v1/vendors/:id returns vendor fields flat (no data wrapper)
   // GET /v1/people returns { data: people[], count }
   const [vendorResult, peopleResult] = await Promise.all([
-    serverApi.get<Record<string, unknown>>(`/v1/vendors/${vendorId}`),
+    serverApi.get<Record<string, unknown>>(`/v1/vendors/${encodePathSegment(vendorId)}`),
     serverApi.get<PeopleApiResponse>('/v1/people'),
   ]);
 

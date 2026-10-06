@@ -41,6 +41,7 @@ import { ThrottleModule } from './throttle.module';
 
 const ORIGIN = 'A'.repeat(64);
 const INTERNAL = 'internal-token-for-tests';
+const FORWARDED = 'forwarded-ip-token-for-tests';
 const SERVICE_TOKEN = 'portal-service-token-for-tests';
 const LIMIT = { default: { limit: 2, ttl: 60_000 } };
 
@@ -93,6 +94,7 @@ describe('throttling chain (global public limiter + identity interceptor after H
 
   beforeAll(async () => {
     process.env.COMP_ORIGIN_AUTH = ORIGIN;
+    process.env.COMP_FORWARDED_IP_TOKEN = FORWARDED;
     process.env.INTERNAL_API_TOKEN = INTERNAL;
     process.env.SERVICE_TOKEN_PORTAL = SERVICE_TOKEN;
     for (const stream of [process.stdout, process.stderr]) {
@@ -170,7 +172,7 @@ describe('throttling chain (global public limiter + identity interceptor after H
 
   it('gives two signed-in users arriving through Service Connect separate buckets', async () => {
     const internal = {
-      'X-Internal-Token': INTERNAL,
+      'X-Comp-Forwarded-Auth': FORWARDED,
       'X-Forwarded-For': '203.0.113.50',
     };
     const alice = { ...internal, Cookie: 'user=alice' };
@@ -190,12 +192,25 @@ describe('throttling chain (global public limiter + identity interceptor after H
     for (const client of ['203.0.113.60', '203.0.113.61', '203.0.113.62']) {
       statuses.push(
         await get('/probe/unguarded', {
-          'X-Internal-Token': INTERNAL,
+          'X-Comp-Forwarded-Auth': FORWARDED,
           'X-Forwarded-For': `${client}, 10.0.3.4`,
         }),
       );
     }
     expect(statuses).toEqual([200, 200, 200]);
+  });
+
+  it('does not trust a forwarded client IP on the privileged internal token', async () => {
+    const statuses: number[] = [];
+    for (const client of ['203.0.113.70', '203.0.113.71', '203.0.113.72']) {
+      statuses.push(
+        await get('/probe/unguarded', {
+          'X-Internal-Token': INTERNAL,
+          'X-Forwarded-For': client,
+        }),
+      );
+    }
+    expect(statuses).toEqual([200, 200, 429]);
   });
 
   it('gives a service-token caller its own bucket', async () => {
@@ -229,8 +244,9 @@ describe('throttling chain (global public limiter + identity interceptor after H
     expect(response.headers['x-ratelimit-limit']).toBe('100');
   });
 
-  it('never writes the origin header value to logs', () => {
+  it('never writes the origin or forwarded-auth header values to logs', () => {
     expect(logged.join('\n')).not.toContain(ORIGIN);
+    expect(logged.join('\n')).not.toContain(FORWARDED);
   });
 });
 

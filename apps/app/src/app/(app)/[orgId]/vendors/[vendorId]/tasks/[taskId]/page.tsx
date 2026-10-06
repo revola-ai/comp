@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import { notFound } from 'next/navigation';
 import SecondaryFields from './components/secondary-fields/secondary-fields';
@@ -30,7 +31,7 @@ export default async function TaskPage({ params }: PageProps) {
   // GET /v1/tasks/:id returns task fields flat (no data wrapper)
   // GET /v1/people returns { data: people[], count }
   const [taskResult, peopleResult] = await Promise.all([
-    serverApi.get<Record<string, unknown>>(`/v1/tasks/${taskId}`),
+    serverApi.get<Record<string, unknown>>(`/v1/tasks/${encodePathSegment(taskId)}`),
     serverApi.get<PeopleApiResponse>('/v1/people'),
   ]);
 

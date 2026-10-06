@@ -1,5 +1,6 @@
 'use server';
 
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import { classifyExecuteResult } from '@/trigger/tasks/cloud-security/execute-result';
 import { classifyRetryPreview } from '@/trigger/tasks/cloud-security/retry-preview';
@@ -39,7 +40,7 @@ export async function startBatchFix(
     });
 
     // Step 3: Store triggerRunId on the batch
-    await api.patch(`/v1/cloud-security/remediation/batch/${batchId}`, {
+    await api.patch(`/v1/cloud-security/remediation/batch/${encodePathSegment(batchId)}`, {
       triggerRunId: handle.id,
       status: 'running',
     });
@@ -60,7 +61,7 @@ export async function cancelBatchFix(runId: string, batchId: string): Promise<vo
   try {
     // Mark batch as cancelled in DB — task will check this before next finding
     const api = serverApi;
-    await api.patch(`/v1/cloud-security/remediation/batch/${batchId}`, {
+    await api.patch(`/v1/cloud-security/remediation/batch/${encodePathSegment(batchId)}`, {
       status: 'cancelled',
     });
     // Also cancel the trigger run
@@ -79,7 +80,7 @@ export async function getActiveBatch(connectionId: string): Promise<{
 } | null> {
   try {
     const resp = await serverApi.get(
-      `/v1/cloud-security/remediation/batch/active?connectionId=${connectionId}`,
+      `/v1/cloud-security/remediation/batch/active?connectionId=${encodeURIComponent(connectionId)}`,
     );
     const batch = (
       resp.data as { data?: { id: string; triggerRunId?: string; findings: unknown[] } }
@@ -96,14 +97,14 @@ export async function getActiveBatch(connectionId: string): Promise<{
         run.status === 'SYSTEM_FAILURE'
       ) {
         // Run is done — mark batch as done in DB so it doesn't show up again
-        await serverApi.patch(`/v1/cloud-security/remediation/batch/${batch.id}`, {
+        await serverApi.patch(`/v1/cloud-security/remediation/batch/${encodePathSegment(batch.id)}`, {
           status: 'done',
         });
         return null;
       }
     } catch {
       // Can't verify run — mark batch as done to be safe
-      await serverApi.patch(`/v1/cloud-security/remediation/batch/${batch.id}`, {
+      await serverApi.patch(`/v1/cloud-security/remediation/batch/${encodePathSegment(batch.id)}`, {
         status: 'done',
       });
       return null;
@@ -131,7 +132,7 @@ export async function getActiveBatch(connectionId: string): Promise<{
 
 export async function skipBatchFinding(batchId: string, findingId: string): Promise<void> {
   try {
-    await serverApi.post(`/v1/cloud-security/remediation/batch/${batchId}/skip/${findingId}`, {});
+    await serverApi.post(`/v1/cloud-security/remediation/batch/${encodePathSegment(batchId)}/skip/${encodePathSegment(findingId)}`, {});
   } catch {
     // Best effort
   }

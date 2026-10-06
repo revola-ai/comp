@@ -80,7 +80,7 @@ export default async function PortalSubmissionsPage({
   if (cookie) {
     try {
       const res = await fetch(
-        `${apiUrl}/v1/evidence-forms/my-submissions?formType=${formTypeValue}`,
+        `${apiUrl}/v1/evidence-forms/my-submissions?formType=${encodeURIComponent(formTypeValue)}`,
         {
           method: 'GET',
           headers: apiHeaders,

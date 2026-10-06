@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import type {
   EvidenceAutomation,
@@ -20,15 +21,15 @@ export default async function AutomationOverviewPage({
   const { taskId, orgId, automationId } = await params;
 
   const [taskRes, automationRes, runsRes, versionsRes] = await Promise.all([
-    serverApi.get<Task>(`/v1/tasks/${taskId}`),
+    serverApi.get<Task>(`/v1/tasks/${encodePathSegment(taskId)}`),
     serverApi.get<{ success: boolean; automation: EvidenceAutomation }>(
-      `/v1/tasks/${taskId}/automations/${automationId}`,
+      `/v1/tasks/${encodePathSegment(taskId)}/automations/${encodePathSegment(automationId)}`,
     ),
     serverApi.get<RunWithAutomationName[]>(
-      `/v1/tasks/${taskId}/automations/${automationId}/runs`,
+      `/v1/tasks/${encodePathSegment(taskId)}/automations/${encodePathSegment(automationId)}/runs`,
     ),
     serverApi.get<{ success: boolean; versions: EvidenceAutomationVersion[] }>(
-      `/v1/tasks/${taskId}/automations/${automationId}/versions?limit=10`,
+      `/v1/tasks/${encodePathSegment(taskId)}/automations/${encodePathSegment(automationId)}/versions?limit=10`,
     ),
   ]);
 

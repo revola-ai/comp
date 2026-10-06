@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/server-api-client';
 import { auth } from '@/utils/auth';
 import type { Member, User } from '@db';
@@ -25,7 +26,9 @@ export default async function EmployeeBackgroundCheckPage({
   }
 
   const [backgroundCheckRes, backgroundCheckBillingRes, org] = await Promise.all([
-    serverApi.get<BackgroundCheckRecord | null>(`/v1/people/${employeeId}/background-check`),
+    serverApi.get<BackgroundCheckRecord | null>(
+      `/v1/people/${encodePathSegment(employeeId)}/background-check`,
+    ),
     serverApi.get<BackgroundCheckBillingStatus>('/v1/background-check-billing/status'),
     db.organization.findUnique({
       where: { id: orgId },

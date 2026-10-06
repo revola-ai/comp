@@ -6,11 +6,13 @@ import {
 
 const ORIGIN = 'o'.repeat(64);
 const ORIGIN_PREVIOUS = 'p'.repeat(64);
+const FORWARDED = 'forwarded-ip-token-value';
 const INTERNAL = 'internal-token-value';
 
 const env = {
   COMP_ORIGIN_AUTH: ORIGIN,
   COMP_ORIGIN_AUTH_PREVIOUS: ORIGIN_PREVIOUS,
+  COMP_FORWARDED_IP_TOKEN: FORWARDED,
   INTERNAL_API_TOKEN: INTERNAL,
 };
 
@@ -107,11 +109,11 @@ describe('identityTracker', () => {
     expect(identityTracker({ req: invalid, env })).toBe('ip:10.0.1.20');
   });
 
-  it('trusts the first X-Forwarded-For entry with a valid internal token, ignoring an appended proxy hop', () => {
+  it('trusts the first X-Forwarded-For entry with a valid forwarded-auth token, ignoring an appended proxy hop', () => {
     const viaServiceConnect = req({
       ip: '127.0.0.1',
       headers: {
-        'x-internal-token': INTERNAL,
+        'x-comp-forwarded-auth': FORWARDED,
         'x-forwarded-for': '203.0.113.9, 10.0.3.4',
       },
     });
@@ -120,29 +122,40 @@ describe('identityTracker', () => {
     );
   });
 
-  it('ignores X-Forwarded-For with a wrong internal token or none configured', () => {
+  it('ignores X-Forwarded-For with a wrong forwarded-auth token or none configured', () => {
     const forged = req({
       ip: '127.0.0.1',
       headers: {
-        'x-internal-token': 'guess',
+        'x-comp-forwarded-auth': 'guess',
         'x-forwarded-for': '203.0.113.9',
       },
     });
     expect(identityTracker({ req: forged, env })).toBe('ip:127.0.0.1');
     const unconfigured = req({
       ip: '127.0.0.1',
-      headers: { 'x-internal-token': '', 'x-forwarded-for': '203.0.113.9' },
+      headers: { 'x-comp-forwarded-auth': '', 'x-forwarded-for': '203.0.113.9' },
     });
     expect(identityTracker({ req: unconfigured, env: {} })).toBe(
       'ip:127.0.0.1',
     );
   });
 
-  it('ignores an invalid first X-Forwarded-For entry even with a valid internal token', () => {
-    const invalid = req({
+  it('does not trust X-Forwarded-For on the privileged internal token', () => {
+    const internalOnly = req({
       ip: '127.0.0.1',
       headers: {
         'x-internal-token': INTERNAL,
+        'x-forwarded-for': '203.0.113.9',
+      },
+    });
+    expect(identityTracker({ req: internalOnly, env })).toBe('ip:127.0.0.1');
+  });
+
+  it('ignores an invalid first X-Forwarded-For entry even with a valid forwarded-auth token', () => {
+    const invalid = req({
+      ip: '127.0.0.1',
+      headers: {
+        'x-comp-forwarded-auth': FORWARDED,
         'x-forwarded-for': 'garbage, 203.0.113.9',
       },
     });

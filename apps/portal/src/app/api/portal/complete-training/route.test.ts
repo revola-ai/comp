@@ -321,6 +321,7 @@ describe('POST /api/portal/complete-training', () => {
     // Server-side calls use the internal API address and identify themselves.
     vi.stubEnv('BACKEND_API_URL', 'http://api.internal.test');
     vi.stubEnv('INTERNAL_API_TOKEN', 'internal-test-token');
+    vi.stubEnv('COMP_FORWARDED_IP_TOKEN', 'forwarded-test-token');
     const req = new NextRequest('http://localhost/api/portal/complete-training', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.7, 10.0.0.1' },
@@ -346,7 +347,7 @@ describe('POST /api/portal/complete-training', () => {
         signal: expect.any(AbortSignal),
         headers: expect.objectContaining({
           'x-service-token': 'svc-token',
-          'X-Internal-Token': 'internal-test-token',
+          'X-Comp-Forwarded-Auth': 'forwarded-test-token',
           'X-Forwarded-For': '203.0.113.7',
         }),
       }),

@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import { Breadcrumb, PageHeader, PageLayout } from '@trycompai/design-system';
 import type {
@@ -38,7 +39,7 @@ export default async function ControlPage({ params }: ControlPageProps) {
   const { controlId, orgId } = await Promise.resolve(params);
 
   const controlRes = await serverApi.get<ControlDetail>(
-    `/v1/controls/${controlId}`,
+    `/v1/controls/${encodePathSegment(controlId)}`,
   );
 
   if (!controlRes.data || controlRes.error) {

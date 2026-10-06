@@ -1,3 +1,4 @@
+import { assertSafeApiPath, encodePathSegment } from '@/lib/api-path';
 import { getServerApiBaseUrl, getServerApiHeaders } from '@/lib/server-api-base-url';
 import { type InferUITools, tool } from 'ai';
 import { z } from 'zod';
@@ -19,6 +20,7 @@ async function apiCall<T = unknown>({
   endpoint: string;
   incoming: Headers;
 }): Promise<T> {
+  assertSafeApiPath(endpoint);
   const response = await fetch(`${getServerApiBaseUrl()}${endpoint}`, {
     method: 'GET',
     headers: {
@@ -104,7 +106,7 @@ export function getPolicyTools({ currentPolicyId, incoming }: PolicyToolsOptions
       execute: async ({ vendorId }) => {
         try {
           const vendor = await apiCall<Record<string, unknown>>({
-            endpoint: `/v1/vendors/${vendorId}`,
+            endpoint: `/v1/vendors/${encodePathSegment(vendorId)}`,
             incoming,
           });
           return { vendor };
@@ -143,7 +145,7 @@ export function getPolicyTools({ currentPolicyId, incoming }: PolicyToolsOptions
         }
         try {
           const policy = await apiCall<Record<string, unknown>>({
-            endpoint: `/v1/policies/${policyId}`,
+            endpoint: `/v1/policies/${encodePathSegment(policyId)}`,
             incoming,
           });
           return { policy };
@@ -165,7 +167,7 @@ export function getPolicyTools({ currentPolicyId, incoming }: PolicyToolsOptions
           ),
       }),
       execute: async ({ formType }) => {
-        const params = formType ? `?formType=${formType}` : '';
+        const params = formType ? `?${new URLSearchParams({ formType })}` : '';
         const result = await apiCall<{ data: Array<Record<string, unknown>>; count: number }>({
           endpoint: `/v1/evidence${params}`,
           incoming,

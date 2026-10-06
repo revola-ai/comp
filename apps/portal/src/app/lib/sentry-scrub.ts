@@ -2,11 +2,13 @@ import type { Event } from '@sentry/nextjs';
 
 /**
  * Header names that carry deployment secrets and must never reach Sentry:
- * the Cloudflare-to-ALB origin header and the internal API token the portal
- * sends to the API. Matched case-insensitively, with `-` or `_` separators
- * (span attributes spell them `http.request.header.x_comp_origin_auth`).
+ * the Cloudflare-to-ALB origin header, the forwarded-IP token the portal
+ * sends to the API, and the API's internal token (never sent, scrubbed
+ * anyway). Matched case-insensitively, with `-` or `_` separators (span
+ * attributes spell them `http.request.header.x_comp_origin_auth`).
  */
-const SENSITIVE_HEADER = /x[-_]comp[-_]origin[-_]auth|x[-_]internal[-_]token/i;
+const SENSITIVE_HEADER =
+  /x[-_]comp[-_]origin[-_]auth|x[-_]comp[-_]forwarded[-_]auth|x[-_]internal[-_]token/i;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== 'object') return false;

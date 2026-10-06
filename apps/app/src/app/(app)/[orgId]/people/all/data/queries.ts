@@ -34,19 +34,19 @@ export async function getEmployeeSyncConnections(
   const [gwResponse, ripplingResponse, jumpcloudResponse, providerResponse, availableResponse] =
     await Promise.all([
       serverApi.post<ConnectionStatus>(
-        `/v1/integrations/sync/google-workspace/status?organizationId=${organizationId}`,
+        `/v1/integrations/sync/google-workspace/status?organizationId=${encodeURIComponent(organizationId)}`,
       ),
       serverApi.post<ConnectionStatus>(
-        `/v1/integrations/sync/rippling/status?organizationId=${organizationId}`,
+        `/v1/integrations/sync/rippling/status?organizationId=${encodeURIComponent(organizationId)}`,
       ),
       serverApi.post<ConnectionStatus>(
-        `/v1/integrations/sync/jumpcloud/status?organizationId=${organizationId}`,
+        `/v1/integrations/sync/jumpcloud/status?organizationId=${encodeURIComponent(organizationId)}`,
       ),
       serverApi.get<{ provider: string | null }>(
-        `/v1/integrations/sync/employee-sync-provider?organizationId=${organizationId}`,
+        `/v1/integrations/sync/employee-sync-provider?organizationId=${encodeURIComponent(organizationId)}`,
       ),
       serverApi.get<{ providers: SyncProviderInfo[] }>(
-        `/v1/integrations/sync/available-providers?organizationId=${organizationId}`,
+        `/v1/integrations/sync/available-providers?organizationId=${encodeURIComponent(organizationId)}`,
       ).catch(() => ({ data: null, error: null, status: 500 })),
     ]);
 

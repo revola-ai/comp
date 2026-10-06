@@ -1,15 +1,32 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  FORWARDED_AUTH_HEADER,
   getPublicApiUrl,
   getServerApiBaseUrl,
   getServerApiHeaders,
-  INTERNAL_TOKEN_HEADER,
 } from './server-api-base-url';
 
+// Whole-tree source scans read thousands of files; under a parallel run they
+// can exceed vitest's 5 s default without anything being wrong.
+const SCAN_TIMEOUT_MS = 30_000;
+
 const SRC = resolve(__dirname, '..');
-const ENV_KEYS = ['BACKEND_API_URL', 'NEXT_PUBLIC_API_URL', 'INTERNAL_API_TOKEN'] as const;
+
+function listSources(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : listSources(full);
+    return /\.(ts|tsx|mts|mjs|js)$/.test(entry.name) ? [full] : [];
+  });
+}
+const ENV_KEYS = [
+  'BACKEND_API_URL',
+  'NEXT_PUBLIC_API_URL',
+  'INTERNAL_API_TOKEN',
+  'COMP_FORWARDED_IP_TOKEN',
+] as const;
 
 describe('getServerApiBaseUrl', () => {
   beforeEach(() => {
@@ -67,20 +84,31 @@ describe('getServerApiHeaders', () => {
   beforeEach(() => {
     for (const key of ENV_KEYS) vi.stubEnv(key, undefined);
     vi.stubEnv('INTERNAL_API_TOKEN', 'internal-test-token');
+    vi.stubEnv('COMP_FORWARDED_IP_TOKEN', 'forwarded-test-token');
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('matches the header name the API InternalTokenGuard reads', () => {
-    const guard = readFileSync(resolve(SRC, '../../api/src/auth/internal-token.guard.ts'), 'utf8');
-    expect(guard).toContain(`req.headers['${INTERNAL_TOKEN_HEADER.toLowerCase()}']`);
+  it('matches the header name the API throttle reads for forwarded-IP attestation', () => {
+    const verified = readFileSync(
+      resolve(SRC, '../../api/src/throttle/verified-headers.ts'),
+      'utf8',
+    );
+    expect(verified).toContain(`FORWARDED_AUTH_HEADER = '${FORWARDED_AUTH_HEADER.toLowerCase()}'`);
   });
 
-  it('adds the internal token and the client IP on a server-side call', () => {
+  it('adds the forwarded-IP token and the client IP on a server-side call', () => {
     const incoming = new Headers({ 'x-forwarded-for': '203.0.113.7' });
     expect(getServerApiHeaders({ incoming })).toEqual({
-      [INTERNAL_TOKEN_HEADER]: 'internal-test-token',
+      [FORWARDED_AUTH_HEADER]: 'forwarded-test-token',
       'X-Forwarded-For': '203.0.113.7',
     });
+  });
+
+  it('never sends the privileged internal token, even when INTERNAL_API_TOKEN is set', () => {
+    const incoming = new Headers({ 'x-forwarded-for': '203.0.113.7' });
+    const names = Object.keys(getServerApiHeaders({ incoming })).map((name) => name.toLowerCase());
+    expect(names).not.toContain('x-internal-token');
+    expect(JSON.stringify(getServerApiHeaders({ incoming }))).not.toContain('internal-test-token');
   });
 
   it('keeps only the first entry of a spoofed or private chain', () => {
@@ -118,8 +146,8 @@ describe('getServerApiHeaders', () => {
     expect(getServerApiHeaders({ incoming })['X-Forwarded-For']).toBe('203.0.113.7');
   });
 
-  it('omits the token when INTERNAL_API_TOKEN is unset or empty', () => {
-    vi.stubEnv('INTERNAL_API_TOKEN', '');
+  it('omits the token when COMP_FORWARDED_IP_TOKEN is unset or empty', () => {
+    vi.stubEnv('COMP_FORWARDED_IP_TOKEN', '');
     const incoming = new Headers({ 'x-forwarded-for': '203.0.113.7' });
     expect(getServerApiHeaders({ incoming })).toEqual({ 'X-Forwarded-For': '203.0.113.7' });
   });
@@ -132,16 +160,34 @@ describe('getServerApiHeaders', () => {
     });
     const result = getServerApiHeaders({ incoming });
     const names = Object.keys(result).map((name) => name.toLowerCase());
-    expect(names.sort()).toEqual([INTERNAL_TOKEN_HEADER.toLowerCase(), 'x-forwarded-for'].sort());
+    expect(names.sort()).toEqual([FORWARDED_AUTH_HEADER.toLowerCase(), 'x-forwarded-for'].sort());
   });
 });
 
-describe('browser modules never carry the internal token', () => {
+describe('no app module reads the privileged internal token', () => {
+  it(
+    'no non-test source under src references INTERNAL_API_TOKEN or sends X-Internal-Token',
+    () => {
+      const offenders = listSources(SRC)
+        .filter((file) => !/\.(test|spec)\.tsx?$/.test(file))
+        .filter((file) =>
+          /INTERNAL_API_TOKEN|['"]x-internal-token['"]/i.test(readFileSync(file, 'utf8')),
+        )
+        .map((file) => relative(SRC, file));
+      expect(offenders).toEqual([]);
+    },
+    SCAN_TIMEOUT_MS,
+  );
+});
+
+describe('browser modules never carry a server secret', () => {
   const BROWSER_MODULES = ['utils/auth-client.ts', 'lib/api-client.ts', 'lib/evidence-download.ts'];
 
   it.each(BROWSER_MODULES)('%s does not reference the token or the server helper', (file) => {
     const source = readFileSync(resolve(SRC, file), 'utf8');
-    expect(source).not.toMatch(/INTERNAL_API_TOKEN|x-internal-token|server-api-base-url/i);
+    expect(source).not.toMatch(
+      /INTERNAL_API_TOKEN|COMP_FORWARDED_IP_TOKEN|x-internal-token|x-comp-forwarded-auth|server-api-base-url/i,
+    );
   });
 
   it('the helper is marked server-only so a client import fails the build', () => {

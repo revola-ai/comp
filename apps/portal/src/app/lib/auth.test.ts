@@ -22,6 +22,7 @@ describe('portal auth forwards only a sanitized set of headers', () => {
   beforeEach(() => {
     vi.stubEnv('BACKEND_API_URL', 'http://comp-api.comp.internal:3333');
     vi.stubEnv('INTERNAL_API_TOKEN', 'internal-test-token');
+    vi.stubEnv('COMP_FORWARDED_IP_TOKEN', 'forwarded-test-token');
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockReset();
     fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
@@ -40,7 +41,8 @@ describe('portal auth forwards only a sanitized set of headers', () => {
     );
     const sent = sentHeaders();
     expect(sent.get('cookie')).toBe('better-auth.session_token=abc');
-    expect(sent.get('x-internal-token')).toBe('internal-test-token');
+    expect(sent.get('x-comp-forwarded-auth')).toBe('forwarded-test-token');
+    expect(sent.get('x-internal-token')).toBeNull();
     expect(sent.get('x-forwarded-for')).toBe('203.0.113.7');
     expect(sent.get('x-comp-origin-auth')).toBeNull();
     expect(sent.get('x-custom')).toBeNull();

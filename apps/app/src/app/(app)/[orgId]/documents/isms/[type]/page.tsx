@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { Breadcrumb, PageLayout, Text } from '@trycompai/design-system';
 import { headers } from 'next/headers';
 import Link from 'next/link';
@@ -144,7 +145,7 @@ export default async function IsmsDocumentPage({
   }
 
   const documentResult = await serverApi.get<IsmsDocumentData>(
-    `/v1/isms/documents/${setupDoc.id}`,
+    `/v1/isms/documents/${encodePathSegment(setupDoc.id)}`,
   );
   const fallbackData = documentResult.data ?? null;
 
@@ -185,7 +186,7 @@ export default async function IsmsDocumentPage({
     );
     if (rolesDoc) {
       const rolesResult = await serverApi.get<IsmsDocumentData>(
-        `/v1/isms/documents/${rolesDoc.id}`,
+        `/v1/isms/documents/${encodePathSegment(rolesDoc.id)}`,
       );
       const auditorRole = rolesResult.data?.roles?.find(
         (role) => role.roleKey === 'internal_auditor',
@@ -218,7 +219,7 @@ export default async function IsmsDocumentPage({
     );
     if (rolesDoc) {
       const rolesResult = await serverApi.get<IsmsDocumentData>(
-        `/v1/isms/documents/${rolesDoc.id}`,
+        `/v1/isms/documents/${encodePathSegment(rolesDoc.id)}`,
       );
       const topMgmtRole = rolesResult.data?.roles?.find(
         (role) => role.roleKey === 'top_management',

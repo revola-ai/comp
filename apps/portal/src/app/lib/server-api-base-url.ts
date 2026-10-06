@@ -1,4 +1,5 @@
 import { isIP } from 'node:net';
+import 'server-only';
 
 /**
  * Where server-side portal code (route handlers, server components, server
@@ -8,12 +9,21 @@ import { isIP } from 'node:net';
  * (`http://comp-api.comp.internal:3333`), so server calls stay inside the VPC
  * instead of looping through Cloudflare. Browser code must keep using
  * NEXT_PUBLIC_API_URL: the internal address is not reachable from a browser,
- * and INTERNAL_API_TOKEN must never reach a client bundle
- * (`server-only-env.guard.test.ts` fails if a client module imports this).
+ * and COMP_FORWARDED_IP_TOKEN must never reach a client bundle (hence
+ * `server-only` above; `server-only-env.guard.test.ts` also fails if a client
+ * module imports this).
+ *
+ * The portal never holds the API's privileged internal token: that token is
+ * sole auth for the API's internal routes, and a caller-controlled path
+ * segment could steer a server-side call onto them.
  */
 
-/** Header the API's InternalTokenGuard reads (`req.headers['x-internal-token']`). */
-export const INTERNAL_TOKEN_HEADER = 'X-Internal-Token';
+/**
+ * Header the API's throttle reads (`FORWARDED_AUTH_HEADER` in
+ * apps/api/src/throttle/verified-headers.ts) to trust the forwarded client IP.
+ * It attests the IP only and grants no access.
+ */
+export const FORWARDED_AUTH_HEADER = 'X-Comp-Forwarded-Auth';
 
 const LOCAL_API_URL = 'http://localhost:3333';
 
@@ -55,15 +65,15 @@ function clientIp({ incoming }: { incoming: Pick<Headers, 'get'> }): string | un
 
 /**
  * Headers every server-side API call adds next to its own auth (cookie,
- * bearer or service token): the internal token, which lets the API trust the
- * forwarded client IP, and that sanitized client IP. Nothing else from the
+ * bearer or service token): the forwarded-IP token, which lets the API trust
+ * the forwarded client IP, and that sanitized client IP. Nothing else from the
  * incoming request is copied, so edge headers such as `X-Comp-Origin-Auth`
  * never reach the API.
  */
 export function getServerApiHeaders({ incoming }: { incoming: Headers }): Record<string, string> {
   const result: Record<string, string> = {};
-  const token = readEnv('INTERNAL_API_TOKEN');
-  if (token) result[INTERNAL_TOKEN_HEADER] = token;
+  const token = readEnv('COMP_FORWARDED_IP_TOKEN');
+  if (token) result[FORWARDED_AUTH_HEADER] = token;
   const ip = clientIp({ incoming });
   if (ip) result['X-Forwarded-For'] = ip;
   return result;

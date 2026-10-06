@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/app/lib/api-path';
 import { auth } from '@/app/lib/auth';
 import { getServerApiBaseUrl, getServerApiHeaders } from '@/app/lib/server-api-base-url';
 import { db } from '@db/server';
@@ -125,11 +126,14 @@ export default async function PortalCompanyFormPage({
       }
 
       // Submit via API
-      const submitRes = await fetch(`${apiUrl}/v1/evidence-forms/${formTypeValue}/submissions`, {
-        method: 'POST',
-        headers: apiHeaders,
-        body: JSON.stringify(payload),
-      });
+      const submitRes = await fetch(
+        `${apiUrl}/v1/evidence-forms/${encodePathSegment(formTypeValue)}/submissions`,
+        {
+          method: 'POST',
+          headers: apiHeaders,
+          body: JSON.stringify(payload),
+        },
+      );
 
       if (!submitRes.ok) {
         const errorText = await submitRes.text();

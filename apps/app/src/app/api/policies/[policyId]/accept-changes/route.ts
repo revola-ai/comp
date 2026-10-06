@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import { sendNewPolicyEmail } from '@/trigger/tasks/email/new-policy-email';
 import { NextResponse } from 'next/server';
@@ -24,7 +25,7 @@ export async function POST(
       version: number;
       members: PolicyEmailRecipient[];
     };
-  }>(`/v1/policies/${policyId}/accept-changes`, body);
+  }>(`/v1/policies/${encodePathSegment(policyId)}/accept-changes`, body);
 
   if (response.error || !response.data) {
     return NextResponse.json(

@@ -1,7 +1,7 @@
 import { isIP } from 'node:net';
 import {
   type HeaderBag,
-  hasValidInternalToken,
+  hasValidForwardedAuth,
   hasValidOriginAuth,
   headerValue,
   type SecretEnv,
@@ -31,9 +31,9 @@ function validIp(value: string | undefined): string | undefined {
 /**
  * The client address, trusting proxy headers only when the request proves
  * where it came from:
- * - a valid internal token (Service Connect from the app or portal): the first
- *   X-Forwarded-For entry, which the caller sanitized to one client IP (the
- *   Envoy sidecar may append its own hop after it);
+ * - a valid forwarded-auth token (Service Connect from the app or portal):
+ *   the first X-Forwarded-For entry, which the caller sanitized to one client
+ *   IP (the Envoy sidecar may append its own hop after it);
  * - a valid origin header (Cloudflare): CF-Connecting-IP;
  * - otherwise the socket address. There is no `trust proxy`, so a forged
  *   X-Forwarded-For never reaches `req.ip`.
@@ -46,7 +46,7 @@ export function verifiedClientIp({
   env?: SecretEnv;
 }): string | undefined {
   const { headers } = req;
-  if (hasValidInternalToken({ headers, env })) {
+  if (hasValidForwardedAuth({ headers, env })) {
     const forwarded = headerValue({ headers, name: 'x-forwarded-for' });
     const first = validIp(forwarded?.split(',')[0]);
     if (first) return first;

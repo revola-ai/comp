@@ -7,13 +7,14 @@ import { scrubSensitiveHeaders } from './sentry-scrub';
 const ORIGIN_SECRET = 'B'.repeat(64);
 
 describe('scrubSensitiveHeaders (portal)', () => {
-  it('removes the origin header and internal token anywhere in the event', () => {
+  it('removes the origin header, forwarded-IP token and internal token anywhere in the event', () => {
     const event: ErrorEvent = {
       type: undefined,
       request: {
         headers: {
           'x-comp-origin-auth': ORIGIN_SECRET,
           'X-Internal-Token': 'internal-test-token',
+          'x-comp-forwarded-auth': 'forwarded-test-token',
           accept: 'text/html',
         },
       },
@@ -24,6 +25,7 @@ describe('scrubSensitiveHeaders (portal)', () => {
 
     expect(JSON.stringify(scrubbed)).not.toContain(ORIGIN_SECRET);
     expect(JSON.stringify(scrubbed)).not.toContain('internal-test-token');
+    expect(JSON.stringify(scrubbed)).not.toContain('forwarded-test-token');
     expect(scrubbed.request?.headers).toEqual({ accept: 'text/html' });
   });
 });

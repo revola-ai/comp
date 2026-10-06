@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { auth } from '@/utils/auth';
 
 import { HIPAA_TRAINING_ID } from '@/lib/data/hipaa-training-content';
@@ -61,7 +62,9 @@ export default async function EmployeeDetailsPage({
     db.employeeTrainingVideoCompletion.findFirst({
       where: { memberId: employeeId, videoId: HIPAA_TRAINING_ID },
     }),
-    serverApi.get<BackgroundCheckRecord | null>(`/v1/people/${employeeId}/background-check`),
+    serverApi.get<BackgroundCheckRecord | null>(
+      `/v1/people/${encodePathSegment(employeeId)}/background-check`,
+    ),
     serverApi.get<BackgroundCheckBillingStatus>('/v1/background-check-billing/status'),
   ]);
 

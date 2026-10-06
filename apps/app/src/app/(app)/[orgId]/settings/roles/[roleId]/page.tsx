@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import { Breadcrumb, PageHeader, PageLayout } from '@trycompai/design-system';
 import type { Metadata } from 'next';
@@ -13,7 +14,7 @@ export default async function EditRolePage({
 }) {
   const { orgId, roleId } = await params;
 
-  const res = await serverApi.get<CustomRole>(`/v1/roles/${roleId}`);
+  const res = await serverApi.get<CustomRole>(`/v1/roles/${encodePathSegment(roleId)}`);
   const role = res.data;
 
   if (!role) {
@@ -45,7 +46,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { roleId, orgId } = await params;
 
-  const res = await serverApi.get<CustomRole>(`/v1/roles/${roleId}`);
+  const res = await serverApi.get<CustomRole>(`/v1/roles/${encodePathSegment(roleId)}`);
   const role = res.data;
 
   return {

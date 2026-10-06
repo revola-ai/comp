@@ -1,5 +1,6 @@
 'use server';
 
+import { encodePathSegment } from '@/lib/api-path';
 import { auth } from '@/utils/auth';
 import { serverApi } from '@/lib/server-api-client';
 import { revalidatePath } from 'next/cache';
@@ -59,7 +60,7 @@ export const runPlatformScan = async (connectionId: string) => {
 
     // Trigger the scan via API (task is defined in the API's trigger.dev project)
     const triggerResponse = await serverApi.post<{ runId: string }>(
-      `/v1/cloud-security/trigger/${connectionId}`,
+      `/v1/cloud-security/trigger/${encodePathSegment(connectionId)}`,
       undefined,
       authHeaders,
     );
@@ -86,7 +87,7 @@ export const runPlatformScan = async (connectionId: string) => {
           provider?: string;
           scannedAt?: string;
         } | null;
-      }>(`/v1/cloud-security/runs/${runId}?connectionId=${connectionId}`, authHeaders);
+      }>(`/v1/cloud-security/runs/${encodePathSegment(runId)}?connectionId=${encodeURIComponent(connectionId)}`, authHeaders);
 
       if (statusResponse.error) {
         return {

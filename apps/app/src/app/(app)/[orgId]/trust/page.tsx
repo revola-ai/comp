@@ -18,7 +18,7 @@ export default async function TrustPage({ params }: { params: Promise<{ orgId: s
     customFrameworksRes,
   ] = await Promise.all([
     serverApi.get('/v1/trust-portal/settings'),
-    serverApi.get('/v1/trust-portal/custom-links?organizationId=' + orgId),
+    serverApi.get(`/v1/trust-portal/custom-links?organizationId=${encodeURIComponent(orgId)}`),
     serverApi.get('/v1/trust-portal/vendors?all=true'),
     serverApi.post('/v1/trust-portal/compliance-resources/list', {
       organizationId: orgId,

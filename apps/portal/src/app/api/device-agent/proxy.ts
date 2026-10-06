@@ -1,3 +1,4 @@
+import { assertSafeApiPath } from '@/app/lib/api-path';
 import { getServerApiBaseUrl, getServerApiHeaders } from '@/app/lib/server-api-base-url';
 import { NextResponse } from 'next/server';
 
@@ -9,12 +10,16 @@ import { NextResponse } from 'next/server';
  *
  * TODO: Delete after 2-3 device agent release cycles once all agents
  * have auto-updated to call the API directly.
+ *
+ * Throws InvalidApiPathError, before any request, for a path that would
+ * resolve to a different route (see api-path.ts).
  */
 export async function proxyToApi(
   req: Request,
   apiPath: string,
   method: 'GET' | 'POST' | 'HEAD' = 'GET',
 ): Promise<Response> {
+  assertSafeApiPath(apiPath);
   const url = `${getServerApiBaseUrl()}${apiPath}`;
 
   const headers: Record<string, string> = getServerApiHeaders({ incoming: req.headers });
