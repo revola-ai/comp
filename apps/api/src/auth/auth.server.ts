@@ -32,7 +32,10 @@ import {
   isTrustedOriginWithCustomDomains,
 } from './origin-policy';
 import { getCookieDomain } from './cookie-domain';
-import { createEmailDomainAllowlistHook } from './email-domain-allowlist';
+import {
+  createAllowlistedMagicLinkSender,
+  createEmailDomainAllowlistHook,
+} from './email-domain-allowlist';
 import {
   apiKeyOffboardingBeforeHook,
   revokeApiKeysBeforeMemberRemoval,
@@ -482,21 +485,27 @@ export const auth = betterAuth({
     }),
     magicLink({
       expiresIn: MAGIC_LINK_EXPIRES_IN_SECONDS,
-      sendMagicLink: async ({ email, url }) => {
-        // The `url` from better-auth points to the API's verify endpoint
-        // and includes the callbackURL from the client's sign-in request.
-        // Flow: user clicks link → API verifies token & sets session cookie
-        // → API redirects (302) to callbackURL (the app).
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[Auth] Sending magic link to:', email);
-          console.log('[Auth] Magic link URL:', url);
-        }
-        await triggerEmail({
-          to: email,
-          subject: 'Login to Comp AI',
-          react: MagicLinkEmail({ email, url }),
-        });
-      },
+      // AUTH_ALLOWED_EMAIL_DOMAINS: a link that would sign up a disallowed
+      // new email is refused here (email_domain_not_allowed), before sending.
+      sendMagicLink: createAllowlistedMagicLinkSender({
+        env: process.env,
+        db,
+        send: async ({ email, url }) => {
+          // The `url` from better-auth points to the API's verify endpoint
+          // and includes the callbackURL from the client's sign-in request.
+          // Flow: user clicks link → API verifies token & sets session cookie
+          // → API redirects (302) to callbackURL (the app).
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[Auth] Sending magic link to:', email);
+            console.log('[Auth] Magic link URL:', url);
+          }
+          await triggerEmail({
+            to: email,
+            subject: 'Login to Comp AI',
+            react: MagicLinkEmail({ email, url }),
+          });
+        },
+      }),
     }),
     emailOTP({
       otpLength: 6,

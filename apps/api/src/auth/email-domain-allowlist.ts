@@ -95,10 +95,41 @@ async function hasPendingInvitation({
 }
 
 /**
+ * The one sign-up check shared by every entry point: throws
+ * `APIError('FORBIDDEN')` whose code and message are both
+ * `email_domain_not_allowed` unless the email may create an account.
+ */
+async function assertSignUpAllowed({
+  email,
+  allowedDomains,
+  db,
+}: {
+  email: string;
+  allowedDomains: readonly string[];
+  db: InvitationLookup;
+}): Promise<void> {
+  if (allowedDomains.length === 0) return;
+
+  const domain = emailDomain(email);
+  if (domain !== null && allowedDomains.includes(domain)) return;
+
+  const invited =
+    domain !== null && (await hasPendingInvitation({ db, email }));
+  if (
+    isEmailAllowed({ email, allowedDomains, hasPendingInvitation: invited })
+  ) {
+    return;
+  }
+  throw new APIError('FORBIDDEN', {
+    code: EMAIL_DOMAIN_NOT_ALLOWED,
+    message: EMAIL_DOMAIN_NOT_ALLOWED,
+  });
+}
+
+/**
  * better-auth `databaseHooks.user.create.before` handler enforcing the
  * sign-up allowlist for every sign-up path (OAuth, magic link, email OTP).
- * Throws `APIError('FORBIDDEN')` whose code and message are both
- * `email_domain_not_allowed`, so OAuth redirects carry it as `?error=`.
+ * The error message equals the code, so OAuth redirects carry it as `?error=`.
  */
 export function createEmailDomainAllowlistHook({
   env,
@@ -108,28 +139,56 @@ export function createEmailDomainAllowlistHook({
   db: InvitationLookup;
 }): (user: { email: string }) => Promise<void> {
   const allowedDomains = parseAllowedDomains({ env });
+  return (user) =>
+    assertSignUpAllowed({ email: user.email, allowedDomains, db });
+}
 
-  return async (user) => {
-    if (allowedDomains.length === 0) return;
+/** The slice of the Prisma client the magic-link sender needs. */
+export interface SignUpLookup extends InvitationLookup {
+  user: {
+    findFirst(args: {
+      where: { email: { equals: string; mode: 'insensitive' } };
+      select: { id: true };
+    }): Promise<{ id: string } | null>;
+  };
+}
 
-    const domain = emailDomain(user.email);
-    if (domain !== null && allowedDomains.includes(domain)) return;
+export interface MagicLinkMessage {
+  email: string;
+  url: string;
+}
 
-    const invited =
-      domain !== null &&
-      (await hasPendingInvitation({ db, email: user.email }));
-    if (
-      isEmailAllowed({
-        email: user.email,
-        allowedDomains,
-        hasPendingInvitation: invited,
-      })
-    ) {
-      return;
+/**
+ * Wraps the magic-link `send` so a link that would create a disallowed
+ * account is refused before anything is sent (the create hook would only
+ * reject it at verify time). Existing users always get their link.
+ */
+export function createAllowlistedMagicLinkSender({
+  env,
+  db,
+  send,
+}: {
+  env: Env;
+  db: SignUpLookup;
+  send: (message: MagicLinkMessage) => Promise<void>;
+}): (message: MagicLinkMessage) => Promise<void> {
+  const allowedDomains = parseAllowedDomains({ env });
+
+  return async (message) => {
+    if (allowedDomains.length > 0) {
+      const existingUser = await db.user.findFirst({
+        where: {
+          email: {
+            equals: message.email.trim().toLowerCase(),
+            mode: 'insensitive',
+          },
+        },
+        select: { id: true },
+      });
+      if (!existingUser) {
+        await assertSignUpAllowed({ email: message.email, allowedDomains, db });
+      }
     }
-    throw new APIError('FORBIDDEN', {
-      code: EMAIL_DOMAIN_NOT_ALLOWED,
-      message: EMAIL_DOMAIN_NOT_ALLOWED,
-    });
+    await send(message);
   };
 }
