@@ -1,6 +1,7 @@
 import { db } from '@db/server';
 import { logger, schedules } from '@trigger.dev/sdk';
 import { STALE_DEVICE_THRESHOLD_DAYS } from '@trycompai/utils/devices';
+import { isScheduledRunAllowed } from '../../lib/schedule-guard';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -8,12 +9,19 @@ export const flagStaleDevices = schedules.task({
   id: 'flag-stale-devices',
   cron: '0 6 * * *', // Daily at 06:00 UTC (~01:00 US/Eastern)
   maxDuration: 60 * 5, // 5 minutes (trigger.dev expects seconds)
-  run: async (): Promise<{
-    success: boolean;
-    flaggedCount: number;
-    threshold: Date;
-    error?: string;
-  }> => {
+  run: async (
+    _payload,
+    { ctx },
+  ): Promise<
+    | {
+        success: boolean;
+        flaggedCount: number;
+        threshold: Date;
+        error?: string;
+      }
+    | { skipped: true }
+  > => {
+    if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
     const threshold = new Date(
       Date.now() - STALE_DEVICE_THRESHOLD_DAYS * MS_PER_DAY,
     );

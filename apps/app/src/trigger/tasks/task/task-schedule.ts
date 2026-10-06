@@ -5,6 +5,7 @@ import { logger, schedules } from '@trigger.dev/sdk';
 import { isUserUnsubscribed, TaskStatusNotificationEmail } from '@trycompai/email';
 import { sendEmailViaApi } from '../../lib/send-email-via-api';
 
+import { isScheduledRunAllowed } from '../../lib/schedule-guard';
 import { getTargetStatus } from './task-schedule-helpers';
 
 export const taskSchedule = schedules.task({
@@ -12,7 +13,8 @@ export const taskSchedule = schedules.task({
   machine: 'large-1x',
   cron: '0 */12 * * *', // Every 12 hours
   maxDuration: 1000 * 60 * 10, // 10 minutes
-  run: async () => {
+  run: async (_payload, { ctx }) => {
+    if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
     const now = new Date();
     const novu = new Novu({
       secretKey: process.env.NOVU_API_KEY,

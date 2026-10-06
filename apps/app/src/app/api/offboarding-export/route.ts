@@ -1,13 +1,11 @@
+import { getServerApiBaseUrl, getServerApiHeaders } from '@/lib/server-api-base-url';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
   const memberId = request.nextUrl.searchParams.get('memberId');
   const exportAll = request.nextUrl.searchParams.get('all') === 'true';
 
-  const apiUrl =
-    process.env.NEXT_PUBLIC_API_URL ||
-    process.env.API_BASE_URL ||
-    'http://localhost:3333';
+  const apiUrl = getServerApiBaseUrl();
 
   const cookieHeader = request.headers.get('cookie') ?? '';
   const authorizationHeader = request.headers.get('authorization');
@@ -24,7 +22,10 @@ export async function GET(request: NextRequest) {
 
   let response: Response;
   try {
-    const forwardHeaders: Record<string, string> = { cookie: cookieHeader };
+    const forwardHeaders: Record<string, string> = {
+      ...getServerApiHeaders({ incoming: request.headers }),
+      cookie: cookieHeader,
+    };
     if (authorizationHeader) {
       forwardHeaders.authorization = authorizationHeader;
     }

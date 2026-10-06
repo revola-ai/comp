@@ -19,6 +19,29 @@ jest.mock('./ensure-valid-credentials', () => ({
   requestValidCredentials: jest.fn(),
 }));
 
+// schedules.task is mocked to return the config, so .run is invokable here.
+// Runs as the PRODUCTION Trigger.dev environment; other environments are
+// skipped by the schedule guard (covered in trigger/lib/schedule-guard.spec.ts).
+function runAsProduction(payload: {
+  timestamp: string;
+  lastTimestamp: string | null;
+}): Promise<{ refreshed: number }> {
+  const scheduled = refreshExpiringTokensSchedule as unknown as {
+    run: (
+      p: { timestamp: string; lastTimestamp: string | null },
+      params: {
+        ctx: { environment: { type: string }; task: { id: string } };
+      },
+    ) => Promise<{ refreshed: number }>;
+  };
+  return scheduled.run(payload, {
+    ctx: {
+      environment: { type: 'PRODUCTION' },
+      task: { id: 'refresh-expiring-tokens-schedule' },
+    },
+  });
+}
+
 describe('refreshExpiringTokensSchedule', () => {
   const nowMs = Date.parse('2026-04-24T00:00:00.000Z');
   const lookaheadMs = 24 * 60 * 60 * 1000;
@@ -58,10 +81,10 @@ describe('refreshExpiringTokensSchedule', () => {
       connectionWithLatestExpiringSoon,
     ]);
 
-    const result = await refreshExpiringTokensSchedule.run({
+    const result = await runAsProduction({
       timestamp: new Date(nowMs).toISOString(),
       lastTimestamp: null,
-    } as any);
+    });
 
     expect(result.refreshed).toBe(1);
     expect(requestValidCredentials).toHaveBeenCalledTimes(1);
@@ -86,10 +109,10 @@ describe('refreshExpiringTokensSchedule', () => {
       connectionLatestValid,
     ]);
 
-    const result = await refreshExpiringTokensSchedule.run({
+    const result = await runAsProduction({
       timestamp: new Date(nowMs).toISOString(),
       lastTimestamp: null,
-    } as any);
+    });
 
     expect(result.refreshed).toBe(0);
     expect(requestValidCredentials).not.toHaveBeenCalled();

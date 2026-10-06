@@ -3,19 +3,15 @@ import { createHmac } from 'node:crypto';
 const UNSUBSCRIBE_SECRET = process.env.UNSUBSCRIBE_SECRET || process.env.AUTH_SECRET;
 
 /**
- * Get the base URL for unsubscribe links based on environment
- * Uses NEXT_PUBLIC_BETTER_AUTH_URL for staging/prod, falls back to NEXT_PUBLIC_APP_URL,
- * and handles localhost for local development
+ * Base URL for unsubscribe links. `/unsubscribe/preferences` is an app page,
+ * so this is NEXT_PUBLIC_APP_URL. NEXT_PUBLIC_BETTER_AUTH_URL is not used:
+ * when the API is self-hosted on its own host it points at the API, where the
+ * page does not exist.
  */
 function getBaseUrl(): string {
-  // Prefer NEXT_PUBLIC_BETTER_AUTH_URL (used for staging/prod)
-  if (process.env.NEXT_PUBLIC_BETTER_AUTH_URL) {
-    return process.env.NEXT_PUBLIC_BETTER_AUTH_URL;
-  }
-
-  // Fallback to NEXT_PUBLIC_APP_URL
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return process.env.NEXT_PUBLIC_APP_URL;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (appUrl) {
+    return appUrl.replace(/\/+$/, '');
   }
 
   // Default fallback

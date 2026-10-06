@@ -1,75 +1,58 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildAuthForwardHeaders } from './auth-forward-headers';
 
-/**
- * headersToObject is not exported from auth.ts, so we replicate the logic here
- * to ensure correct behavior. If the implementation changes, these tests catch regressions.
- */
-
-const API_URL = 'http://localhost:3333';
-
-function headersToObject(headers: Headers): Record<string, string> {
-  const obj: Record<string, string> = {};
-  headers.forEach((value, key) => {
-    const k = key.toLowerCase();
-    if (k === 'cookie' || k === 'origin' || k.startsWith('x-')) {
-      obj[key] = value;
-    }
+describe('buildAuthForwardHeaders', () => {
+  beforeEach(() => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.comp.revola.ai');
+    vi.stubEnv('BACKEND_API_URL', 'http://comp-api.comp.internal:3333');
+    vi.stubEnv('INTERNAL_API_TOKEN', 'internal-test-token');
   });
-  if (!obj.origin && !obj.Origin) {
-    obj.origin = API_URL;
-  }
-  return obj;
-}
+  afterEach(() => vi.unstubAllEnvs());
 
-describe('headersToObject', () => {
-  it('forwards cookie header', () => {
-    const headers = new Headers({ cookie: 'session=abc123' });
-    const result = headersToObject(headers);
+  it('forwards the cookie header', () => {
+    const result = buildAuthForwardHeaders({ incoming: new Headers({ cookie: 'session=abc123' }) });
     expect(result.cookie).toBe('session=abc123');
   });
 
-  it('forwards origin header when present', () => {
-    const headers = new Headers({
-      cookie: 'session=abc',
-      origin: 'https://app.example.com',
-    });
-    const result = headersToObject(headers);
-    expect(result.origin).toBe('https://app.example.com');
+  it('forwards the origin header when present', () => {
+    const incoming = new Headers({ cookie: 'session=abc', origin: 'https://app.example.com' });
+    expect(buildAuthForwardHeaders({ incoming }).origin).toBe('https://app.example.com');
   });
 
-  it('sets origin to API_URL when origin header is missing', () => {
-    const headers = new Headers({ cookie: 'session=abc' });
-    const result = headersToObject(headers);
-    expect(result.origin).toBe(API_URL);
+  it('falls back to the public API origin when origin is missing', () => {
+    const result = buildAuthForwardHeaders({ incoming: new Headers({ cookie: 'session=abc' }) });
+    expect(result.origin).toBe('https://api.comp.revola.ai');
   });
 
-  it('forwards x-prefixed headers', () => {
-    const headers = new Headers({
+  it('adds the internal token and the sanitized client IP', () => {
+    const incoming = new Headers({ 'x-forwarded-for': '203.0.113.7, 10.0.0.1' });
+    const result = buildAuthForwardHeaders({ incoming });
+    expect(result['X-Internal-Token']).toBe('internal-test-token');
+    expect(result['X-Forwarded-For']).toBe('203.0.113.7');
+  });
+
+  it('drops arbitrary x-* headers, including the edge origin header', () => {
+    const incoming = new Headers({
       'x-request-id': '12345',
-      'x-forwarded-for': '127.0.0.1',
+      'x-comp-origin-auth': 'edge-secret',
+      'x-forwarded-for': 'spoofed',
     });
-    const result = headersToObject(headers);
-    expect(result['x-request-id']).toBe('12345');
-    expect(result['x-forwarded-for']).toBe('127.0.0.1');
+    const result = buildAuthForwardHeaders({ incoming });
+    const names = Object.keys(result).map((name) => name.toLowerCase());
+    expect(names).not.toContain('x-request-id');
+    expect(names).not.toContain('x-comp-origin-auth');
+    expect(names).not.toContain('x-forwarded-for');
   });
 
-  it('excludes non-allowlisted headers', () => {
-    const headers = new Headers({
+  it('excludes other headers', () => {
+    const incoming = new Headers({
       'content-type': 'application/json',
       authorization: 'Bearer token',
       accept: 'text/html',
     });
-    const result = headersToObject(headers);
+    const result = buildAuthForwardHeaders({ incoming });
     expect(result['content-type']).toBeUndefined();
     expect(result.authorization).toBeUndefined();
     expect(result.accept).toBeUndefined();
-    // Should still add origin fallback
-    expect(result.origin).toBe(API_URL);
-  });
-
-  it('does not override existing origin with fallback', () => {
-    const headers = new Headers({ origin: 'https://custom.example.com' });
-    const result = headersToObject(headers);
-    expect(result.origin).toBe('https://custom.example.com');
   });
 });

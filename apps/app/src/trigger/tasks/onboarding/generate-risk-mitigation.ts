@@ -1,6 +1,7 @@
 import { Prisma, RiskStatus, db } from '@db/server';
 import { logger, metadata, queue, tags, task, tasks } from '@trigger.dev/sdk';
 import axios from 'axios';
+import { getRevalidateUrl } from '../../lib/revalidate-url';
 import {
   createRiskMitigationComment,
   findCommentAuthor,
@@ -104,7 +105,7 @@ export const generateRiskMitigation = task({
     // Revalidate only the risk detail page in the individual job
     try {
       const detailPath = `/${organizationId}/risk/${riskId}`;
-      const url = `${process.env.NEXT_PUBLIC_BETTER_AUTH_URL}/api/revalidate/path`;
+      const url = getRevalidateUrl();
       logger.info('url', { url });
       await axios.post(
         url,
@@ -178,7 +179,7 @@ export const generateRiskMitigationsForOrg = task({
     try {
       const listPath = `/${organizationId}/risk`;
       await Promise.all([
-        axios.post(`${process.env.NEXT_PUBLIC_BETTER_AUTH_URL}/api/revalidate/path`, {
+        axios.post(getRevalidateUrl(), {
           path: listPath,
           secret: process.env.REVALIDATION_SECRET,
         }),

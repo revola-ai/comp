@@ -1,10 +1,11 @@
-import { env } from '@/env.mjs';
+import { getServerApiBaseUrl, getServerApiHeaders } from '@/lib/server-api-base-url';
 import { type InferUITools, tool } from 'ai';
 import { z } from 'zod';
 
 interface PolicyToolsOptions {
   currentPolicyId: string;
-  cookieHeader: string;
+  /** Headers of the incoming chat request; the session cookie is forwarded from them. */
+  incoming: Headers;
 }
 
 /**
@@ -13,17 +14,17 @@ interface PolicyToolsOptions {
  */
 async function apiCall<T = unknown>({
   endpoint,
-  cookieHeader,
+  incoming,
 }: {
   endpoint: string;
-  cookieHeader: string;
+  incoming: Headers;
 }): Promise<T> {
-  const baseUrl = env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
-  const response = await fetch(`${baseUrl}${endpoint}`, {
+  const response = await fetch(`${getServerApiBaseUrl()}${endpoint}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
-      Cookie: cookieHeader,
+      ...getServerApiHeaders({ incoming }),
+      Cookie: incoming.get('cookie') ?? '',
     },
     cache: 'no-store',
   });
@@ -36,7 +37,7 @@ async function apiCall<T = unknown>({
   return response.json() as Promise<T>;
 }
 
-export function getPolicyTools({ currentPolicyId, cookieHeader }: PolicyToolsOptions) {
+export function getPolicyTools({ currentPolicyId, incoming }: PolicyToolsOptions) {
   return {
     proposePolicy: tool({
       description:
@@ -88,7 +89,7 @@ export function getPolicyTools({ currentPolicyId, cookieHeader }: PolicyToolsOpt
       execute: async () => {
         const result = await apiCall<{ data: Array<Record<string, unknown>>; count: number }>({
           endpoint: '/v1/vendors',
-          cookieHeader,
+          incoming,
         });
         return { vendors: result.data, count: result.count };
       },
@@ -104,7 +105,7 @@ export function getPolicyTools({ currentPolicyId, cookieHeader }: PolicyToolsOpt
         try {
           const vendor = await apiCall<Record<string, unknown>>({
             endpoint: `/v1/vendors/${vendorId}`,
-            cookieHeader,
+            incoming,
           });
           return { vendor };
         } catch {
@@ -120,7 +121,7 @@ export function getPolicyTools({ currentPolicyId, cookieHeader }: PolicyToolsOpt
       execute: async () => {
         const result = await apiCall<{ data: Array<Record<string, unknown>>; count: number }>({
           endpoint: '/v1/policies',
-          cookieHeader,
+          incoming,
         });
         // Filter out the current policy
         const filtered = result.data.filter(
@@ -143,7 +144,7 @@ export function getPolicyTools({ currentPolicyId, cookieHeader }: PolicyToolsOpt
         try {
           const policy = await apiCall<Record<string, unknown>>({
             endpoint: `/v1/policies/${policyId}`,
-            cookieHeader,
+            incoming,
           });
           return { policy };
         } catch {
@@ -167,7 +168,7 @@ export function getPolicyTools({ currentPolicyId, cookieHeader }: PolicyToolsOpt
         const params = formType ? `?formType=${formType}` : '';
         const result = await apiCall<{ data: Array<Record<string, unknown>>; count: number }>({
           endpoint: `/v1/evidence${params}`,
-          cookieHeader,
+          incoming,
         });
         return { evidence: result.data, count: result.count };
       },

@@ -1,6 +1,7 @@
 import { db } from '@db';
 import { logger, schedules } from '@trigger.dev/sdk';
 import { requestValidCredentials } from './ensure-valid-credentials';
+import { isScheduledRunAllowed } from '../lib/schedule-guard';
 
 // Refresh tokens expiring within the next 24 hours
 const REFRESH_LOOKAHEAD_HOURS = 24;
@@ -17,7 +18,8 @@ export const refreshExpiringTokensSchedule = schedules.task({
   id: 'refresh-expiring-tokens-schedule',
   cron: '0 5 * * *', // Daily at 05:00 UTC — 1 hour before integration checks
   maxDuration: 60 * 30, // 30 minutes
-  run: async (payload) => {
+  run: async (payload, { ctx }) => {
+    if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
     logger.info('Starting proactive OAuth token refresh', {
       scheduledAt: payload.timestamp,
       lastRun: payload.lastTimestamp,

@@ -57,6 +57,29 @@ jest.mock('./run-device-sync', () => ({
 
 const atUtc = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
+// schedules.task is mocked to return the config, so .run is invokable here.
+// Runs as the PRODUCTION Trigger.dev environment; other environments are
+// skipped by the schedule guard (covered in trigger/lib/schedule-guard.spec.ts).
+function runAsProduction(payload: {
+  timestamp: Date;
+  lastTimestamp?: Date;
+}): Promise<unknown> {
+  const scheduled = integrationChecksSchedule as unknown as {
+    run: (
+      p: { timestamp: Date; lastTimestamp?: Date },
+      params: {
+        ctx: { environment: { type: string }; task: { id: string } };
+      },
+    ) => Promise<unknown>;
+  };
+  return scheduled.run(payload, {
+    ctx: {
+      environment: { type: 'PRODUCTION' },
+      task: { id: 'integration-checks-schedule' },
+    },
+  });
+}
+
 describe('filterDueTasks (integration orchestrator)', () => {
   const now = atUtc('2026-04-24');
 
@@ -250,11 +273,7 @@ describe('orchestrator excludes MANUAL tasks from scheduled runs', () => {
   const getManifestMock = getManifest as jest.Mock;
 
   // schedules.task is mocked to return the config, so .run is invokable here.
-  const runOrchestrator = (
-    integrationChecksSchedule as unknown as {
-      run: (p: { timestamp: Date; lastTimestamp?: Date }) => Promise<unknown>;
-    }
-  ).run;
+  const runOrchestrator = runAsProduction;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -307,11 +326,7 @@ describe('orchestrator dispatches ONE runner per org', () => {
     runOrgIntegrationChecks as unknown as { batchTrigger: jest.Mock }
   ).batchTrigger;
 
-  const runOrchestrator = (
-    integrationChecksSchedule as unknown as {
-      run: (p: { timestamp: Date; lastTimestamp?: Date }) => Promise<unknown>;
-    }
-  ).run;
+  const runOrchestrator = runAsProduction;
 
   beforeEach(() => {
     jest.clearAllMocks();

@@ -9,9 +9,7 @@
  */
 
 import type { ReadonlyHeaders } from 'next/dist/server/web/spec-extension/adapters/headers';
-
-const API_URL =
-  process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+import { getServerApiBaseUrl, getServerApiHeaders } from './server-api-base-url';
 
 const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
 
@@ -78,15 +76,16 @@ export interface Invitation {
 }
 
 /**
- * Convert Headers to a plain object for fetch
+ * Headers forwarded to the API for the incoming request: the session cookie
+ * plus the server headers (internal token and the sanitized client IP).
+ * Arbitrary `x-*` headers are not copied: they would carry edge secrets such
+ * as `X-Comp-Origin-Auth` into the API's logs and let a client choose the
+ * forwarded IP.
  */
 function headersToObject(headers: ReadonlyHeaders | Headers): Record<string, string> {
-  const obj: Record<string, string> = {};
-  headers.forEach((value, key) => {
-    if (key.toLowerCase() === 'cookie' || key.toLowerCase().startsWith('x-')) {
-      obj[key] = value;
-    }
-  });
+  const obj: Record<string, string> = getServerApiHeaders({ incoming: headers });
+  const cookie = headers.get('cookie');
+  if (cookie) obj.cookie = cookie;
   return obj;
 }
 
@@ -95,7 +94,7 @@ function headersToObject(headers: ReadonlyHeaders | Headers): Record<string, str
  */
 async function getSession(options: { headers: ReadonlyHeaders | Headers }): Promise<Session | null> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/get-session`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/get-session`, {
       method: 'GET',
       headers: {
         ...headersToObject(options.headers),
@@ -126,7 +125,7 @@ async function setActiveOrganization(options: {
   body: { organizationId: string };
 }): Promise<void> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/organization/set-active`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/organization/set-active`, {
       method: 'POST',
       headers: {
         ...headersToObject(options.headers),

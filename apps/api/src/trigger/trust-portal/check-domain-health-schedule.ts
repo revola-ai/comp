@@ -2,6 +2,7 @@ import { db } from '@db';
 import { logger, schedules } from '@trigger.dev/sdk';
 import { parseRoles } from '../../people/utils/role-authorization';
 import { TrustEmailService } from '../../trust-portal/email.service';
+import { isScheduledRunAllowed } from '../lib/schedule-guard';
 
 const emailService = new TrustEmailService();
 
@@ -57,7 +58,8 @@ export const checkDomainHealthSchedule = schedules.task({
   id: 'trust-portal-check-domain-health',
   cron: '0 6 * * *',
   maxDuration: 60 * 15, // 15 minutes
-  run: async (payload) => {
+  run: async (payload, { ctx }) => {
+    if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
     logger.info('Starting Trust Portal domain health check', {
       scheduledAt: payload.timestamp,
     });

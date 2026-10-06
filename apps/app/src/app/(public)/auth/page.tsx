@@ -2,6 +2,8 @@ import { LoginForm } from '@/components/login-form';
 import { env } from '@/env.mjs';
 import { auth } from '@/utils/auth';
 import { getSafeRedirectPath } from '@/utils/auth-callback';
+import { getSignInErrorMessage } from '@/utils/auth-error';
+import { Alert } from '@trycompai/design-system';
 import {
   Card,
   CardContent,
@@ -23,13 +25,20 @@ export const metadata: Metadata = {
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ inviteCode?: string; redirectTo?: string }>;
+  searchParams: Promise<{
+    inviteCode?: string;
+    redirectTo?: string;
+    // Set by better-auth when it redirects to errorCallbackURL.
+    error?: string;
+    error_description?: string;
+  }>;
 }) {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
-  const { inviteCode, redirectTo } = await searchParams;
+  const { inviteCode, redirectTo, error, error_description } = await searchParams;
   const safeRedirectTo = getSafeRedirectPath(redirectTo);
+  const signInError = getSignInErrorMessage({ error, errorDescription: error_description });
 
   const orgId = session?.session?.activeOrganizationId;
 
@@ -62,6 +71,7 @@ export default async function Page({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6 pb-6 px-8">
+            {signInError && <Alert variant="destructive" description={signInError} />}
             <LoginForm
               inviteCode={inviteCode}
               redirectTo={safeRedirectTo}

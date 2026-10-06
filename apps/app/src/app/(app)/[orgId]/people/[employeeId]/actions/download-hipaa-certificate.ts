@@ -1,7 +1,7 @@
 'use server';
 
 import { authActionClient } from '@/actions/safe-action';
-import { env } from '@/env.mjs';
+import { getServerApiBaseUrl, getServerApiHeaders } from '@/lib/server-api-base-url';
 import { headers } from 'next/headers';
 import { z } from 'zod';
 
@@ -29,16 +29,14 @@ export const downloadHipaaCertificate = authActionClient
       );
     }
 
-    const apiUrl =
-      env.NEXT_PUBLIC_API_URL ||
-      process.env.API_BASE_URL ||
-      'http://localhost:3333';
+    const apiUrl = getServerApiBaseUrl();
 
     const headerStore = await headers();
     const cookieHeader = headerStore.get('cookie');
 
     const requestHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
+      ...getServerApiHeaders({ incoming: headerStore }),
     };
 
     if (cookieHeader) {

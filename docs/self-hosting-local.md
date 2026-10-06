@@ -125,6 +125,18 @@ Deploying the workers with `trigger deploy` removes that dependency on someone's
 Making it work means vendoring `packages/db/dist` into the worker image (or publishing the fork's package), shipping the Supabase CA alongside the RDS bundle in `apps/api/caBundleExtension.ts`, and setting `DATABASE_SSL_CA` to its path inside the image.
 Until then, run `trigger dev` locally.
 
+### Local runs write production data
+
+The shared database, Storage and Redis are the production state (decision D7 of the AWS hosting plan), not a copy.
+Anything a local app, API or `trigger dev` worker does (onboarding, policy edits, emails, integration syncs) changes real production data and can reach real people.
+
+Scheduled tasks (`schedules.task`) are therefore skipped by default outside the Trigger.dev `PRODUCTION` environment: a local `trigger dev` logs "Skipping scheduled run outside production" and returns without doing any work, so the daily and weekly jobs do not run twice against production.
+To exercise a schedule locally on purpose, set `COMP_RUN_SCHEDULES_IN_DEV=true` in the worker's env file (`apps/app/.env` or `apps/api/.env`) and restart `trigger dev`; it then writes to production like the deployed schedule does.
+The guard lives in `apps/{api,app}/src/trigger/lib/schedule-guard.ts`, and a test fails if a new `schedules.task` does not call it.
+
+App tasks reach the app's cache revalidation route through `NEXT_PUBLIC_APP_URL` (`http://localhost:3000` locally); set it in `apps/app/.env`, or revalidation logs `RevalidateUrlNotConfiguredError` and pages refresh only on their next load.
+Server-side app and portal code calls the API at `BACKEND_API_URL` when it is set (the internal Service Connect address in AWS) and at `NEXT_PUBLIC_API_URL` otherwise, so locally leave `BACKEND_API_URL` unset.
+
 Tests keep their guard: `packages/db` database suites only run when `DATABASE_URL` names a database ending in `_test`, so `bun test` never touches the shared database; keep a local Postgres for `comp_test`.
 
 ## Self-hosted mode
