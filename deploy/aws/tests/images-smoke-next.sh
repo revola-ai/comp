@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # App and portal checks for images.smoke.sh, which sources this file. It relies on that
 # script's globals and helpers (ROOT, CONTAINERS, check, fail, start, container_of,
-# image_of, answers_200, SCRATCH).
+# image_of, answers_200, exited_with_ca_file_missing, SCRATCH).
 # shellcheck disable=SC2154
 
 API_HOST=api.comp.revola.ai
@@ -9,6 +9,20 @@ API_HOST=api.comp.revola.ai
 FAKE_DATABASE_URL=postgresql://smoke:smoke@127.0.0.1:5432/smoke
 FAKE_NEXT_ENV=(-e "DATABASE_URL=$FAKE_DATABASE_URL" -e AUTH_SECRET=smoke-only
   -e RESEND_API_KEY=smoke-only -e REVALIDATION_SECRET=smoke-only)
+# A non-local database host, so production's CA rule applies (nothing ever connects to it).
+NONLOCAL_DATABASE_URL=postgresql://u:p@db.example.invalid:5432/x
+
+# The Next server must stop at boot with ca_file_missing when production points at a
+# non-local database without DATABASE_SSL_CA (instrumentation's register hook).
+next_exits_without_ca() {
+  local target="$1" name
+  name="comp-smoke-$1-noca-$$"
+  CONTAINERS+=("$name")
+  docker run -d --name "$name" "${FAKE_NEXT_ENV[@]}" -e "DATABASE_URL=$NONLOCAL_DATABASE_URL" \
+    -e NODE_ENV=production -e DATABASE_SSL_CA= -e PRISMA_ALLOW_INSECURE_TLS= \
+    "$(image_of "$target")" >/dev/null || return 1
+  exited_with_ca_file_missing "$name"
+}
 
 # Starts a Next image for the HTTP checks and sets NEXT_PORT to its host port. When the
 # container does not start it records a FAIL and returns non-zero, and the run continues
@@ -30,6 +44,8 @@ check_portal() {
   port="$NEXT_PORT"
   check "portal answers /api/health with 200" answers_200 "http://127.0.0.1:$port/api/health"
   check_bundle portal
+  check "portal exits with ca_file_missing when DATABASE_SSL_CA is empty" \
+    next_exits_without_ca portal
 }
 
 static_chunk_answers() {
@@ -114,4 +130,5 @@ check_app() {
   check "app serves a static chunk referenced by /" static_chunk_answers "$base"
   check "app answers a /_next/image request with 200" image_optimizer_answers "$base"
   check_bundle app
+  check "app exits with ca_file_missing when DATABASE_SSL_CA is empty" next_exits_without_ca app
 }

@@ -3,7 +3,11 @@
 # after another, loads them, and checks each the way ECS runs it. Takes 20+ minutes cold.
 #
 #   API_ENV_FILE=/path/to/apps/api/.env bash deploy/aws/tests/images.smoke.sh
+#   SMOKE_TARGETS="api portal" bash deploy/aws/tests/images.smoke.sh
 #
+# SMOKE_TARGETS (default "api app portal") limits the build and the checks to those
+# images; a laptop runs "api portal" because the app build needs more memory than an
+# 8 GB Docker VM (CodeBuild runs all three).
 # API_ENV_FILE (default <repo>/apps/api/.env) is sourced only inside a subshell and its
 # variables reach the api container by name (-e NAME); no value is ever printed. The
 # readiness check runs SELECT 1 against the database that file points at.
@@ -14,6 +18,7 @@ BAKE_FILE="$ROOT/deploy/aws/docker-bake.hcl"
 BUILDER="${COMP_BUILDER:-comp-builder}"
 TAG="${TAG:-smoke}"
 API_ENV_FILE="${API_ENV_FILE:-$ROOT/apps/api/.env}"
+read -r -a TARGETS <<<"${SMOKE_TARGETS:-api app portal}"
 CA_PATH=/app/certs/supabase-ca.crt
 # Variables the image itself sets; the env file must not override them.
 IMAGE_OWNED_ENV=" DATABASE_SSL_CA PRISMA_ALLOW_INSECURE_TLS NODE_ENV PORT HOSTNAME "
@@ -54,6 +59,7 @@ check() {
 }
 
 image_of() { printf 'comp-%s:%s' "$1" "$TAG"; }
+wants() { [[ " ${TARGETS[*]} " == *" $1 "* ]]; }
 
 ensure_builder() {
   docker buildx inspect "$BUILDER" >/dev/null 2>&1 && return 0
@@ -67,7 +73,7 @@ bake() {
 
 build_images() {
   local target
-  for target in api app portal; do
+  for target in "${TARGETS[@]}"; do
     printf '== building %s\n' "$target"
     if ! bake --load "$target"; then
       fail "build $target"
@@ -197,14 +203,10 @@ api_ready_with_env_file() {
   answers_200 "http://127.0.0.1:$port/v1/health/ready"
 }
 
-# The api must stop at boot, before connecting, when production has no CA. Its output is
-# captured and searched, never printed (the container gets the real env file values).
-api_exits_without_ca() {
-  local name="comp-smoke-api-noca-$$" state="" code logs
-  load_api_env_names || return 1
-  CONTAINERS+=("$name")
-  with_env_file docker run -d --name "$name" "${API_ENV_ARGS[@]}" -e NODE_ENV=production \
-    -e DATABASE_SSL_CA= -e PRISMA_ALLOW_INSECURE_TLS= "$(image_of api)" >/dev/null || return 1
+# Waits up to 60 s for container $1 to exit and succeeds when it exited non-zero with
+# ca_file_missing in its output. The output is searched, never printed.
+exited_with_ca_file_missing() {
+  local name="$1" state="" code logs
   for _ in $(seq 1 60); do
     state="$(docker inspect --format '{{.State.Status}}' "$name")"
     [[ "$state" == exited ]] && break
@@ -217,6 +219,17 @@ api_exits_without_ca() {
   [[ "$code" != 0 && "$logs" == *ca_file_missing* ]]
 }
 
+# The api must stop at boot, before connecting, when production has no CA (the container
+# gets the real env file values).
+api_exits_without_ca() {
+  local name="comp-smoke-api-noca-$$"
+  load_api_env_names || return 1
+  CONTAINERS+=("$name")
+  with_env_file docker run -d --name "$name" "${API_ENV_ARGS[@]}" -e NODE_ENV=production \
+    -e DATABASE_SSL_CA= -e PRISMA_ALLOW_INSECURE_TLS= "$(image_of api)" >/dev/null || return 1
+  exited_with_ca_file_missing "$name"
+}
+
 main() {
   command -v docker >/dev/null || { echo "docker is required" >&2; exit 1; }
   ensure_builder
@@ -224,17 +237,19 @@ main() {
     public_env_matches_bake
   build_images || { printf '%s check(s) failed\n' "$FAILURES"; exit 1; }
   local target
-  for target in api app portal; do
+  for target in "${TARGETS[@]}"; do
     check "$target runs node 22" node_is_22 "$target"
     check "$target carries the committed CA at $CA_PATH" ca_is_committed_cert "$target"
     check "$target runs as a non-root user" runs_as_non_root "$target"
     check "$target has no SKIP_ENV_VALIDATION in its runtime env" no_skip_env_validation "$target"
     check "$target is under its size ceiling" under_size_ceiling "$target"
   done
-  check_portal
-  check_app
-  check "api answers /v1/health/ready with 200 using API_ENV_FILE" api_ready_with_env_file
-  check "api exits with ca_file_missing when DATABASE_SSL_CA is empty" api_exits_without_ca
+  if wants portal; then check_portal; fi
+  if wants app; then check_app; fi
+  if wants api; then
+    check "api answers /v1/health/ready with 200 using API_ENV_FILE" api_ready_with_env_file
+    check "api exits with ca_file_missing when DATABASE_SSL_CA is empty" api_exits_without_ca
+  fi
   if ((FAILURES > 0)); then
     printf '%s check(s) failed\n' "$FAILURES"
     exit 1
