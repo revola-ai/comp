@@ -753,7 +753,7 @@ describe('PeopleService', () => {
         data: { isActive: false },
       });
       expect(db.$transaction).toHaveBeenCalledTimes(1);
-      expect(db.$queryRaw).toHaveBeenCalledTimes(1);
+      expect((db.$queryRaw as jest.Mock).mock.calls).toHaveLength(1);
     });
 
     it('should throw ForbiddenException when deleting an owner', async () => {
