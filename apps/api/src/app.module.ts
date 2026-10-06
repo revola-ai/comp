@@ -1,7 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AttachmentsModule } from './attachments/attachments.module';
@@ -14,6 +12,7 @@ import { DeviceAgentModule } from './device-agent/device-agent.module';
 import { awsConfig } from './config/aws.config';
 import { betterAuthConfig } from './config/better-auth.config';
 import { HealthModule } from './health/health.module';
+import { ThrottleModule } from './throttle/throttle.module';
 import { OrganizationModule } from './organization/organization.module';
 import { OrganizationAccessModule } from './organization-access/organization-access.module';
 import { PoliciesModule } from './policies/policies.module';
@@ -74,12 +73,7 @@ import { OffboardingChecklistModule } from './offboarding-checklist/offboarding-
         abortEarly: true,
       },
     }),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000, // 60 seconds
-        limit: 100, // 100 requests per minute per IP
-      },
-    ]),
+    ThrottleModule,
     AuthModule,
     OrganizationModule,
     OrganizationAccessModule,
@@ -138,12 +132,6 @@ import { OffboardingChecklistModule } from './offboarding-checklist/offboarding-
     McpDownloadModule,
   ],
   controllers: [AppController],
-  providers: [
-    AppService,
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
-  ],
+  providers: [AppService],
 })
 export class AppModule {}

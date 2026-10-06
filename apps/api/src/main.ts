@@ -17,6 +17,7 @@ import {
 import { corsOriginMiddleware } from './auth/cors-origin.middleware';
 import { adminAuthRateLimiter } from './auth/admin-rate-limit.middleware';
 import { originCheckMiddleware } from './auth/origin-check.middleware';
+import { clientIpHeaderMiddleware } from './throttle/client-ip-header.middleware';
 import { mkdirSync, writeFileSync, existsSync } from 'fs';
 
 declare module 'express-serve-static-core' {
@@ -69,8 +70,13 @@ async function bootstrap(): Promise<void> {
   app.use(originCheckMiddleware);
 
   // STEP 3b: Rate-limit better-auth admin routes (impersonation, ban, set-role, etc.)
-  // These bypass NestJS controllers so the global ThrottlerGuard doesn't apply.
+  // These bypass NestJS controllers so the Nest throttler doesn't apply.
   app.use(adminAuthRateLimiter);
+
+  // STEP 3c: Give better-auth's rate limiter the verified client IP. There is
+  // deliberately no `trust proxy`: req.ip is the socket address, and proxy
+  // headers count only with a valid origin header or internal token.
+  app.use(clientIpHeaderMiddleware);
 
   // STEP 4a: Configure body parser
   // NOTE: Attachment uploads are sent as base64 in JSON, so request payloads are

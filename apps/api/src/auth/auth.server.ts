@@ -22,7 +22,6 @@ import {
 import { ac, allRoles } from '@trycompai/auth';
 import { createAuthMiddleware } from 'better-auth/api';
 import { Redis } from '@upstash/redis';
-import type { AccessControl } from 'better-auth/plugins/access';
 import {
   resolveMicrosoftEmail,
   type MicrosoftEmailClaims,
@@ -41,6 +40,7 @@ import {
   revokeApiKeysBeforeMemberRemoval,
   revokeApiKeysBeforeUserDeletion,
 } from './auth-offboarding-hooks';
+import { CLIENT_IP_HEADER } from '../throttle/client-ip-header.middleware';
 
 export {
   getBetterAuthTrustedOrigins,
@@ -270,6 +270,11 @@ export const auth = betterAuth({
   advanced: {
     database: {
       generateId: false,
+    },
+    // Rate-limit on the verified client IP set by clientIpHeaderMiddleware,
+    // never on a forgeable X-Forwarded-For.
+    ipAddress: {
+      ipAddressHeaders: [CLIENT_IP_HEADER],
     },
     // Prevent cookie collisions between environments.
     // Production keeps the default 'better-auth' prefix (unchanged).
