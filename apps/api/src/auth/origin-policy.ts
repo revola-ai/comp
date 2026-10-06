@@ -133,6 +133,29 @@ export function isStaticTrustedOrigin(origin: string): boolean {
   }
 }
 
+/**
+ * Static trust first; then published, verified trust-portal custom domains
+ * from `getCustomDomains`. Self-hosted installs never consult custom domains:
+ * only `AUTH_TRUSTED_ORIGINS` and the `AUTH_COOKIE_DOMAIN` hosts are trusted.
+ */
+export async function isTrustedOriginWithCustomDomains({
+  origin,
+  getCustomDomains,
+}: {
+  origin: string;
+  getCustomDomains: () => Promise<Set<string>>;
+}): Promise<boolean> {
+  if (isStaticTrustedOrigin(origin)) return true;
+  if (isSelfHosted()) return false;
+  try {
+    const url = new URL(origin);
+    const customDomains = await getCustomDomains();
+    return customDomains.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function isStaticTrustedOriginForRequest(params: {
   method: string;
   origin: string;

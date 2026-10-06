@@ -29,7 +29,7 @@ import {
 } from './microsoft-email';
 import {
   getBetterAuthTrustedOrigins,
-  isStaticTrustedOrigin,
+  isTrustedOriginWithCustomDomains,
 } from './origin-policy';
 import { getCookieDomain } from './cookie-domain';
 import { createEmailDomainAllowlistHook } from './email-domain-allowlist';
@@ -110,20 +110,10 @@ async function getCustomDomains(): Promise<Set<string>> {
  * 1. Static trusted origins list
  * 2. *.trycomp.ai / *.trust.inc subdomains
  * 3. Published custom domains from the DB (cached in Redis, TTL 5 min)
+ * With SELF_HOSTED=true only the static self-hosted set applies (no 2 or 3).
  */
 export async function isTrustedOrigin(origin: string): Promise<boolean> {
-  if (isStaticTrustedOrigin(origin)) {
-    return true;
-  }
-
-  // Check verified custom domains from DB via Redis cache
-  try {
-    const url = new URL(origin);
-    const customDomains = await getCustomDomains();
-    return customDomains.has(url.hostname);
-  } catch {
-    return false;
-  }
+  return isTrustedOriginWithCustomDomains({ origin, getCustomDomains });
 }
 
 // Build social providers config

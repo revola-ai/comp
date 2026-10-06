@@ -2,6 +2,7 @@ import {
   getBetterAuthTrustedOrigins,
   getTrustedOrigins,
   isStaticTrustedOrigin,
+  isTrustedOriginWithCustomDomains,
 } from './origin-policy';
 
 describe('isStaticTrustedOrigin', () => {
@@ -171,5 +172,87 @@ describe('origin policy without SELF_HOSTED', () => {
     expect(getTrustedOrigins()).toContain('https://app.trycomp.ai');
     expect(isStaticTrustedOrigin('https://x.trycomp.ai')).toBe(true);
     expect(isStaticTrustedOrigin('https://x.trust.inc')).toBe(true);
+  });
+});
+
+describe('isTrustedOriginWithCustomDomains', () => {
+  const KEYS = [
+    'SELF_HOSTED',
+    'NODE_ENV',
+    'AUTH_TRUSTED_ORIGINS',
+    'AUTH_COOKIE_DOMAIN',
+    'BASE_URL',
+    'NEXT_PUBLIC_APP_URL',
+    'NEXT_PUBLIC_PORTAL_URL',
+  ] as const;
+  const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
+  // Stands in for the database (via Redis cache) lookup of verified,
+  // published trust-portal custom domains.
+  const getCustomDomains = jest.fn();
+
+  beforeEach(() => {
+    for (const key of KEYS) delete process.env[key];
+    getCustomDomains.mockReset();
+    getCustomDomains.mockResolvedValue(new Set(['trust.customer.example']));
+  });
+
+  afterAll(() => {
+    for (const key of KEYS) {
+      const value = saved[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  it('accepts a verified custom domain without SELF_HOSTED', async () => {
+    await expect(
+      isTrustedOriginWithCustomDomains({
+        origin: 'https://trust.customer.example',
+        getCustomDomains,
+      }),
+    ).resolves.toBe(true);
+    expect(getCustomDomains).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a verified custom domain without querying it when SELF_HOSTED=true', async () => {
+    process.env.SELF_HOSTED = 'true';
+    process.env.NODE_ENV = 'production';
+    process.env.AUTH_TRUSTED_ORIGINS = 'https://tools.revola.ai';
+    await expect(
+      isTrustedOriginWithCustomDomains({
+        origin: 'https://trust.customer.example',
+        getCustomDomains,
+      }),
+    ).resolves.toBe(false);
+    expect(getCustomDomains).not.toHaveBeenCalled();
+  });
+
+  it('still accepts the static self-hosted set when SELF_HOSTED=true', async () => {
+    process.env.SELF_HOSTED = 'true';
+    process.env.NODE_ENV = 'production';
+    process.env.AUTH_TRUSTED_ORIGINS = 'https://tools.revola.ai';
+    await expect(
+      isTrustedOriginWithCustomDomains({
+        origin: 'https://tools.revola.ai',
+        getCustomDomains,
+      }),
+    ).resolves.toBe(true);
+    expect(getCustomDomains).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed origin and a lookup failure', async () => {
+    await expect(
+      isTrustedOriginWithCustomDomains({
+        origin: 'not-a-url',
+        getCustomDomains,
+      }),
+    ).resolves.toBe(false);
+    getCustomDomains.mockRejectedValueOnce(new Error('redis down'));
+    await expect(
+      isTrustedOriginWithCustomDomains({
+        origin: 'https://trust.customer.example',
+        getCustomDomains,
+      }),
+    ).resolves.toBe(false);
   });
 });
