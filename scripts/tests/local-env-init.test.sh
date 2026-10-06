@@ -29,6 +29,7 @@ check() { # check <name> <condition...>
 
 has_key() { grep -qE "^$2=" "$1"; }
 lacks_key() { ! grep -qE "^$2=" "$1"; }
+has_line() { grep -qxF "$2" "$1"; }
 same_value() { # same_value <key> <file...>
   local key="$1" first; shift
   first="$(value_of "$1" "$key")"
@@ -44,7 +45,12 @@ check "api keeps the privileged internal token" has_key "$API" INTERNAL_API_TOKE
 check "app never gets the privileged internal token" lacks_key "$APP" INTERNAL_API_TOKEN
 check "portal never gets the privileged internal token" lacks_key "$PORTAL" INTERNAL_API_TOKEN
 check "api, app and portal share one forwarded-IP token" same_value COMP_FORWARDED_IP_TOKEN "$API" "$APP" "$PORTAL"
-check "api and app share one unsubscribe signing secret" same_value UNSUBSCRIBE_SECRET "$API" "$APP"
+# UNSUBSCRIBE_SECRET is one team-wide value (production verifies links a laptop signed), so
+# the script never invents one: it leaves a commented FILL_ME line to paste the shared value.
+check "api gets no per-laptop unsubscribe secret" lacks_key "$API" UNSUBSCRIBE_SECRET
+check "app gets no per-laptop unsubscribe secret" lacks_key "$APP" UNSUBSCRIBE_SECRET
+check "api asks for the shared unsubscribe secret" has_line "$API" '# UNSUBSCRIBE_SECRET=FILL_ME_SHARED'
+check "app asks for the shared unsubscribe secret" has_line "$APP" '# UNSUBSCRIBE_SECRET=FILL_ME_SHARED'
 
 if [[ "$failures" -gt 0 ]]; then
   echo "$failures failure(s)"

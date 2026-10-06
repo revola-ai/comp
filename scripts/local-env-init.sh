@@ -5,6 +5,8 @@
 #
 # Random secrets are generated once and shared across the apps that must agree
 # on them. Third-party keys are left as FILL_ME placeholders for you to paste in.
+# UNSUBSCRIBE_SECRET is never generated: it must be the team's one shared value, so
+# it is written as a commented FILL_ME_SHARED line until you paste that value in.
 # Existing .env files are never overwritten; delete one to regenerate it.
 set -euo pipefail
 
@@ -16,7 +18,6 @@ DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/comp"
 SECRET_KEY="$(gen)"           # better-auth secret (api) and encryption secret (app)
 ENCRYPTION_KEY="$(gen)"       # credential vault / integration secrets
 REVALIDATION_SECRET="$(gen)"
-UNSUBSCRIBE_SECRET="$(gen)"        # signs email unsubscribe links (api sends, app verifies)
 INTERNAL_API_TOKEN="$(gen)"        # api only: sole auth for its internal routes
 COMP_FORWARDED_IP_TOKEN="$(gen)"   # app and portal attest the forwarded client IP to the api
 SERVICE_TOKEN_TRIGGER="$(gen)"
@@ -80,9 +81,11 @@ SECRET_KEY=$SECRET_KEY
 ENCRYPTION_KEY=$ENCRYPTION_KEY
 INTERNAL_API_TOKEN=$INTERNAL_API_TOKEN
 COMP_FORWARDED_IP_TOKEN=$COMP_FORWARDED_IP_TOKEN
-UNSUBSCRIBE_SECRET=$UNSUBSCRIBE_SECRET
 SERVICE_TOKEN_TRIGGER=$SERVICE_TOKEN_TRIGGER
 SERVICE_TOKEN_PORTAL=$SERVICE_TOKEN_PORTAL
+# Signs email unsubscribe links: one team-wide value (the API signs, the app and production
+# verify), from the password manager. Unset, emails go out without unsubscribe links.
+# UNSUBSCRIBE_SECRET=FILL_ME_SHARED
 
 # --- Sign-in providers (create at console.cloud.google.com/apis/credentials) ---
 AUTH_GOOGLE_ID=FILL_ME
@@ -138,9 +141,11 @@ AUTH_SECRET=$SECRET_KEY
 SECRET_KEY=$SECRET_KEY
 ENCRYPTION_KEY=$ENCRYPTION_KEY
 REVALIDATION_SECRET=$REVALIDATION_SECRET
-UNSUBSCRIBE_SECRET=$UNSUBSCRIBE_SECRET
 COMP_FORWARDED_IP_TOKEN=$COMP_FORWARDED_IP_TOKEN
 SERVICE_TOKEN_TRIGGER=$SERVICE_TOKEN_TRIGGER
+# Signs email unsubscribe links: one team-wide value (the API signs, the app and production
+# verify), from the password manager. Unset, emails go out without unsubscribe links.
+# UNSUBSCRIBE_SECRET=FILL_ME_SHARED
 
 # --- Sign-in providers ---
 AUTH_GOOGLE_ID=FILL_ME
