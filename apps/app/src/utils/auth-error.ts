@@ -30,6 +30,25 @@ export function getSignInErrorMessage({
   return GENERIC_SIGN_IN_ERROR;
 }
 
+const MAGIC_LINK_SEND_ERROR = 'Error sending email - try again?';
+
+/**
+ * Message for a failed magic-link send. The API rejects a new email outside
+ * the sign-up allowlist at send time with the `email_domain_not_allowed`
+ * code, which may arrive as the error code (any case) or inside the message.
+ */
+export function getMagicLinkSendErrorMessage({
+  error,
+}: {
+  error: { code?: string | null; message?: string | null };
+}): string {
+  const message = getSignInErrorMessage({
+    error: error.code || error.message,
+    errorDescription: error.message,
+  });
+  return message === EMAIL_DOMAIN_NOT_ALLOWED_MESSAGE ? message : MAGIC_LINK_SEND_ERROR;
+}
+
 /**
  * Absolute URL of the app's sign-in page for better-auth's `errorCallbackURL`.
  * Without it, OAuth and magic-link errors land on the API host's generic

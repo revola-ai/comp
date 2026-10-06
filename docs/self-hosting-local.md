@@ -123,7 +123,7 @@ Every member of a Trigger.dev project has their own Development environment and 
 `ENCRYPTION_KEY` must be identical on every machine: it encrypts integration credentials stored in the shared database, so a colleague with a different key cannot read credentials someone else saved. Share `SECRET_KEY` too (it is also `AUTH_SECRET` in `apps/app` and `BETTER_AUTH_SECRET` in `apps/portal`) so auth behaves the same everywhere; `INTERNAL_API_TOKEN` and the `SERVICE_TOKEN_*` values only connect one person's own API and app and can stay per machine.
 Deploying the workers with `trigger deploy` removes that dependency on someone's laptop being up, but it does not work for this fork yet: the deploy build (`apps/api/customPrismaExtension.ts`) installs `@trycompai/db` from npm, which is upstream's package and lacks this fork's exports (`resolveSslConfig`, `buildManifestFromFramework`), so deployed tasks would fail at first database access.
 Making it work means vendoring `packages/db/dist` into the worker image (or publishing the fork's package), shipping the Supabase CA alongside the RDS bundle in `apps/api/caBundleExtension.ts`, and setting `DATABASE_SSL_CA` to its path inside the image.
-Until then, run `trigger dev` locally.
+Until then, run `trigger dev` locally for the jobs you start yourself, and see "Local runs write production data" below for who runs the scheduled jobs.
 
 ### Local runs write production data
 
@@ -131,7 +131,12 @@ The shared database, Storage and Redis are the production state (decision D7 of 
 Anything a local app, API or `trigger dev` worker does (onboarding, policy edits, emails, integration syncs) changes real production data and can reach real people.
 
 Scheduled tasks (`schedules.task`) are therefore skipped by default outside the Trigger.dev `PRODUCTION` environment: a local `trigger dev` logs "Skipping scheduled run outside production" and returns without doing any work, so the daily and weekly jobs do not run twice against production.
-To exercise a schedule locally on purpose, set `COMP_RUN_SCHEDULES_IN_DEV=true` in the worker's env file (`apps/app/.env` or `apps/api/.env`) and restart `trigger dev`; it then writes to production like the deployed schedule does.
+`COMP_RUN_SCHEDULES_IN_DEV=true` in a worker's env file (`apps/app/.env` and `apps/api/.env`) turns schedules back on for that laptop's `trigger dev` after a restart; it then writes to production like a deployed schedule does.
+
+Until the first release deploys the hosted Trigger.dev `prod` environment, nothing else runs the schedules (token refresh, integration checks, reminders, digests).
+During that period exactly one designated laptop runs `trigger dev` for both projects with `COMP_RUN_SCHEDULES_IN_DEV=true` in `apps/app/.env` and `apps/api/.env`, and keeps it running.
+Everyone else leaves `COMP_RUN_SCHEDULES_IN_DEV` unset, so their `trigger dev` never fires a schedule a second time.
+Once the hosted `prod` deployment exists, the designated laptop removes the variable too, and schedules run only in production.
 The guard lives in `apps/{api,app}/src/trigger/lib/schedule-guard.ts`, and a test fails if a new `schedules.task` does not call it.
 
 App tasks reach the app's cache revalidation route through `NEXT_PUBLIC_APP_URL` (`http://localhost:3000` locally); set it in `apps/app/.env`, or revalidation logs `RevalidateUrlNotConfiguredError` and pages refresh only on their next load.

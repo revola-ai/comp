@@ -2,7 +2,7 @@
 
 import { authClient } from '@/utils/auth-client';
 import { buildAuthCallbackUrl } from '@/utils/auth-callback';
-import { buildAuthErrorCallbackUrl } from '@/utils/auth-error';
+import { buildAuthErrorCallbackUrl, getMagicLinkSendErrorMessage } from '@/utils/auth-error';
 import { Button } from '@trycompai/ui/button';
 import { cn } from '@trycompai/ui/cn';
 import { Form, FormControl, FormField, FormItem } from '@trycompai/ui/form';
@@ -52,7 +52,7 @@ export function MagicLinkSignIn({
     });
 
     if (error) {
-      toast.error('Error sending email - try again?');
+      toast.error(getMagicLinkSendErrorMessage({ error }));
       setLoading(false);
     } else if (onMagicLinkSubmit) {
       onMagicLinkSubmit(email);

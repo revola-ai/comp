@@ -44,14 +44,21 @@ function runAsProduction(payload: {
 
 describe('refreshExpiringTokensSchedule', () => {
   const nowMs = Date.parse('2026-04-24T00:00:00.000Z');
-  const lookaheadMs = 24 * 60 * 60 * 1000;
+
+  const originalApiUrl = process.env.API_URL;
 
   beforeEach(() => {
-    jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+    // The task reads both Date.now() and new Date(), so pin the whole clock,
+    // and it refuses to run without API_URL.
+    jest.useFakeTimers({ now: nowMs });
+    process.env.API_URL = 'http://api.test';
     (requestValidCredentials as jest.Mock).mockResolvedValue({ success: true });
   });
 
   afterEach(() => {
+    jest.useRealTimers();
+    if (originalApiUrl === undefined) delete process.env.API_URL;
+    else process.env.API_URL = originalApiUrl;
     jest.restoreAllMocks();
     jest.clearAllMocks();
   });

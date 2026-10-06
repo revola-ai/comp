@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildAuthErrorCallbackUrl,
   EMAIL_DOMAIN_NOT_ALLOWED_MESSAGE,
+  getMagicLinkSendErrorMessage,
   getSignInErrorMessage,
 } from './auth-error';
 
@@ -72,5 +73,22 @@ describe('sign-in components route errors back to the app', () => {
   ])('%s passes errorCallbackURL', (file) => {
     const source = readFileSync(resolve(__dirname, '..', file), 'utf8');
     expect(source).toMatch(/errorCallbackURL:\s*buildAuthErrorCallbackUrl\(/);
+  });
+});
+
+describe('getMagicLinkSendErrorMessage', () => {
+  it.each([
+    { code: 'EMAIL_DOMAIN_NOT_ALLOWED', message: 'Forbidden' },
+    { code: 'email_domain_not_allowed' },
+    { message: 'email_domain_not_allowed: example.com' },
+  ])('maps %j to the allowlist message', (error) => {
+    expect(getMagicLinkSendErrorMessage({ error })).toBe(EMAIL_DOMAIN_NOT_ALLOWED_MESSAGE);
+  });
+
+  it('keeps the existing text for any other error', () => {
+    expect(getMagicLinkSendErrorMessage({ error: { code: 'INTERNAL', message: 'boom' } })).toBe(
+      'Error sending email - try again?',
+    );
+    expect(getMagicLinkSendErrorMessage({ error: {} })).toBe('Error sending email - try again?');
   });
 });
