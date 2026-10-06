@@ -1,4 +1,8 @@
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpStatus,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { createHmac } from 'node:crypto';
 import { UnsubscribeController } from './unsubscribe.controller';
 
@@ -53,11 +57,22 @@ describe('UnsubscribeController', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
-  it('refuses to verify anything when no secret is configured', async () => {
+  it('answers a named 503 when no secret is configured, never a 500', async () => {
+    delete process.env.UNSUBSCRIBE_SECRET;
+    const result = controller.unsubscribe(EMAIL, sign('fallback-secret'));
+    await expect(result).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(result).rejects.toMatchObject({
+      status: HttpStatus.SERVICE_UNAVAILABLE,
+      response: { error: 'unsubscribe_not_configured' },
+    });
+    expect(mockFindUnique).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('keeps a 400 for a missing token when no secret is configured', async () => {
     delete process.env.UNSUBSCRIBE_SECRET;
     await expect(
-      controller.unsubscribe(EMAIL, sign('fallback-secret')),
-    ).rejects.toThrow('UNSUBSCRIBE_SECRET');
-    expect(mockUpdate).not.toHaveBeenCalled();
+      controller.unsubscribe(EMAIL, undefined),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
