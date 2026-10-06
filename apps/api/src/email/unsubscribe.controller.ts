@@ -8,8 +8,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { db } from '@db';
-import { generateUnsubscribeToken } from '@trycompai/email';
-import { timingSafeEqual } from 'node:crypto';
+import { verifyUnsubscribeToken } from '@trycompai/email';
 
 @ApiTags('Email - Unsubscribe')
 @Controller({ path: 'email/unsubscribe', version: '1' })
@@ -37,12 +36,8 @@ export class UnsubscribeController {
       throw new BadRequestException('Email and token are required');
     }
 
-    // Verify HMAC token (timing-safe comparison)
-    const expectedToken = generateUnsubscribeToken(email);
-    const tokensMatch =
-      expectedToken.length === token.length &&
-      timingSafeEqual(Buffer.from(expectedToken), Buffer.from(token));
-    if (!tokensMatch) {
+    // Verify HMAC token (timing-safe; throws when no signing secret is set)
+    if (!verifyUnsubscribeToken({ email, token })) {
       throw new BadRequestException('Invalid token');
     }
 

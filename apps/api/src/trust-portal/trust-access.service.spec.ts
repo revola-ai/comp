@@ -607,14 +607,37 @@ describe('TrustAccessService access request notification', () => {
   );
 
   const ORIGINAL_BETTER_AUTH_URL = process.env.BETTER_AUTH_URL;
+  const ORIGINAL_APP_URL = process.env.NEXT_PUBLIC_APP_URL;
 
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.BETTER_AUTH_URL = 'https://app.trycomp.ai';
+    delete process.env.NEXT_PUBLIC_APP_URL;
   });
 
   afterAll(() => {
     process.env.BETTER_AUTH_URL = ORIGINAL_BETTER_AUTH_URL;
+    if (ORIGINAL_APP_URL === undefined) delete process.env.NEXT_PUBLIC_APP_URL;
+    else process.env.NEXT_PUBLIC_APP_URL = ORIGINAL_APP_URL;
+  });
+
+  it('links to the app host when the API is self-hosted on its own host', async () => {
+    process.env.BETTER_AUTH_URL = 'https://api.comp.revola.ai';
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.comp.revola.ai';
+    mockDb.trust.findUnique.mockResolvedValue({ contactEmail: 'owner@acme.com' });
+
+    await service['sendAccessRequestNotificationToOrg'](
+      'org_123',
+      'tar_456',
+      'Acme Inc',
+      { name: 'Jane Doe', email: 'jane@example.com' },
+    );
+
+    expect(emailService.sendAccessRequestNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewUrl: 'https://app.comp.revola.ai/org_123/trust/access-requests',
+      }),
+    );
   });
 
   it('points the review button at the access requests page, not the trust overview', async () => {

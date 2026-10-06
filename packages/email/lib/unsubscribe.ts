@@ -1,25 +1,34 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
-const UNSUBSCRIBE_SECRET =
-  process.env.UNSUBSCRIBE_SECRET || process.env.AUTH_SECRET || 'fallback-secret';
+/** Neither UNSUBSCRIBE_SECRET nor AUTH_SECRET is set, so no token can be signed or checked. */
+export class UnsubscribeSecretMissingError extends Error {
+  constructor() {
+    super(
+      'UNSUBSCRIBE_SECRET (or AUTH_SECRET) must be set to generate or verify unsubscribe tokens',
+    );
+    this.name = 'UnsubscribeSecretMissingError';
+  }
+}
 
 /**
- * Get the base URL for unsubscribe links based on environment
- * Uses NEXT_PUBLIC_BETTER_AUTH_URL for staging/prod, falls back to NEXT_PUBLIC_APP_URL,
- * and handles localhost for local development
+ * The signing secret, read on every use: UNSUBSCRIBE_SECRET, else AUTH_SECRET (what
+ * apps/app verifies with). There is no built-in fallback: a public default would let
+ * anyone forge a token for any address.
+ */
+function unsubscribeSecret(): string {
+  const secret = process.env.UNSUBSCRIBE_SECRET?.trim() || process.env.AUTH_SECRET?.trim();
+  if (!secret) throw new UnsubscribeSecretMissingError();
+  return secret;
+}
+
+/**
+ * Base URL for unsubscribe links. `/unsubscribe/preferences` is an app page, so this is
+ * NEXT_PUBLIC_APP_URL; NEXT_PUBLIC_BETTER_AUTH_URL points at the API when it is
+ * self-hosted on its own host, where the page does not exist.
  */
 function getBaseUrl(): string {
-  // Prefer NEXT_PUBLIC_BETTER_AUTH_URL (used for staging/prod)
-  if (process.env.NEXT_PUBLIC_BETTER_AUTH_URL) {
-    return process.env.NEXT_PUBLIC_BETTER_AUTH_URL;
-  }
-
-  // Fallback to NEXT_PUBLIC_APP_URL
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return process.env.NEXT_PUBLIC_APP_URL;
-  }
-
-  // Default fallback
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (appUrl) return appUrl.replace(/\/+$/, '');
   return 'https://app.trycomp.ai';
 }
 
@@ -27,9 +36,22 @@ function getBaseUrl(): string {
  * Generate a secure unsubscribe token for an email address
  */
 export function generateUnsubscribeToken(email: string): string {
-  const hmac = createHmac('sha256', UNSUBSCRIBE_SECRET);
+  const hmac = createHmac('sha256', unsubscribeSecret());
   hmac.update(email);
   return hmac.digest('base64url');
+}
+
+/** Timing-safe check of a token against the one this secret signs for the address. */
+export function verifyUnsubscribeToken({
+  email,
+  token,
+}: {
+  email: string;
+  token: string;
+}): boolean {
+  const expected = Buffer.from(generateUnsubscribeToken(email));
+  const presented = Buffer.from(token);
+  return expected.length === presented.length && timingSafeEqual(expected, presented);
 }
 
 /**

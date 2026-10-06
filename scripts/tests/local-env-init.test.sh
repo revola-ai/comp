@@ -44,6 +44,7 @@ check "api keeps the privileged internal token" has_key "$API" INTERNAL_API_TOKE
 check "app never gets the privileged internal token" lacks_key "$APP" INTERNAL_API_TOKEN
 check "portal never gets the privileged internal token" lacks_key "$PORTAL" INTERNAL_API_TOKEN
 check "api, app and portal share one forwarded-IP token" same_value COMP_FORWARDED_IP_TOKEN "$API" "$APP" "$PORTAL"
+check "api and app share one unsubscribe signing secret" same_value UNSUBSCRIBE_SECRET "$API" "$APP"
 
 if [[ "$failures" -gt 0 ]]; then
   echo "$failures failure(s)"

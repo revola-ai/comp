@@ -434,7 +434,10 @@ export class TrustAccessService {
 
     // Construct review URL pointing at the pending access requests list, not
     // the trust portal settings/overview page.
-    const reviewUrl = `${process.env.BETTER_AUTH_URL}/${organizationId}/trust/access-requests`;
+    // An app page: BETTER_AUTH_URL is the API host when the API is self-hosted.
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
+    const reviewUrl = `${appUrl}/${organizationId}/trust/access-requests`;
 
     // Send notification to all recipients
     const emailPromises = notificationEmails.map((email) =>

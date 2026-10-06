@@ -1,5 +1,5 @@
 import { render } from '@react-email/render';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AllPolicyNotificationEmail } from './all-policy-notification';
 import { ChangeEmailConfirmationEmail } from './change-email-confirmation';
 import { InviteEmail } from './invite';
@@ -50,12 +50,9 @@ const cases = [
         email="user@example.com"
         userName="User"
         taskName="Task"
-        oldStatus="todo"
-        newStatus="done"
+        taskStatus="todo"
         organizationName="Acme"
-        organizationId="org_123"
-        taskId="t1"
-        changedByName="Admin"
+        taskUrl="https://app.trycomp.ai/org_123/tasks/t1"
       />
     ),
   },
@@ -89,8 +86,7 @@ const cases = [
         organizationName="Acme"
         organizationId="org_123"
         policyName="Acceptable Use"
-        policyId="p1"
-        isUpdate={false}
+        notificationType="new"
       />
     ),
   },
@@ -112,7 +108,6 @@ const cases = [
         userName="User"
         organizationName="Acme"
         organizationId="org_123"
-        isUpdate={false}
       />
     ),
   },
@@ -223,6 +218,10 @@ const cases = [
 ];
 
 describe('email templates render to non-empty HTML', () => {
+  // Templates with an unsubscribe link sign a token; the package has no built-in secret.
+  beforeAll(() => vi.stubEnv('UNSUBSCRIBE_SECRET', 'unsubscribe-test-secret'));
+  afterAll(() => vi.unstubAllEnvs());
+
   for (const { name, el } of cases) {
     it(name, async () => {
       const html = await render(el);

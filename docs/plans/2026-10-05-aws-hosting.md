@@ -208,6 +208,7 @@
   - `secretsForService({ service }): { name: string; key: string }[]`.
     `COMP_FORWARDED_IP_TOKEN` is in `SECRET_KEYS` and mapped for the api, app and portal.
     App and portal secrets never include `INTERNAL_API_TOKEN`; only the api holds it.
+    `UNSUBSCRIBE_SECRET` is in `SECRET_KEYS` with one value for the api, the app and both Trigger projects; `packages/email` refuses to sign or verify an unsubscribe token without it (no public fallback).
   - `overridesForService({ service }): Record<string, string>`, rendered as `environment`:
     - every service: `NODE_ENV=production`, `SELF_HOSTED=true`, `NEXT_PUBLIC_SELF_HOSTED=true`, `DATABASE_SSL_CA`, `DATABASE_POOL_MAX` (from the budget in Step 4);
     - api only: `AUTH_COOKIE_DOMAIN`, `AUTH_TRUSTED_ORIGINS`, `AUTH_ALLOWED_EMAIL_DOMAINS=revola.ai`, `BASE_URL=https://api.comp.revola.ai`, `NEXT_PUBLIC_APP_URL=https://app.comp.revola.ai`, `NEXT_PUBLIC_PORTAL_URL=https://portal.comp.revola.ai`, `NEXT_PUBLIC_BETTER_AUTH_URL=https://api.comp.revola.ai`;
