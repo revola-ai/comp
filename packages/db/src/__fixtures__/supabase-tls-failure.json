@@ -1,0 +1,35 @@
+{
+  "capturedOn": "2026-10-06",
+  "capturedWith": {
+    "node": "v22.23.2",
+    "openssl": "3.5.7",
+    "pg": "8.22.0",
+    "prismaClient": "7.6.0",
+    "prismaAdapterPg": "7.6.0"
+  },
+  "procedure": "One TLS handshake per client to the Supabase us-east-2 session pooler on port 5432 with user, password and database set to throwaway values and ssl { ca: <self-generated throwaway CA>, rejectUnauthorized: true }, so certificate verification fails before authentication and no data is touched. Only the error shape is kept: no hostnames, addresses or credentials.",
+  "pgClientConnect": {
+    "class": "Error",
+    "name": "Error",
+    "code": "SELF_SIGNED_CERT_IN_CHAIN",
+    "message": "self-signed certificate in certificate chain",
+    "ownKeys": ["code"]
+  },
+  "prismaAdapterPgQueryRaw": {
+    "class": "PrismaClientKnownRequestError",
+    "name": "PrismaClientKnownRequestError",
+    "code": "P2010",
+    "ownKeys": ["clientVersion", "code", "meta", "name"],
+    "meta": {
+      "driverAdapterError": {
+        "class": "DriverAdapterError",
+        "name": "DriverAdapterError",
+        "message": "TlsConnectionError",
+        "cause": {
+          "kind": "TlsConnectionError",
+          "reason": "self-signed certificate in certificate chain"
+        }
+      }
+    }
+  }
+}

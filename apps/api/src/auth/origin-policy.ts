@@ -1,3 +1,5 @@
+import { getCookieDomainOrigins } from './cookie-domain';
+
 const DEFAULT_TRUSTED_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:3002',
@@ -34,7 +36,33 @@ function normalizePath(path: string): string {
   return path.replace(/\/+$/, '');
 }
 
+function isSelfHosted(): boolean {
+  return process.env.SELF_HOSTED === 'true';
+}
+
+/**
+ * Self-hosted: only `AUTH_TRUSTED_ORIGINS` plus the api, app and portal
+ * origins behind `AUTH_COOKIE_DOMAIN`; never Comp AI's own domains. Outside
+ * production with nothing configured, the localhost defaults keep local
+ * development working.
+ */
+function getSelfHostedTrustedOrigins(): string[] {
+  const explicit = parseOriginList(process.env.AUTH_TRUSTED_ORIGINS);
+  const useLocalDefaults =
+    explicit.length === 0 && process.env.NODE_ENV !== 'production';
+  const base = useLocalDefaults
+    ? DEFAULT_TRUSTED_ORIGINS.filter(isLocalhostOrigin)
+    : explicit;
+  const cookieOrigins = getCookieDomainOrigins({ env: process.env });
+  return [...new Set([...base, ...cookieOrigins])];
+}
+
+function isLocalhostOrigin(origin: string): boolean {
+  return new URL(origin).hostname === 'localhost';
+}
+
 export function getTrustedOrigins(): string[] {
+  if (isSelfHosted()) return getSelfHostedTrustedOrigins();
   const origins = parseOriginList(process.env.AUTH_TRUSTED_ORIGINS);
   return origins.length > 0 ? origins : [...DEFAULT_TRUSTED_ORIGINS];
 }
@@ -86,6 +114,8 @@ export function isStaticTrustedOrigin(origin: string): boolean {
   if (trustedOrigins.includes(origin)) {
     return true;
   }
+  // Self-hosted installs trust exact origins only, never Comp AI's wildcards.
+  if (isSelfHosted()) return false;
 
   try {
     const url = new URL(origin);
@@ -98,6 +128,29 @@ export function isStaticTrustedOrigin(origin: string): boolean {
       url.hostname.endsWith('.trust.inc') ||
       url.hostname === 'trust.inc'
     );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Static trust first; then published, verified trust-portal custom domains
+ * from `getCustomDomains`. Self-hosted installs never consult custom domains:
+ * only `AUTH_TRUSTED_ORIGINS` and the `AUTH_COOKIE_DOMAIN` hosts are trusted.
+ */
+export async function isTrustedOriginWithCustomDomains({
+  origin,
+  getCustomDomains,
+}: {
+  origin: string;
+  getCustomDomains: () => Promise<Set<string>>;
+}): Promise<boolean> {
+  if (isStaticTrustedOrigin(origin)) return true;
+  if (isSelfHosted()) return false;
+  try {
+    const url = new URL(origin);
+    const customDomains = await getCustomDomains();
+    return customDomains.has(url.hostname);
   } catch {
     return false;
   }

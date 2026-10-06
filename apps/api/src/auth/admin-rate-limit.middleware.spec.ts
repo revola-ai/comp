@@ -22,9 +22,22 @@ process.env.UPSTASH_REDIS_REST_URL = 'https://fake.upstash.io';
 process.env.UPSTASH_REDIS_REST_TOKEN = 'fake-token';
 
 import { adminAuthRateLimiter } from './admin-rate-limit.middleware';
+import { identityTracker } from '../throttle/identity-tracker';
 
-function buildReq(path: string, ip = '127.0.0.1'): Request {
-  return { path, ip, socket: { remoteAddress: ip } } as unknown as Request;
+const ORIGIN = 'B'.repeat(64);
+process.env.COMP_ORIGIN_AUTH = ORIGIN;
+
+function buildReq(
+  path: string,
+  ip = '127.0.0.1',
+  headers: Record<string, string> = {},
+): Request {
+  return {
+    path,
+    ip,
+    headers,
+    socket: { remoteAddress: ip },
+  } as unknown as Request;
 }
 
 function buildRes(): Response & { statusCode: number; body: unknown } {
@@ -71,7 +84,7 @@ describe('adminAuthRateLimiter', () => {
       next,
     );
     expect(next).toHaveBeenCalledTimes(1);
-    expect(mockLimit).toHaveBeenCalledWith('127.0.0.1');
+    expect(mockLimit).toHaveBeenCalledWith('ip:127.0.0.1');
   });
 
   it('rejects requests when rate limit is exceeded', async () => {
@@ -87,21 +100,32 @@ describe('adminAuthRateLimiter', () => {
     });
   });
 
-  it('uses IP from request for rate limit key', async () => {
+  it('keys on the shared identity tracker', async () => {
     const next = jest.fn();
-    await adminAuthRateLimiter(
+    for (const req of [
       buildReq('/api/auth/admin/set-role', '10.0.0.1'),
-      buildRes(),
-      next,
-    );
-    expect(mockLimit).toHaveBeenCalledWith('10.0.0.1');
+      buildReq('/api/auth/admin/set-role', '10.0.0.2', {
+        'x-comp-origin-auth': ORIGIN,
+        'cf-connecting-ip': '192.0.2.44',
+      }),
+    ]) {
+      mockLimit.mockClear();
+      await adminAuthRateLimiter(req, buildRes(), next);
+      expect(mockLimit).toHaveBeenCalledWith(identityTracker({ req }));
+    }
+    expect(mockLimit).toHaveBeenCalledWith('ip:192.0.2.44');
+  });
 
+  it('ignores forged client IP headers without the origin header', async () => {
     await adminAuthRateLimiter(
-      buildReq('/api/auth/admin/set-role', '10.0.0.2'),
+      buildReq('/api/auth/admin/set-role', '10.0.0.1', {
+        'cf-connecting-ip': '198.51.100.9',
+        'x-forwarded-for': '198.51.100.9',
+      }),
       buildRes(),
-      next,
+      jest.fn(),
     );
-    expect(mockLimit).toHaveBeenCalledWith('10.0.0.2');
+    expect(mockLimit).toHaveBeenCalledWith('ip:10.0.0.1');
   });
 
   it('allows request through when Redis is unreachable', async () => {

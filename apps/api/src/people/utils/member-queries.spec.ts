@@ -2,8 +2,13 @@ import { MemberQueries } from './member-queries';
 
 jest.mock('@db', () => ({
   db: {
+    $transaction: jest.fn((ops: unknown[]) => Promise.all(ops)),
+    apiKey: {
+      updateMany: jest.fn(),
+    },
     member: {
       update: jest.fn(),
+      delete: jest.fn(),
     },
     user: {
       update: jest.fn(),
@@ -111,7 +116,9 @@ describe('MemberQueries.updateMember — reactivation', () => {
   });
 
   it('does not touch deactivated when the patch omits isActive', async () => {
-    await MemberQueries.updateMember('mem_1', 'org_1', { jobTitle: 'Engineer' });
+    await MemberQueries.updateMember('mem_1', 'org_1', {
+      jobTitle: 'Engineer',
+    });
 
     const call = (mockedDb.member.update as jest.Mock).mock.calls[0][0];
     expect(call.data).not.toHaveProperty('deactivated');
@@ -123,5 +130,30 @@ describe('MemberQueries.updateMember — reactivation', () => {
     const call = (mockedDb.member.update as jest.Mock).mock.calls[0][0];
     expect(call.data.isActive).toBe(false);
     expect(call.data).not.toHaveProperty('deactivated');
+  });
+});
+
+describe('MemberQueries.deleteMember', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (mockedDb.member.delete as jest.Mock).mockResolvedValue({ id: 'mem_1' });
+    (mockedDb.apiKey.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+  });
+
+  it("revokes the member's personal API keys and deletes the member in one transaction", async () => {
+    await MemberQueries.deleteMember('mem_1', 'org_1');
+
+    expect(mockedDb.apiKey.updateMany).toHaveBeenCalledWith({
+      where: {
+        createdByMemberId: { in: ['mem_1'] },
+        organizationOwned: false,
+        isActive: true,
+      },
+      data: { isActive: false },
+    });
+    expect(mockedDb.member.delete).toHaveBeenCalledWith({
+      where: { id: 'mem_1', organizationId: 'org_1' },
+    });
+    expect(mockedDb.$transaction).toHaveBeenCalledTimes(1);
   });
 });

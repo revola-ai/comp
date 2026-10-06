@@ -2,6 +2,7 @@ import { db } from '@db';
 import type { PeopleResponseDto } from '../dto/people-responses.dto';
 import type { CreatePeopleDto } from '../dto/create-people.dto';
 import type { UpdatePeopleDto } from '../dto/update-people.dto';
+import { deleteMemberAndRevokeApiKeys } from '../../auth/api-key-offboarding';
 
 /**
  * Common database queries for member operations
@@ -254,15 +255,14 @@ export class MemberQueries {
   }
 
   /**
-   * Delete a member by ID within an organization
+   * Delete a member by ID within an organization, revoking their personal
+   * API keys in the same transaction.
    */
   static async deleteMember(
     memberId: string,
     organizationId: string,
   ): Promise<void> {
-    await db.member.delete({
-      where: { id: memberId, organizationId },
-    });
+    await deleteMemberAndRevokeApiKeys({ memberId, organizationId });
   }
 
   /**

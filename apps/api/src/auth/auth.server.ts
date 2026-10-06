@@ -22,15 +22,25 @@ import {
 import { ac, allRoles } from '@trycompai/auth';
 import { createAuthMiddleware } from 'better-auth/api';
 import { Redis } from '@upstash/redis';
-import type { AccessControl } from 'better-auth/plugins/access';
 import {
   resolveMicrosoftEmail,
   type MicrosoftEmailClaims,
 } from './microsoft-email';
 import {
   getBetterAuthTrustedOrigins,
-  isStaticTrustedOrigin,
+  isTrustedOriginWithCustomDomains,
 } from './origin-policy';
+import { getCookieDomain } from './cookie-domain';
+import {
+  createAllowlistedMagicLinkSender,
+  createEmailDomainAllowlistHook,
+} from './email-domain-allowlist';
+import {
+  apiKeyOffboardingBeforeHook,
+  revokeApiKeysBeforeMemberRemoval,
+  revokeApiKeysBeforeUserDeletion,
+} from './auth-offboarding-hooks';
+import { CLIENT_IP_HEADER } from '../throttle/client-ip-header.middleware';
 
 export {
   getBetterAuthTrustedOrigins,
@@ -45,21 +55,6 @@ export {
 } from './origin-policy';
 
 const MAGIC_LINK_EXPIRES_IN_SECONDS = 60 * 60; // 1 hour
-
-/**
- * Determine the cookie domain based on environment.
- */
-function getCookieDomain(): string | undefined {
-  const baseUrl = process.env.BASE_URL || '';
-
-  if (baseUrl.includes('staging.trycomp.ai')) {
-    return '.staging.trycomp.ai';
-  }
-  if (baseUrl.includes('trycomp.ai')) {
-    return '.trycomp.ai';
-  }
-  return undefined;
-}
 
 // ── Custom domain lookup via Redis cache ─────────────────────────────────────
 
@@ -118,20 +113,10 @@ async function getCustomDomains(): Promise<Set<string>> {
  * 1. Static trusted origins list
  * 2. *.trycomp.ai / *.trust.inc subdomains
  * 3. Published custom domains from the DB (cached in Redis, TTL 5 min)
+ * With SELF_HOSTED=true only the static self-hosted set applies (no 2 or 3).
  */
 export async function isTrustedOrigin(origin: string): Promise<boolean> {
-  if (isStaticTrustedOrigin(origin)) {
-    return true;
-  }
-
-  // Check verified custom domains from DB via Redis cache
-  try {
-    const url = new URL(origin);
-    const customDomains = await getCustomDomains();
-    return customDomains.has(url.hostname);
-  } catch {
-    return false;
-  }
+  return isTrustedOriginWithCustomDomains({ origin, getCustomDomains });
 }
 
 // Build social providers config
@@ -170,7 +155,9 @@ if (
   };
 }
 
-const cookieDomain = getCookieDomain();
+// Throws at boot when AUTH_COOKIE_DOMAIN is malformed, too broad, or does not
+// cover the api, app and portal hosts (see ./cookie-domain.ts).
+const cookieDomain = getCookieDomain({ env: process.env });
 
 // ── Hosted MCP (Speakeasy Gram) OAuth ────────────────────────────────────────
 // The MCP server is hosted on Gram. Gram obtains an OAuth access token from this
@@ -284,6 +271,11 @@ export const auth = betterAuth({
     database: {
       generateId: false,
     },
+    // Rate-limit on the verified client IP set by clientIpHeaderMiddleware,
+    // never on a forgeable X-Forwarded-For.
+    ipAddress: {
+      ipAddressHeaders: [CLIENT_IP_HEADER],
+    },
     // Prevent cookie collisions between environments.
     // Production keeps the default 'better-auth' prefix (unchanged).
     ...(cookieDomain === '.staging.trycomp.ai' && {
@@ -304,6 +296,14 @@ export const auth = betterAuth({
     }),
   },
   databaseHooks: {
+    user: {
+      // AUTH_ALLOWED_EMAIL_DOMAINS: refuse sign-ups from other domains unless
+      // the address holds a pending invitation.
+      create: {
+        before: createEmailDomainAllowlistHook({ env: process.env, db }),
+      },
+      delete: { before: revokeApiKeysBeforeUserDeletion },
+    },
     session: {
       create: {
         before: async (session) => {
@@ -366,6 +366,7 @@ export const auth = betterAuth({
     },
   },
   hooks: {
+    before: apiKeyOffboardingBeforeHook,
     after: createAuthMiddleware(async (ctx) => {
       if (!ctx.path.startsWith('/admin/')) return;
 
@@ -441,6 +442,9 @@ export const auth = betterAuth({
   plugins: [
     organization({
       membershipLimit: 100000000000,
+      organizationHooks: {
+        beforeRemoveMember: revokeApiKeysBeforeMemberRemoval,
+      },
       async sendInvitationEmail(data) {
         if (process.env.NODE_ENV === 'development') {
           console.log('[Auth] Sending invitation to:', data.email);
@@ -486,21 +490,27 @@ export const auth = betterAuth({
     }),
     magicLink({
       expiresIn: MAGIC_LINK_EXPIRES_IN_SECONDS,
-      sendMagicLink: async ({ email, url }) => {
-        // The `url` from better-auth points to the API's verify endpoint
-        // and includes the callbackURL from the client's sign-in request.
-        // Flow: user clicks link → API verifies token & sets session cookie
-        // → API redirects (302) to callbackURL (the app).
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[Auth] Sending magic link to:', email);
-          console.log('[Auth] Magic link URL:', url);
-        }
-        await triggerEmail({
-          to: email,
-          subject: 'Login to Comp AI',
-          react: MagicLinkEmail({ email, url }),
-        });
-      },
+      // AUTH_ALLOWED_EMAIL_DOMAINS: a link that would sign up a disallowed
+      // new email is refused here (email_domain_not_allowed), before sending.
+      sendMagicLink: createAllowlistedMagicLinkSender({
+        env: process.env,
+        db,
+        send: async ({ email, url }) => {
+          // The `url` from better-auth points to the API's verify endpoint
+          // and includes the callbackURL from the client's sign-in request.
+          // Flow: user clicks link → API verifies token & sets session cookie
+          // → API redirects (302) to callbackURL (the app).
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[Auth] Sending magic link to:', email);
+            console.log('[Auth] Magic link URL:', url);
+          }
+          await triggerEmail({
+            to: email,
+            subject: 'Login to Comp AI',
+            react: MagicLinkEmail({ email, url }),
+          });
+        },
+      }),
     }),
     emailOTP({
       otpLength: 6,
