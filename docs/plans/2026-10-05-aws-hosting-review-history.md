@@ -175,6 +175,33 @@ The plan moves toward the ideal; the remaining gaps are automation, staging and 
 
 #### Decision ledger
 
+### R1: App and portal server-side calls identify themselves to the API
+Finding: 1, P2, confidence 9/10, plan Task 2 Step 1 and Task 2b (no sender), evidence `apps/app/src/lib/api-server.ts:32-41` forwards only `requestHeaders`; `INTERNAL_API_TOKEN` appears in app and portal only in `env.mjs`; reviewer: Claude (this review).
+Plan baseline: ENG-R9 (approved at the gate, D6) requires that app and portal Service Connect calls carry `INTERNAL_API_TOKEN` and that only then is their forwarded client IP trusted; the folded plan tests the API side (Task 2) but no task implements the sending side.
+Runtime evidence: today no app or portal server-side caller sends `INTERNAL_API_TOKEN` or a client IP header (grep, 2026-10-06).
+Comparison grid:
+| Choice | Current | A | B |
+|---|---|---|---|
+| R1 sender side of ENG-R9 | missing from the plan | Task 2b: `getServerApiHeaders()` adds `X-Internal-Api-Token` and a sanitized `X-Forwarded-For` (first client IP from the incoming request, validated as an IP) to every server-side call that uses `getServerApiBaseUrl()`; vitest per app asserts both headers, that an invalid IP is dropped, and that browser modules never get the token | Leave as is: API-side test only; server-side calls share one throttle bucket per app task |
+Question D2:
+D2: Make app and portal server-side calls send the internal token and client IP
+Project/branch/task: revola/aws-hosting-plan-review, folded AWS hosting plan, Tasks 2 and 2b.
+ELI10: When the app's server talks to the API inside AWS, the API needs to know it is our app and which real user's browser started the request; otherwise every user's server-side request looks like it comes from one address and they all share one rate limit. The approved plan says these calls carry a secret internal token plus the user's IP, but no task actually adds those headers in the app and portal.
+Stakes if we pick wrong: Busy colleagues hit 429 errors on normal page loads, or the API trusts a client IP that anyone can forge.
+Recommendation: A because ENG-R9 is already approved and this is the missing half; without it the throttling work in Task 2 cannot behave as designed.
+Completeness: A=10/10, B=4/10
+Header: Server headers
+Options:
+A) Add sender headers (recommended)
+Task 2b adds getServerApiHeaders() used with getServerApiBaseUrl(): sends X-Internal-Api-Token and a sanitized X-Forwarded-For (first client IP, validated) on every server-side API call in app and portal; vitest per app asserts both headers, drops invalid IPs, and proves browser modules never include the token. (human: ~3h / CC: ~15min)
+B) Leave as is
+Keep only the API-side test from Task 2. All server-side calls from one app task share one throttle bucket and the forwarded IP is never trusted. No extra work, but the approved ENG-R9 behaviour stays half built.
+
+State: approved
+Actual answer: A) Add sender headers (recommended), D2, 2026-10-06
+Accepted scope: Task 2b adds getServerApiHeaders() used with getServerApiBaseUrl(): sends X-Internal-Api-Token and a sanitized X-Forwarded-For (first client IP, validated) on every server-side API call in app and portal; vitest per app asserts both headers, drops invalid IPs, and proves browser modules never include the token.
+History: none
+
 | ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
 |---|---|---|---|---|---|
 | UC1 (Kyle) | Edge gate for the API host; evidence in 0A item 2 | Access on all three hosts plus path bypasses | Access on `app` and `portal` only; `api` origin-locked by header and protected by its own auth (session, API key, service token) plus CEO-E1 | unresolved: User Challenge | Final gate only |
@@ -992,7 +1019,226 @@ Synthesized from the CEO findings; each maps to an accepted row. Effort assumes 
 | 47 | Eng R2 | Accept ENG-R1 to ENG-R13 | Mechanical | P1 | Both re-run voices; inside approved UC scope | Leaving gaps |
 | 48 | Gate | Final approval: approve as-is (D6) | Approved by Kyle | - | UC1-UC4 decided; Eng re-run found no architecture blocker | Overrides, revise, reject |
 
-## GSTACK REVIEW REPORT
+## Eng review of the folded plan (/plan-eng-review, 2026-10-06)
+
+Target (fixed): `docs/plans/2026-10-05-aws-hosting.md` at commit `a4b9ecac1` (branch `revola/aws-hosting-plan-review`), with the spec `docs/specs/2026-10-05-aws-hosting-design.md` and this history as context.
+Report file: this history file (ENG-R1 keeps review records outside the executable plan; the plan's lint test rejects review prose there).
+
+### Scope record
+
+feature answers: none proposed (all features approved at the /autoplan gate and D7); structure: A, Original arrangement (D1, 2026-10-06); accepted scope: the folded plan as written; pending remedies: none at scope time.
+Scope Challenge result: scope accepted as-is.
+
+## Decision ledger
+
+### R2: Where the external edge-probe alarms live
+Finding: 2, P2, confidence 9/10, plan Task 8 Files `edge-probes.tf` ("alarming to `comp-alerts`"); evidence: AWS Route 53 docs, "Monitoring health checks using CloudWatch": Route 53 metrics are only available in US East (N. Virginia), and an alarm's SNS topic must be in that region; `comp-alerts` is created in `us-east-2` (Task 7 `alarms.tf`); reviewer: Claude (this review).
+Plan baseline: ENG-R11 (approved, D6) requires external HTTPS checks through Cloudflare on `https://api.comp.revola.ai/v1/health` and the app's Access redirect, alarming to `comp-alerts`.
+Runtime evidence: none built yet; the regional constraint is documented AWS behaviour.
+Comparison grid:
+| Choice | Current | A | B |
+|---|---|---|---|
+| R2 probe mechanism and alarm region | Route 53 checks alarming to `comp-alerts` (us-east-2), which AWS does not allow | Route 53 health checks; Terraform `aws` provider alias for `us-east-1`; alarms and a second topic `comp-alerts-us-east-1` there, subscribed to the same email; plan test asserts alarm region and topic region match | CloudWatch Synthetics canaries in `us-east-2` (heartbeat scripts) alarming to the existing `comp-alerts`; no second region, about $10 per month per canary at 5-minute runs |
+Question D3:
+D3: Put the external probe alarms where AWS allows them
+Project/branch/task: revola/aws-hosting-plan-review, folded AWS hosting plan, Task 8.
+ELI10: The plan adds outside checks that load the hosted site through Cloudflare every minute and email Kyle when it breaks. As written they would alarm into the email topic in us-east-2, but AWS only lets Route 53 health-check alarms live in us-east-1, so Terraform would fail or the alarm would never fire. Either we add a small us-east-1 alarm setup, or we use a different checker that runs in us-east-2.
+Stakes if we pick wrong: The site goes down from the outside (Cloudflare, DNS, certificate) and nobody is told.
+Recommendation: A because Route 53 checks are cheap (about $1 per check per month) and probe from many locations, and the us-east-1 piece is a few lines of Terraform.
+Note: options differ in kind, not coverage - no completeness score.
+Header: Probe region
+Options:
+A) Route 53 in us-east-1 (recommended)
+Keep Route 53 health checks; add a us-east-1 provider alias with the alarms and a second SNS topic comp-alerts-us-east-1 subscribed to the same email; a plan test asserts each alarm's topic is in its own region. About $1 per check per month. (human: ~2h / CC: ~10min)
+B) Synthetics canaries in us-east-2
+Replace the checks with CloudWatch Synthetics heartbeat canaries in us-east-2 that alarm to the existing comp-alerts; one region only, single probe location, about $10 per canary per month. (human: ~3h / CC: ~15min)
+
+State: approved
+Actual answer: A) Route 53 in us-east-1 (recommended), D3, 2026-10-06
+Accepted scope: Keep Route 53 health checks; add a us-east-1 provider alias with the alarms and a second SNS topic comp-alerts-us-east-1 subscribed to the same email; a plan test asserts each alarm's topic is in its own region.
+History: none
+
+### R3: Where developers create new migrations while laptops share production (D7)
+Finding: 3, P2, confidence 8/10, plan Task 4 (`assertNotProduction` refuses `migrate dev` against the production host) and Decisions D7 (laptops' `DATABASE_URL` is production); the plan never says where a new migration is authored; reviewer: Claude (this review).
+Plan baseline: D7 (Kyle, 2026-10-06) keeps laptops on production state; DX-GUARD and ENG-10 (restored by D7) refuse destructive schema commands against production unless `COMP_I_AM_TOUCHING_PROD=1`.
+Runtime evidence: `packages/db` has a local Postgres compose service (`bun docker:up`), and a `comp_test` scratch database already exists for tests; `prisma migrate dev` needs a database it may reset plus a shadow database.
+Comparison grid:
+| Choice | Current | A | B |
+|---|---|---|---|
+| R3 migration authoring workflow | unspecified | New `packages/db` script `db:migrate:create` runs `prisma migrate dev --create-only` against a local `comp_dev` database (`DATABASE_URL` forced to `postgresql://postgres:postgres@127.0.0.1:5432/comp_dev`, created if missing), never the env file's URL; migrations reach production only through `release.sh migrate --sha`; test proves the script refuses any non-local URL; `docs/self-hosting-local.md` documents the flow | Document running `migrate dev` with `COMP_I_AM_TOUCHING_PROD=1` against production when needed; no new script |
+Question D4:
+D4: Give developers a safe place to create database migrations
+Project/branch/task: revola/aws-hosting-plan-review, folded AWS hosting plan, Task 4.
+ELI10: Because laptops point at the production database (your D7 decision), the plan blocks the command developers normally use to create a schema change, since that command can wipe or reset the database it runs against. That is the right block, but then nobody can create a migration at all. We should give them a one-line command that creates migrations against a throwaway local database, and let only the release command apply them to production.
+Stakes if we pick wrong: Either schema work stalls, or someone opts in and runs a reset-capable command against the production evidence store.
+Recommendation: A because it keeps the production guard absolute and costs one script plus a test; migrations then reach production only through the reviewed release path.
+Completeness: A=10/10, B=3/10
+Header: Migrations
+Options:
+A) Local comp_dev script (recommended)
+Add packages/db script db:migrate:create: runs prisma migrate dev --create-only against a local comp_dev database (forced URL, created if missing), never the env file's URL; a test proves it refuses any non-local URL; docs describe create locally, apply with release.sh migrate. (human: ~2h / CC: ~10min)
+B) Opt in against production
+Document COMP_I_AM_TOUCHING_PROD=1 prisma migrate dev against the production database for schema work; no new script, but every schema change runs a reset-capable command on live data.
+
+State: approved
+Actual answer: A) Local comp_dev script (recommended), D4, 2026-10-06
+Accepted scope: Add packages/db script db:migrate:create: runs prisma migrate dev --create-only against a local comp_dev database (forced URL, created if missing), never the env file's URL; a test proves it refuses any non-local URL; docs describe create locally, apply with release.sh migrate.
+History: none
+
+### R4: Where the production database identity lives
+Finding: 4, P3, confidence 7/10, plan Task 4 Interfaces (`assertNotProduction` compares with `config.productionPoolerHost`) and Task 0 (`config` lives in `deploy/aws/config.ts`); `packages/db` dependencies today are only `@prisma/adapter-pg`, `@prisma/client`, `dotenv`, `zod`; reviewer: Claude (this review).
+Plan baseline: Task 0 puts `productionDbRef` and `productionPoolerHost` in `deploy/aws/config.ts`; Task 4's guard and Task 7b's migration-target check both read them.
+Runtime evidence: none built yet.
+Comparison grid:
+| Choice | Current | A | B |
+|---|---|---|---|
+| R4 home of the production DB identity | `deploy/aws/config.ts`, imported by `packages/db` scripts | `packages/db/production-target.json` (`{ "projectRef", "poolerHost" }`, not secret, committed); `packages/db` reads it directly; `deploy/aws/config.ts` imports and re-validates it; a test in each package asserts they agree | Keep it in `deploy/aws/config.ts`; `packages/db` scripts import from the deploy workspace |
+Question D5:
+D5: Keep the core database package independent of the deploy tooling
+Project/branch/task: revola/aws-hosting-plan-review, folded AWS hosting plan, Tasks 0 and 4.
+ELI10: The safety check that stops laptops from resetting production needs to know which database is production. The plan stores that in the AWS deploy folder, so the core database package would have to reach into deploy tooling, a dependency pointing the wrong way. Keeping the two facts (project ref and host) in a small file inside the database package, which the deploy tooling reads too, keeps the core package standalone.
+Stakes if we pick wrong: Mostly maintenance: the core package breaks when the deploy workspace changes or is not installed, and the guard silently loses its production host.
+Recommendation: A because it is the same two values in a better home, with a test that the two packages agree.
+Completeness: A=9/10, B=7/10
+Header: DB identity
+Options:
+A) JSON in packages/db (recommended)
+Store projectRef and poolerHost in packages/db/production-target.json (not secret, committed); packages/db reads it directly; deploy/aws/config.ts imports and re-validates it; a test in each package asserts they agree. (human: ~1h / CC: ~5min)
+B) Keep in deploy config
+Leave the values in deploy/aws/config.ts and let packages/db scripts import from the deploy workspace. No change, but the core database package depends on deploy tooling.
+
+State: approved
+Actual answer: A) JSON in packages/db (recommended), D5, 2026-10-06
+Accepted scope: Store projectRef and poolerHost in packages/db/production-target.json (not secret, committed); packages/db reads it directly; deploy/aws/config.ts imports and re-validates it; a test in each package asserts they agree.
+History: none
+
+### C1: Factual correction (no behaviour change, no question)
+Finding: 5, P3, confidence 9/10, plan Task 2 Interfaces said it consumes Task 4's error types; the readiness mapper uses TLS, Prisma and timeout errors only, and `ca_file_missing` is a boot-time failure (ENG-R8) owned by Task 4. Corrected in place on 2026-10-06; Task 2 and Task 4 can run in either order.
+
+### R5: Track running releases in CodeBuild as a follow-up
+Finding: 6, P3, confidence 8/10, Section 4 (Performance): `release.sh`'s Trigger stage installs and builds in a temporary worktree on the operator's machine (plan Task 7b), which is the laptop load hosting is meant to remove; reviewer: Claude (this review).
+Plan baseline: "CodeBuild as release runner" deferred at the /autoplan gate (Decision Audit Trail row 26, approved as-is in D6); no tracking item exists. Repo has no TODOS.md; follow-ups are GitHub issues filed in Task 10 Step 5.
+Runtime evidence: not built; the local Trigger deploy cost is inferred from Task 7b's steps.
+Comparison grid:
+| Choice | Current | A | B | C |
+|---|---|---|---|---|
+| R5 release-runner follow-up | deferred, untracked | Add a P3 issue to Task 10 Step 5's list: "Run release.sh in CodeBuild so releases need no laptop build" (What: CodeBuild project runs release stages; Why: laptop memory and consistency; Context: Task 7b release kit; Depends on: Task 7b) | Skip: stays deferred and untracked | Build it now in this plan (new Task 7c) |
+Question D6:
+D6: Track running releases in AWS instead of on a laptop
+Project/branch/task: revola/aws-hosting-plan-review, folded AWS hosting plan, Tasks 7b and 10.
+ELI10: After hosting, a release still builds the background-job bundle on whoever runs the release command, which uses a laptop's memory for a few minutes. Running releases inside AWS CodeBuild would remove that, but it was deliberately postponed. The question is only whether to write it down as a follow-up issue so it is not forgotten.
+Stakes if we pick wrong: Small: the follow-up is forgotten and releases keep loading laptops, or the plan grows now.
+Recommendation: A because it records the postponed work with its reason at no cost, matching how the plan tracks its other follow-ups.
+Note: options differ in kind, not coverage - no completeness score.
+Header: Follow-up
+Options:
+A) Track as P3 issue (recommended)
+Add "Run release.sh in CodeBuild so releases need no laptop build" to Task 10 Step 5's issue list as P3 (why: laptop memory and consistent builds; depends on Task 7b). No code now.
+B) Skip
+Leave the release runner deferred and untracked; nothing changes in the plan.
+C) Build it now
+Add a Task 7c that runs release stages in a CodeBuild project; more scope and IAM work before the first hosted release. (human: ~1d / CC: ~45min)
+
+State: approved
+Actual answer: A) Track as P3 issue (recommended), D6, 2026-10-06
+Accepted scope: Add "Run release.sh in CodeBuild so releases need no laptop build" to Task 10 Step 5's issue list as P3 (why: laptop memory and consistent builds; depends on Task 7b). No code now.
+History: none
+
+Approval readiness: PASS (R1 D2 A, R2 D3 A, R3 D4 A, R4 D5 A, R5 D6 A; C1 factual correction; scope D1 A).
+
+
+### Review body (2026-10-06)
+
+Architecture: 4 findings (R1 to R4), all accepted and applied to the plan; one factual correction (C1).
+Code quality: no new findings; the two `getServerApiBaseUrl` helpers stay per app (separate deployments, about 6 lines each; extraction would couple them for no reliability gain).
+Test review: 21 of 21 planned code paths and user flows have a planned test; 3 end-to-end flows are recorded manual acceptance checks; artifact `~/.gstack/projects/trycompai-comp/kylezhang-revola-aws-hosting-plan-review-eng-review-test-plan-20261005-221632.md`.
+Performance: one finding (R5, Trigger stage builds on the operator machine), tracked as a P3 issue; connection budget, Service Connect and CodeBuild builds already covered.
+Outside voice: Codex unavailable (usage limit until 11:02 PM local); native fallback unavailable (TaskOutput not loadable in this session); recorded as missing coverage, not clean.
+
+#### NOT in scope
+- Running releases in CodeBuild: deferred at the gate; now tracked as a P3 issue (R5).
+- Separate development data: deferred by D7 until the audit window; P1 issue in Task 10.
+- A staging environment, migrations as an ECS task, the fleet OIDC repair: filed as issues in Task 10.
+
+#### What already exists
+- `resolveSslConfig` (`packages/db/src/ssl-config.ts`) for verified TLS, reused by Task 4's adapter options.
+- `apps/api/src/health/health.controller.ts` (liveness), extended with readiness in Task 2.
+- `apps/api/src/auth/internal-token.guard.ts` (API side of the internal token), paired with R1's sender headers.
+- `apps/api/src/auth/origin-policy.ts` (`AUTH_TRUSTED_ORIGINS`), extended for self-hosting in Task 1.
+- Upstream's `apps/api/buildspec.yml` context assembly, mirrored by `assemble-api-context.sh`; upstream Dockerfiles untouched.
+- `scripts/local-run.sh` and its tests for local development under D7.
+
+#### Failure modes
+| Path | Realistic failure | Test or handling | User sees |
+|---|---|---|---|
+| Server-side API calls (R1) | headers missing, all users share one bucket | vitest per app, API tracker tests | clear: 429 would surface in acceptance burst check |
+| Edge probes (R2) | alarm bound to wrong-region topic | plan fixture test | silent without the test; covered |
+| Migration authoring (R3) | `migrate dev` aimed at production | guard plus migrate-create tests | clear refusal message |
+| Production identity (R4) | packages disagree on the production host | agreement tests in both packages | clear test failure |
+| Readiness (Task 2) | TLS failure at runtime | reason mapper tests with real fixture | clear 503 reason |
+Critical gaps: 0.
+
+#### Worktree parallelization strategy
+| Step | Modules touched | Depends on |
+|---|---|---|
+| Task 0 | deploy/aws, packages/db (target file), .github | - |
+| Tasks 1, 2 (API part) | apps/api | - |
+| Task 2 (app, portal routes), Task 2b | apps/app, apps/portal | - |
+| Task 4 | packages/db, apps/*/prisma, Trigger extensions | Task 0 (production-target.json) |
+| Task 3 | deploy/aws (images) | Tasks 2, 2b, 4 |
+| Tasks 5, 6, 7, 7b, 8, 9, 10 | deploy/aws, Terraform, AWS, Cloudflare | Task 3 and each previous step |
+Lane A: Task 0, then Task 4. Lane B: Tasks 1 and 2 (API). Lane C: Task 2 (app and portal routes), then Task 2b.
+Execution order: launch A, B and C together; merge all three; then Task 3; then Tasks 5 to 10 in order, each infrastructure step after Kyle's confirmation.
+Conflict flags: Task 2 and Task 2b both edit app and portal health and request code, so they share lane C; Tasks 1 and 2 share `apps/api/src/auth` and the throttler wiring, so they share lane B.
+
+#### Implementation Tasks
+Synthesized from this review's findings. Each task derives from a specific finding above.
+
+- [ ] **T1 (P2, human: ~3h / CC: ~15min)** - app, portal - Send the internal token and sanitized client IP on server-side API calls
+  - Surfaced by: Architecture R1 (D2 A)
+  - Files: apps/app/src/lib/server-api-base-url.ts, apps/portal/src/app/lib/server-api-base-url.ts, their tests, the listed server-side callers
+  - Verify: `cd apps/app && npx vitest run` and `cd apps/portal && npx vitest run`
+- [ ] **T2 (P2, human: ~2h / CC: ~10min)** - deploy - Route 53 probe alarms in us-east-1 with their own topic
+  - Surfaced by: Architecture R2 (D3 A)
+  - Files: deploy/aws/terraform/edge-probes.tf, deploy/aws/cloudflare.test.ts plan fixture
+  - Verify: `cd deploy/aws && bun test cloudflare tests/terraform-plan.test.ts`
+- [ ] **T3 (P2, human: ~2h / CC: ~10min)** - db - `db:migrate:create` against local comp_dev
+  - Surfaced by: Architecture R3 (D4 A)
+  - Files: packages/db/scripts/migrate-create.ts and test, packages/db/package.json, docs/self-hosting-local.md
+  - Verify: `cd packages/db && bun test scripts`
+- [ ] **T4 (P3, human: ~1h / CC: ~5min)** - db, deploy - production identity in packages/db/production-target.json
+  - Surfaced by: Architecture R4 (D5 A)
+  - Files: packages/db/production-target.json, packages/db/scripts/prod-guard.ts, deploy/aws/config.ts and tests
+  - Verify: `cd packages/db && bun test` and `cd deploy/aws && bun test config`
+- [ ] **T5 (P3, human: ~10min / CC: ~2min)** - docs - file the CodeBuild release-runner issue
+  - Surfaced by: Performance R5 (D6 A)
+  - Files: none (GitHub issue in Task 10 Step 5)
+  - Verify: issue link recorded in docs/self-hosting-aws.md
+
+#### Unresolved decisions
+None in this review.
+
+#### Completion summary
+- Step 0: Scope Challenge - scope accepted as-is
+- Architecture Review: 4 issues found
+- Code Quality Review: 0 issues found
+- Test Review: diagram produced, 0 gaps identified
+- Performance Review: 1 issue found
+- NOT in scope: written
+- What already exists: written
+- TODOS.md updates: 1 item proposed to user (tracked as a GitHub issue; the repo has no TODOS.md)
+- Failure modes: 0 critical gaps flagged
+- Unresolved decisions: 0 in this review
+- Outside voice: Codex unavailable (usage limit); native fallback unavailable (TaskOutput not available)
+- Parallelization: 3 lanes, 3 parallel / 7 sequential
+- Lake Score: 3/3 (D2, D4, D5 scored for completeness; all picked the higher-completeness option)
+
+#### Suppressed findings
+None.
+
+### Earlier report (from /autoplan, superseded by the report below)
+
+#### GSTACK REVIEW REPORT (autoplan, 2026-10-05)
 
 Status: APPROVED by Kyle at the /autoplan final gate on 2026-10-05 (round 2, D6). Next step: ENG-R1 rewrites this plan into one executable document (Decisions table, Tasks 0 to 10, every accepted obligation folded in), Kyle signs off, then re-run `/plan-eng-review` on the folded plan before implementation.
 
@@ -1007,5 +1253,20 @@ Status: APPROVED by Kyle at the /autoplan final gate on 2026-10-05 (round 2, D6)
 - **OUTSIDE COVERAGE:** Codex completed for CEO, DX, Eng and the Eng re-run; Design skipped (no UI scope). Spec-review loop (Claude subagent) ran 3 passes at 5/10 each, all findings applied.
 - **CROSS-MODEL:** Claude subagents and Codex agreed on 6/6 CEO dimensions, 6/6 DX dimensions, 6/6 Eng dimensions and 5/6 on the Eng re-run (performance raised by Claude only); model identities: Claude subagents inherited the host model, Codex `gpt-6-astra`.
 - **VERDICT:** CEO CLEARED. Eng and DX issues are mapped to accepted obligations, not open questions; eng review required again on the folded plan (ENG-R1) before implementation.
+
+NO UNRESOLVED DECISIONS
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` (via /autoplan) | Scope & strategy | 1 | CLEAR (PLAN via /autoplan) | 39 proposals, 34 accepted, 5 deferred |
+| Outside Review | Codex (`/plan-eng-review` outside voice) | Independent 2nd opinion | 5 | unavailable (this run: usage limit) | /autoplan phases completed earlier (CEO 8, DX 10, Eng 11, Eng re-run 9); this run none |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 3 | ISSUES OPEN (PLAN) | 5 issues, 0 critical gaps; all 5 accepted and applied to the plan |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | SKIPPED (no UI scope) | - |
+| DX Review | `/plan-devex-review` (via /autoplan) | Developer experience gaps | 1 | ISSUES OPEN (PLAN via /autoplan) | score: 4/10 → 7/10, TTHW: 15min → 2min |
+
+- **OUTSIDE COVERAGE:** this eng review: Codex unavailable (usage limit), native fallback unavailable; earlier /autoplan phases: Codex completed for CEO, DX, Eng and the Eng re-run.
+- **VERDICT:** CEO CLEARED; this Eng review's 5 findings are all approved and applied to the folded plan, with 0 critical gaps and 0 unresolved decisions; eng review required (status stays ISSUES OPEN until a run finds nothing, by the dashboard rule).
 
 NO UNRESOLVED DECISIONS
