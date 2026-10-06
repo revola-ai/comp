@@ -50,9 +50,9 @@ describe('TrainingCertificatePdfService', () => {
     });
 
     it('handles logo fetch failure gracefully', async () => {
-      (global.fetch as jest.Mock).mockRejectedValueOnce(
-        new Error('Network error'),
-      );
+      jest
+        .mocked(global.fetch)
+        .mockRejectedValueOnce(new Error('Network error'));
 
       const result = await service.generateTrainingCertificatePdf({
         userName: 'Logo User',

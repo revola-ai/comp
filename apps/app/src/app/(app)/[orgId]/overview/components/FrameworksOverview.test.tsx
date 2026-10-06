@@ -46,6 +46,7 @@ const baseProps = {
   allFrameworks: [],
   frameworksWithCompliance: [],
   organizationId: 'org_123',
+  overallComplianceScore: 0,
 };
 
 describe('FrameworksOverview permission gating', () => {

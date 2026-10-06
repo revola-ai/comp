@@ -50,6 +50,15 @@ import { backfillTimeline } from './timelines-backfill.helper';
 
 const mockDb = db as jest.Mocked<typeof db>;
 
+type PhaseFixture = {
+  id: string;
+  name: string;
+  orderIndex: number;
+  status: string;
+  completionType: string;
+  completedAt: string | null;
+};
+
 function cloneTimeline<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -113,7 +122,7 @@ describe('TimelinesService', () => {
           completionType: 'MANUAL',
           completedAt: null,
         },
-      ],
+      ] as PhaseFixture[],
       frameworkInstance: { framework: { id: 'frk_1', name: 'SOC 2' } },
       template: { id: 'tml_1', name: 'SOC 2 Type 2' },
     };
