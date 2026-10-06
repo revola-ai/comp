@@ -67,8 +67,8 @@ fi
 rm -rf "$out/node_modules/.prisma"
 cp -R "$repo/node_modules/.prisma" "$out/node_modules/.prisma"
 
-# Build output. dist/prisma holds the compiled @db client; the committed
-# apps/api/prisma/client.js is a stale artifact and is never copied.
+# Build output. dist/prisma holds the compiled @db client; a stray compiled
+# apps/api/prisma/client.js (once committed, removed 2026-10-06) is never copied.
 cp -R "$dist_root/." "$out_api/"
 find "$out_api" -name '*.tsbuildinfo' -delete
 cp "$api_src/package.json" "$out_api/package.json"
