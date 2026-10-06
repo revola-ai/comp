@@ -18,6 +18,12 @@ export interface ApiKeyValidationResult {
   organizationOwned: boolean;
 }
 
+/**
+ * Upper bound on legacy keys (no stored prefix) read for one validation, so a
+ * junk key costs one bounded, indexed query instead of a full-table scan.
+ */
+export const LEGACY_KEY_SCAN_LIMIT = 100;
+
 /** Columns read when matching a presented key against stored candidates. */
 export const API_KEY_VALIDATION_SELECT = {
   id: true,

@@ -6,12 +6,16 @@ import {
 } from '@nestjs/common';
 import { db } from '@db';
 import { statement } from '@trycompai/auth';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import {
-  API_KEY_VALIDATION_SELECT,
-  type ApiKeyCandidate,
+  extractKeyPrefix,
+  findMatchingApiKey,
+  hashApiKey,
+} from './api-key-lookup';
+import {
   type ApiKeyValidationResult,
   hasInactiveCreator,
+  LEGACY_KEY_SCAN_LIMIT,
   toValidationResult,
 } from './api-key-validation';
 
@@ -21,31 +25,9 @@ export type { ApiKeyValidationResult } from './api-key-validation';
 export class ApiKeyService {
   private readonly logger = new Logger(ApiKeyService.name);
 
-  /**
-   * Hash an API key for comparison
-   * @param apiKey The API key to hash
-   * @param salt Optional salt to use for hashing
-   * @returns The hashed API key
-   */
-  private hashApiKey(apiKey: string, salt?: string): string {
-    if (salt) {
-      // If salt is provided, use it for hashing
-      return createHash('sha256')
-        .update(apiKey + salt)
-        .digest('hex');
-    }
-    // For backward compatibility, hash without salt
-    return createHash('sha256').update(apiKey).digest('hex');
-  }
-
   private generateApiKey(): string {
     const apiKey = randomBytes(32).toString('hex');
     return `comp_${apiKey}`;
-  }
-
-  /** Extract the first 8 chars after the `comp_` prefix for indexed lookup */
-  private extractPrefix(apiKey: string): string {
-    return apiKey.slice(5, 13);
   }
 
   private generateSalt(): string {
@@ -74,7 +56,7 @@ export class ApiKeyService {
 
     const apiKey = this.generateApiKey();
     const salt = this.generateSalt();
-    const hashedKey = this.hashApiKey(apiKey, salt);
+    const hashedKey = hashApiKey({ apiKey, salt });
 
     let expirationDate: Date | null = null;
     if (expiresAt && expiresAt !== 'never') {
@@ -96,7 +78,7 @@ export class ApiKeyService {
       }
     }
 
-    const keyPrefix = this.extractPrefix(apiKey);
+    const keyPrefix = extractKeyPrefix(apiKey);
 
     const record = await db.apiKey.create({
       data: {
@@ -159,22 +141,6 @@ export class ApiKeyService {
     return null;
   }
 
-  /** The candidate whose stored hash matches the presented key, if any. */
-  private findMatchingKey({
-    apiKey,
-    candidates,
-  }: {
-    apiKey: string;
-    candidates: ApiKeyCandidate[];
-  }): ApiKeyCandidate | undefined {
-    return candidates.find((record) => {
-      const hashedKey = record.salt
-        ? this.hashApiKey(apiKey, record.salt)
-        : this.hashApiKey(apiKey);
-      return hashedKey === record.key;
-    });
-  }
-
   /**
    * Validate an API key and return the organization ID + scopes
    * @param apiKey The API key to validate
@@ -194,41 +160,18 @@ export class ApiKeyService {
         return null;
       }
 
-      // Use key prefix for indexed lookup when available (new keys),
-      // fall back to full scan for legacy keys without prefix
-      const keyPrefix = apiKey.startsWith('comp_')
-        ? this.extractPrefix(apiKey)
-        : null;
-      const activeAndUnexpired = {
-        isActive: true,
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-      };
-
-      let matchingRecord = this.findMatchingKey({
+      const match = await findMatchingApiKey({
         apiKey,
-        candidates: await db.apiKey.findMany({
-          where: { ...activeAndUnexpired, ...(keyPrefix ? { keyPrefix } : {}) },
-          select: API_KEY_VALIDATION_SELECT,
-        }),
+        onLegacyLimitReached: () =>
+          this.logger.warn(
+            `Legacy API key lookup hit its limit of ${LEGACY_KEY_SCAN_LIMIT} keys without a stored prefix`,
+          ),
       });
-      // If prefix lookup found nothing, try legacy keys (no prefix set) and
-      // backfill the prefix for future lookups.
-      let backfillPrefix = false;
-      if (!matchingRecord && keyPrefix) {
-        matchingRecord = this.findMatchingKey({
-          apiKey,
-          candidates: await db.apiKey.findMany({
-            where: { ...activeAndUnexpired, keyPrefix: null },
-            select: API_KEY_VALIDATION_SELECT,
-          }),
-        });
-        backfillPrefix = matchingRecord !== undefined;
-      }
-
-      if (!matchingRecord) {
+      if (!match) {
         this.logger.warn('Invalid or expired API key attempted');
         return null;
       }
+      const { record: matchingRecord, backfillPrefix } = match;
 
       // Offboarding: a personal key stops working once its creator is no
       // longer an active member, even before revocation has run.
@@ -243,7 +186,7 @@ export class ApiKeyService {
         where: { id: matchingRecord.id },
         data: {
           lastUsedAt: new Date(),
-          ...(backfillPrefix ? { keyPrefix } : {}),
+          ...(backfillPrefix ? { keyPrefix: backfillPrefix } : {}),
         },
       });
 
