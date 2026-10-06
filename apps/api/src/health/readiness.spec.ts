@@ -68,7 +68,10 @@ describe('checkApiReadiness', () => {
   beforeEach(() => mockTransaction.mockReset());
 
   it('runs SELECT 1 in one transaction whose statement_timeout is the readiness timeout', async () => {
-    mockTransaction.mockResolvedValue([[{ set_config: '2000' }], [{ '?column?': 1 }]]);
+    mockTransaction.mockResolvedValue([
+      [{ set_config: '2000' }],
+      [{ '?column?': 1 }],
+    ]);
     await expect(checkApiReadiness()).resolves.toEqual({ status: 'ok' });
     const [ops] = mockTransaction.mock.calls[0];
     expect(ops).toEqual([
