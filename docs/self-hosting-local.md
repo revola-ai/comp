@@ -131,6 +131,9 @@ Tests keep their guard: `packages/db` database suites only run when `DATABASE_UR
 
 `SELF_HOSTED=true` (api) and `NEXT_PUBLIC_SELF_HOSTED=true` (app) are already set.
 New organizations are auto-approved and the Stripe / booking flow is skipped.
+With `SELF_HOSTED=true` the API trusts only the origins in `AUTH_TRUSTED_ORIGINS` plus the api, app and portal origins behind `AUTH_COOKIE_DOMAIN`, never `*.trycomp.ai` or `*.trust.inc`; when `AUTH_TRUSTED_ORIGINS` is unset outside production it also keeps the `http://localhost` defaults.
+`AUTH_COOKIE_DOMAIN` (api, unset locally) is the shared session-cookie domain for a deployed install, for example `.comp.revola.ai`; the API refuses to start unless it starts with a dot, has at least three labels (or `AUTH_COOKIE_DOMAIN_ALLOW_BROAD=1`) and covers the hosts of `BASE_URL`, `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_PORTAL_URL`.
+`AUTH_ALLOWED_EMAIL_DOMAINS` (api, unset locally) is a comma-separated list such as `revola.ai`; when set, sign-up from any other email domain fails with `email_domain_not_allowed` unless the address has a pending, unexpired invitation.
 
 ### Platform admin role
 

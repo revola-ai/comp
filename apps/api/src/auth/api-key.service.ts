@@ -7,23 +7,15 @@ import {
 import { db } from '@db';
 import { statement } from '@trycompai/auth';
 import { createHash, randomBytes } from 'node:crypto';
+import {
+  API_KEY_VALIDATION_SELECT,
+  type ApiKeyCandidate,
+  type ApiKeyValidationResult,
+  hasInactiveCreator,
+  toValidationResult,
+} from './api-key-validation';
 
-/** Result from validating an API key */
-export interface ApiKeyValidationResult {
-  /** API key row primary key — exposed on the request so downstream
-   *  attribution logic (audit logs, owner-fallback resolver) can reference
-   *  the exact key used without an extra DB lookup. */
-  apiKeyId: string;
-  /** Human-readable name set when the key was created (e.g. "CI Pipeline").
-   *  Surfaced in audit log descriptions for API-key-initiated mutations. */
-  apiKeyName: string;
-  organizationId: string;
-  scopes: string[];
-  /** Member (org membership) that created this key, or null for legacy keys
-   *  created before creator attribution existed. Used by ActingUserResolver
-   *  to attribute API-key mutations to the real creator. */
-  createdByMemberId: string | null;
-}
+export type { ApiKeyValidationResult } from './api-key-validation';
 
 @Injectable()
 export class ApiKeyService {
@@ -167,6 +159,22 @@ export class ApiKeyService {
     return null;
   }
 
+  /** The candidate whose stored hash matches the presented key, if any. */
+  private findMatchingKey({
+    apiKey,
+    candidates,
+  }: {
+    apiKey: string;
+    candidates: ApiKeyCandidate[];
+  }): ApiKeyCandidate | undefined {
+    return candidates.find((record) => {
+      const hashedKey = record.salt
+        ? this.hashApiKey(apiKey, record.salt)
+        : this.hashApiKey(apiKey);
+      return hashedKey === record.key;
+    });
+  }
+
   /**
    * Validate an API key and return the organization ID + scopes
    * @param apiKey The API key to validate
@@ -191,85 +199,51 @@ export class ApiKeyService {
       const keyPrefix = apiKey.startsWith('comp_')
         ? this.extractPrefix(apiKey)
         : null;
+      const activeAndUnexpired = {
+        isActive: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      };
 
-      const apiKeyRecords = await db.apiKey.findMany({
-        where: {
-          isActive: true,
-          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-          ...(keyPrefix ? { keyPrefix } : {}),
-        },
-        select: {
-          id: true,
-          name: true,
-          key: true,
-          salt: true,
-          organizationId: true,
-          expiresAt: true,
-          scopes: true,
-          createdByMemberId: true,
-        },
+      let matchingRecord = this.findMatchingKey({
+        apiKey,
+        candidates: await db.apiKey.findMany({
+          where: { ...activeAndUnexpired, ...(keyPrefix ? { keyPrefix } : {}) },
+          select: API_KEY_VALIDATION_SELECT,
+        }),
       });
-
-      // Find the matching API key by hashing with each candidate's salt
-      const matchingRecord = apiKeyRecords.find((record) => {
-        const hashedKey = record.salt
-          ? this.hashApiKey(apiKey, record.salt)
-          : this.hashApiKey(apiKey);
-        return hashedKey === record.key;
-      });
+      // If prefix lookup found nothing, try legacy keys (no prefix set) and
+      // backfill the prefix for future lookups.
+      let backfillPrefix = false;
+      if (!matchingRecord && keyPrefix) {
+        matchingRecord = this.findMatchingKey({
+          apiKey,
+          candidates: await db.apiKey.findMany({
+            where: { ...activeAndUnexpired, keyPrefix: null },
+            select: API_KEY_VALIDATION_SELECT,
+          }),
+        });
+        backfillPrefix = matchingRecord !== undefined;
+      }
 
       if (!matchingRecord) {
-        // If prefix lookup found nothing, try legacy keys (no prefix set)
-        if (keyPrefix) {
-          const legacyRecords = await db.apiKey.findMany({
-            where: {
-              isActive: true,
-              keyPrefix: null,
-              OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-            },
-            select: {
-              id: true,
-              name: true,
-              key: true,
-              salt: true,
-              organizationId: true,
-              expiresAt: true,
-              scopes: true,
-              createdByMemberId: true,
-            },
-          });
-          const legacyMatch = legacyRecords.find((record) => {
-            const hashedKey = record.salt
-              ? this.hashApiKey(apiKey, record.salt)
-              : this.hashApiKey(apiKey);
-            return hashedKey === record.key;
-          });
-          if (legacyMatch) {
-            // Backfill the prefix for future lookups
-            await db.apiKey.update({
-              where: { id: legacyMatch.id },
-              data: { keyPrefix, lastUsedAt: new Date() },
-            });
-            return {
-              apiKeyId: legacyMatch.id,
-              apiKeyName: legacyMatch.name,
-              organizationId: legacyMatch.organizationId,
-              scopes: legacyMatch.scopes,
-              createdByMemberId: legacyMatch.createdByMemberId ?? null,
-            };
-          }
-        }
         this.logger.warn('Invalid or expired API key attempted');
         return null;
       }
 
-      // Update the lastUsedAt timestamp
+      // Offboarding: a personal key stops working once its creator is no
+      // longer an active member, even before revocation has run.
+      if (hasInactiveCreator(matchingRecord)) {
+        this.logger.warn(
+          `API key ${matchingRecord.id} rejected: its creator is no longer an active member`,
+        );
+        return null;
+      }
+
       await db.apiKey.update({
-        where: {
-          id: matchingRecord.id,
-        },
+        where: { id: matchingRecord.id },
         data: {
           lastUsedAt: new Date(),
+          ...(backfillPrefix ? { keyPrefix } : {}),
         },
       });
 
@@ -277,13 +251,7 @@ export class ApiKeyService {
         `Valid API key used for organization: ${matchingRecord.organizationId}`,
       );
 
-      return {
-        apiKeyId: matchingRecord.id,
-        apiKeyName: matchingRecord.name,
-        organizationId: matchingRecord.organizationId,
-        scopes: matchingRecord.scopes,
-        createdByMemberId: matchingRecord.createdByMemberId ?? null,
-      };
+      return toValidationResult(matchingRecord);
     } catch (error) {
       this.logger.error('Error validating API key:', error);
       return null;

@@ -83,6 +83,7 @@ export class HybridAuthGuard implements CanActivate {
     // The member who created the key (if recorded). Lets ActingUserResolver
     // attribute mutations to the real creator instead of the org owner.
     request.apiKeyCreatedByMemberId = result.createdByMemberId;
+    request.apiKeyOrganizationOwned = result.organizationOwned;
     // API keys are organization-scoped; no session user/member is attached here.
     request.userRoles = null;
 

@@ -46,6 +46,7 @@ import { DynamicIntegrationRepository } from '../repositories/dynamic-integratio
 import { CheckRunRepository } from '../repositories/check-run.repository';
 import { createCheckContext } from '@trycompai/integration-platform';
 import { filterUsersByOrgUnits } from './sync-ou-filter';
+import { deactivateMemberAndRevokeApiKeys } from '../../auth/api-key-offboarding';
 
 interface GoogleWorkspaceUser {
   id: string;
@@ -532,10 +533,7 @@ export class SyncController {
 
       if (isExcluded) {
         try {
-          await db.member.update({
-            where: { id: member.id },
-            data: { deactivated: true, isActive: false },
-          });
+          await deactivateMemberAndRevokeApiKeys({ memberId: member.id });
           results.deactivated++;
           results.details.push({
             email: member.user.email,
@@ -556,10 +554,7 @@ export class SyncController {
 
       if (isSuspended || isDeleted) {
         try {
-          await db.member.update({
-            where: { id: member.id },
-            data: { deactivated: true, isActive: false },
-          });
+          await deactivateMemberAndRevokeApiKeys({ memberId: member.id });
           results.deactivated++;
           results.details.push({
             email: member.user.email,
@@ -984,10 +979,7 @@ export class SyncController {
           ? 'Employee is inactive in Rippling'
           : 'Employee was removed from Rippling';
 
-        await db.member.update({
-          where: { id: member.id },
-          data: { deactivated: true, isActive: false },
-        });
+        await deactivateMemberAndRevokeApiKeys({ memberId: member.id });
         results.deactivated++;
         results.details.push({
           email: member.user.email,
@@ -1531,10 +1523,7 @@ export class SyncController {
 
       if (isSuspended || isDeleted) {
         try {
-          await db.member.update({
-            where: { id: member.id },
-            data: { deactivated: true, isActive: false },
-          });
+          await deactivateMemberAndRevokeApiKeys({ memberId: member.id });
           results.deactivated++;
           results.details.push({
             email: member.user.email,

@@ -42,23 +42,42 @@ export const SERVICE_DEFINITIONS: Record<string, ServiceDefinition> = {
   },
 };
 
+/** Suffix of the optional variable holding a service's previous token. */
+export const PREVIOUS_TOKEN_SUFFIX = '_PREVIOUS';
+
+function tokenMatches({
+  presented,
+  expected,
+}: {
+  presented: Buffer;
+  expected: string | undefined;
+}): boolean {
+  if (!expected) return false;
+  const expectedBuffer = Buffer.from(expected);
+  return (
+    presented.length === expectedBuffer.length &&
+    timingSafeEqual(presented, expectedBuffer)
+  );
+}
+
 /**
  * Resolve which service a token belongs to using timing-safe comparison.
+ * Each service accepts its current token (`SERVICE_TOKEN_<NAME>`) and, while
+ * a rotation is in progress, its previous one (`SERVICE_TOKEN_<NAME>_PREVIOUS`).
  * Returns the service key and definition, or null if no match.
  */
 export function resolveServiceByToken(
   token: string,
 ): { key: string; definition: ServiceDefinition } | null {
-  const tokenBuffer = Buffer.from(token);
+  if (!token) return null;
+  const presented = Buffer.from(token);
 
   for (const [key, definition] of Object.entries(SERVICE_DEFINITIONS)) {
-    const expectedToken = process.env[definition.envVar];
-    if (!expectedToken) continue;
-
-    const expectedBuffer = Buffer.from(expectedToken);
+    const current = process.env[definition.envVar];
+    const previous = process.env[definition.envVar + PREVIOUS_TOKEN_SUFFIX];
     if (
-      tokenBuffer.length === expectedBuffer.length &&
-      timingSafeEqual(tokenBuffer, expectedBuffer)
+      tokenMatches({ presented, expected: current }) ||
+      tokenMatches({ presented, expected: previous })
     ) {
       return { key, definition };
     }

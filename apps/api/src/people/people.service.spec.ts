@@ -25,6 +25,10 @@ jest.mock('@db', () => ({
     },
   },
   db: {
+    $transaction: jest.fn((ops: unknown[]) => Promise.all(ops)),
+    apiKey: {
+      updateMany: jest.fn(),
+    },
     member: {
       findFirst: jest.fn(),
       findMany: jest.fn(),
@@ -438,7 +442,9 @@ describe('PeopleService', () => {
 
       it('propagates ConflictException from validation without wrapping', async () => {
         (validateLoginEmailChange as jest.Mock).mockRejectedValue(
-          new ConflictException('That email is already used by another account'),
+          new ConflictException(
+            'That email is already used by another account',
+          ),
         );
 
         await expect(
@@ -728,6 +734,21 @@ describe('PeopleService', () => {
       expect(db.session.deleteMany).toHaveBeenCalledWith({
         where: { userId: 'usr_1' },
       });
+    });
+
+    it("revokes the member's personal API keys in the deactivation transaction", async () => {
+      await service.deleteById('mem_1', 'org_123', 'usr_actor');
+
+      expect(db.apiKey.updateMany).toHaveBeenCalledWith({
+        where: {
+          createdByMemberId: { in: ['mem_1'] },
+          organizationOwned: false,
+          isActive: true,
+        },
+        data: { isActive: false },
+      });
+      expect(db.$transaction).toHaveBeenCalledTimes(1);
+      expect((db.$transaction as jest.Mock).mock.calls[0][0]).toHaveLength(2);
     });
 
     it('should throw ForbiddenException when deleting an owner', async () => {

@@ -4,6 +4,7 @@ import type { SyncEmployee } from '@trycompai/integration-platform';
 import { matchesSyncFilterTerms } from '@trycompai/integration-platform';
 import { BUILT_IN_ROLE_PERMISSIONS } from '@trycompai/auth';
 import type { ResolvedSyncEmployeeFilter } from './sync-employee-filter';
+import { deactivateMemberAndRevokeApiKeys } from '../../auth/api-key-offboarding';
 
 // ============================================================================
 // Types
@@ -375,13 +376,9 @@ export class GenericEmployeeSyncService {
 
       if (isSuspended || isRemoved) {
         try {
-          await db.member.update({
-            where: { id: member.id },
-            data: {
-              deactivated: true,
-              isActive: false,
-              offboardDate: member.offboardDate ?? new Date(),
-            },
+          await deactivateMemberAndRevokeApiKeys({
+            memberId: member.id,
+            offboardDate: member.offboardDate ?? new Date(),
           });
           results.deactivated++;
           results.details.push({

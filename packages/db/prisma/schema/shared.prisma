@@ -20,6 +20,11 @@ model ApiKey {
   createdByMemberId String?
   createdBy         Member? @relation("ApiKeyCreatedBy", fields: [createdByMemberId], references: [id], onDelete: SetNull)
 
+  // Organization-owned keys survive their creator's offboarding. Personal keys
+  // (the default) are revoked when the creator is removed or deactivated, and
+  // rejected at validation while the creator is inactive.
+  organizationOwned Boolean @default(false)
+
   @@index([organizationId])
   @@index([key])
   @@index([keyPrefix])

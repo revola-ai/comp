@@ -31,6 +31,13 @@ import {
   getBetterAuthTrustedOrigins,
   isStaticTrustedOrigin,
 } from './origin-policy';
+import { getCookieDomain } from './cookie-domain';
+import { createEmailDomainAllowlistHook } from './email-domain-allowlist';
+import {
+  apiKeyOffboardingBeforeHook,
+  revokeApiKeysBeforeMemberRemoval,
+  revokeApiKeysBeforeUserDeletion,
+} from './auth-offboarding-hooks';
 
 export {
   getBetterAuthTrustedOrigins,
@@ -45,21 +52,6 @@ export {
 } from './origin-policy';
 
 const MAGIC_LINK_EXPIRES_IN_SECONDS = 60 * 60; // 1 hour
-
-/**
- * Determine the cookie domain based on environment.
- */
-function getCookieDomain(): string | undefined {
-  const baseUrl = process.env.BASE_URL || '';
-
-  if (baseUrl.includes('staging.trycomp.ai')) {
-    return '.staging.trycomp.ai';
-  }
-  if (baseUrl.includes('trycomp.ai')) {
-    return '.trycomp.ai';
-  }
-  return undefined;
-}
 
 // ── Custom domain lookup via Redis cache ─────────────────────────────────────
 
@@ -170,7 +162,9 @@ if (
   };
 }
 
-const cookieDomain = getCookieDomain();
+// Throws at boot when AUTH_COOKIE_DOMAIN is malformed, too broad, or does not
+// cover the api, app and portal hosts (see ./cookie-domain.ts).
+const cookieDomain = getCookieDomain({ env: process.env });
 
 // ── Hosted MCP (Speakeasy Gram) OAuth ────────────────────────────────────────
 // The MCP server is hosted on Gram. Gram obtains an OAuth access token from this
@@ -304,6 +298,14 @@ export const auth = betterAuth({
     }),
   },
   databaseHooks: {
+    user: {
+      // AUTH_ALLOWED_EMAIL_DOMAINS: refuse sign-ups from other domains unless
+      // the address holds a pending invitation.
+      create: {
+        before: createEmailDomainAllowlistHook({ env: process.env, db }),
+      },
+      delete: { before: revokeApiKeysBeforeUserDeletion },
+    },
     session: {
       create: {
         before: async (session) => {
@@ -366,6 +368,7 @@ export const auth = betterAuth({
     },
   },
   hooks: {
+    before: apiKeyOffboardingBeforeHook,
     after: createAuthMiddleware(async (ctx) => {
       if (!ctx.path.startsWith('/admin/')) return;
 
@@ -441,6 +444,9 @@ export const auth = betterAuth({
   plugins: [
     organization({
       membershipLimit: 100000000000,
+      organizationHooks: {
+        beforeRemoveMember: revokeApiKeysBeforeMemberRemoval,
+      },
       async sendInvitationEmail(data) {
         if (process.env.NODE_ENV === 'development') {
           console.log('[Auth] Sending invitation to:', data.email);

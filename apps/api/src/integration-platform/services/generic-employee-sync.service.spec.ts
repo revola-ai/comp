@@ -7,6 +7,7 @@ const mockMemberCreate = jest.fn();
 const mockMemberFindMany = jest.fn();
 const mockMemberUpdate = jest.fn();
 const mockOrgRoleFindMany = jest.fn();
+const mockApiKeyUpdateMany = jest.fn();
 
 jest.mock('@trycompai/auth', () => ({
   BUILT_IN_ROLE_PERMISSIONS: {
@@ -20,6 +21,10 @@ jest.mock('@trycompai/auth', () => ({
 
 jest.mock('@db', () => ({
   db: {
+    $transaction: (ops: unknown[]) => Promise.all(ops),
+    apiKey: {
+      updateMany: (...args: unknown[]) => mockApiKeyUpdateMany(...args),
+    },
     user: {
       findUnique: (...args: unknown[]) => mockUserFindUnique(...args),
       create: (...args: unknown[]) => mockUserCreate(...args),
@@ -81,9 +86,7 @@ describe('GenericEmployeeSyncService role validation', () => {
   });
 
   it('persists a known custom role from the provider as-is', async () => {
-    mockOrgRoleFindMany.mockResolvedValue([
-      { name: 'security-engineer' },
-    ]);
+    mockOrgRoleFindMany.mockResolvedValue([{ name: 'security-engineer' }]);
 
     await service.processEmployees({
       organizationId: 'org_1',
@@ -167,7 +170,9 @@ describe('GenericEmployeeSyncService role validation', () => {
 
       await service.processEmployees({
         organizationId: 'org_1',
-        employees: [baseEmployee({ email: 'mc@example.com', role: 'employee' })],
+        employees: [
+          baseEmployee({ email: 'mc@example.com', role: 'employee' }),
+        ],
         options: { defaultRole: 'employee' },
       });
 
@@ -313,6 +318,14 @@ describe('GenericEmployeeSyncService role validation', () => {
         }),
       );
       expect(result.deactivated).toBe(1);
+      expect(mockApiKeyUpdateMany).toHaveBeenCalledWith({
+        where: {
+          createdByMemberId: { in: ['mem_existing'] },
+          organizationOwned: false,
+          isActive: true,
+        },
+        data: { isActive: false },
+      });
     });
 
     it('does not deactivate when isDirectorySource is true but the absent member is in a different domain', async () => {
