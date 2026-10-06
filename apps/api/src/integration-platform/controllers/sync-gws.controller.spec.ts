@@ -14,7 +14,12 @@ import { db } from '@db';
 
 jest.mock('@db', () => ({
   db: {
-    $transaction: jest.fn((ops: unknown[]) => Promise.all(ops)),
+    // Interactive transactions run against the mocked client itself; the
+    // member row lock (SELECT ... FOR UPDATE) goes through $queryRaw.
+    $transaction: jest.fn((run: (tx: unknown) => unknown) =>
+      run(jest.requireMock<{ db: unknown }>('@db').db),
+    ),
+    $queryRaw: jest.fn(() => Promise.resolve([])),
     apiKey: { updateMany: jest.fn() },
     integrationProvider: { findUnique: jest.fn() },
     user: { findUnique: jest.fn(), create: jest.fn() },

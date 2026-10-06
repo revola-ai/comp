@@ -25,7 +25,12 @@ jest.mock('@db', () => ({
     },
   },
   db: {
-    $transaction: jest.fn((ops: unknown[]) => Promise.all(ops)),
+    // Interactive transactions run against the mocked client itself; the
+    // member row lock (SELECT ... FOR UPDATE) goes through $queryRaw.
+    $transaction: jest.fn((run: (tx: unknown) => unknown) =>
+      run(jest.requireMock<{ db: unknown }>('@db').db),
+    ),
+    $queryRaw: jest.fn(() => Promise.resolve([])),
     apiKey: {
       updateMany: jest.fn(),
     },
@@ -748,7 +753,7 @@ describe('PeopleService', () => {
         data: { isActive: false },
       });
       expect(db.$transaction).toHaveBeenCalledTimes(1);
-      expect((db.$transaction as jest.Mock).mock.calls[0][0]).toHaveLength(2);
+      expect(db.$queryRaw).toHaveBeenCalledTimes(1);
     });
 
     it('should throw ForbiddenException when deleting an owner', async () => {

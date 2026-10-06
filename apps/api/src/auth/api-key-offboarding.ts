@@ -1,44 +1,32 @@
-import { db } from '@db';
+import { db, type Prisma } from '@db';
+import { lockMembersById } from './api-key-member-lock';
 
 /**
  * API-key revocation on offboarding.
  *
  * A personal key (`organizationOwned = false`) belongs to the member who
  * created it and must stop working when that member is removed or
- * deactivated. Revocation runs in the same transaction as the membership
- * change; deleting a member would otherwise null `createdByMemberId`
- * (onDelete: SetNull) and turn the key into an owner-attributed legacy key.
+ * deactivated. Each helper locks the member row first (the same lock key
+ * creation takes, see api-key-member-lock.ts), then revokes and changes the
+ * membership in the same transaction; deleting a member would otherwise null
+ * `createdByMemberId` (onDelete: SetNull) and orphan the key.
  */
 
 const PERSONAL_ACTIVE_KEYS = { organizationOwned: false, isActive: true };
 const REVOKED = { isActive: false };
 
-/** Revoke the active personal keys created by the given members. */
-export function revokeCreatedApiKeys({ memberIds }: { memberIds: string[] }) {
-  return db.apiKey.updateMany({
-    where: { createdByMemberId: { in: memberIds }, ...PERSONAL_ACTIVE_KEYS },
-    data: REVOKED,
-  });
-}
+type RevokingClient = Pick<Prisma.TransactionClient, 'apiKey'>;
 
-/**
- * Revoke the active personal keys a user created, in one organization or in
- * every organization they belong to.
- */
-export function revokeApiKeysOfUser({
-  userId,
-  organizationId,
+/** Revoke the active personal keys created by the given members. */
+export function revokeCreatedApiKeys({
+  tx,
+  memberIds,
 }: {
-  userId: string;
-  organizationId?: string;
+  tx: RevokingClient;
+  memberIds: string[];
 }) {
-  return db.apiKey.updateMany({
-    where: {
-      createdBy: {
-        is: organizationId ? { userId, organizationId } : { userId },
-      },
-      ...PERSONAL_ACTIVE_KEYS,
-    },
+  return tx.apiKey.updateMany({
+    where: { createdByMemberId: { in: memberIds }, ...PERSONAL_ACTIVE_KEYS },
     data: REVOKED,
   });
 }
@@ -56,9 +44,10 @@ export async function deactivateMemberAndRevokeApiKeys({
   organizationId?: string;
   offboardDate?: Date | null;
 }): Promise<void> {
-  await db.$transaction([
-    revokeCreatedApiKeys({ memberIds: [memberId] }),
-    db.member.update({
+  await db.$transaction(async (tx) => {
+    await lockMembersById({ tx, memberIds: [memberId] });
+    await revokeCreatedApiKeys({ tx, memberIds: [memberId] });
+    await tx.member.update({
       where: organizationId
         ? { id: memberId, organizationId }
         : { id: memberId },
@@ -67,8 +56,8 @@ export async function deactivateMemberAndRevokeApiKeys({
         isActive: false,
         ...(offboardDate !== undefined ? { offboardDate } : {}),
       },
-    }),
-  ]);
+    });
+  });
 }
 
 /** Revoke a member's personal API keys, then delete the member, atomically. */
@@ -79,8 +68,9 @@ export async function deleteMemberAndRevokeApiKeys({
   memberId: string;
   organizationId: string;
 }): Promise<void> {
-  await db.$transaction([
-    revokeCreatedApiKeys({ memberIds: [memberId] }),
-    db.member.delete({ where: { id: memberId, organizationId } }),
-  ]);
+  await db.$transaction(async (tx) => {
+    await lockMembersById({ tx, memberIds: [memberId] });
+    await revokeCreatedApiKeys({ tx, memberIds: [memberId] });
+    await tx.member.delete({ where: { id: memberId, organizationId } });
+  });
 }

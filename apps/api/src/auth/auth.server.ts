@@ -36,11 +36,7 @@ import {
   createAllowlistedMagicLinkSender,
   createEmailDomainAllowlistHook,
 } from './email-domain-allowlist';
-import {
-  apiKeyOffboardingBeforeHook,
-  revokeApiKeysBeforeMemberRemoval,
-  revokeApiKeysBeforeUserDeletion,
-} from './auth-offboarding-hooks';
+import { withApiKeyRevokingDeletes } from './api-key-revoking-deletes';
 import { CLIENT_IP_HEADER } from '../throttle/client-ip-header.middleware';
 
 export {
@@ -243,7 +239,9 @@ validateSecurityConfig();
  * Cross-subdomain cookies (.trycomp.ai) ensure the session works on all apps.
  */
 export const auth = betterAuth({
-  database: prismaAdapter(db, {
+  // Member and user deletes revoke the deleted members' personal API keys in
+  // the same transaction (api-key-revoking-deletes.ts).
+  database: prismaAdapter(withApiKeyRevokingDeletes(db), {
     provider: 'postgresql',
   }),
   // baseURL must point to the API (e.g., https://api.trycomp.ai) so that
@@ -305,7 +303,6 @@ export const auth = betterAuth({
       create: {
         before: createEmailDomainAllowlistHook({ env: process.env, db }),
       },
-      delete: { before: revokeApiKeysBeforeUserDeletion },
     },
     session: {
       create: {
@@ -369,7 +366,6 @@ export const auth = betterAuth({
     },
   },
   hooks: {
-    before: apiKeyOffboardingBeforeHook,
     after: createAuthMiddleware(async (ctx) => {
       if (!ctx.path.startsWith('/admin/')) return;
 
@@ -445,9 +441,6 @@ export const auth = betterAuth({
   plugins: [
     organization({
       membershipLimit: 100000000000,
-      organizationHooks: {
-        beforeRemoveMember: revokeApiKeysBeforeMemberRemoval,
-      },
       async sendInvitationEmail(data) {
         if (process.env.NODE_ENV === 'development') {
           console.log('[Auth] Sending invitation to:', data.email);

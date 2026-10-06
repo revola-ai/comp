@@ -1,75 +1,93 @@
-// Prisma calls are recorded as tagged operations so the tests can assert that
-// revocation and the membership change run inside one transaction.
-const mockApiKeyUpdateMany = jest.fn((args: unknown) => ({
-  op: 'apiKey.updateMany',
-  args,
-}));
-const mockMemberUpdate = jest.fn((args: unknown) => ({
-  op: 'member.update',
-  args,
-}));
-const mockMemberDelete = jest.fn((args: unknown) => ({
-  op: 'member.delete',
-  args,
-}));
-const mockTransaction = jest.fn((ops: unknown[]) => Promise.resolve(ops));
+// The transaction client records each call in order, so the tests can assert
+// that the member row is locked, then keys revoked, then the membership
+// changed, all inside one transaction.
+const mockCalls: Array<{ op: string; args: unknown }> = [];
+const record = (op: string) => (args: unknown) => {
+  mockCalls.push({ op, args });
+  return Promise.resolve({ count: 1 });
+};
+const mockTx = {
+  $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) => {
+    mockCalls.push({ op: 'lock', args: { sql: strings.join('?'), values } });
+    return Promise.resolve([]);
+  },
+  apiKey: { updateMany: record('apiKey.updateMany') },
+  member: {
+    update: record('member.update'),
+    delete: record('member.delete'),
+  },
+};
+const mockTransaction = jest.fn(
+  (run: (tx: typeof mockTx) => Promise<unknown>) => run(mockTx),
+);
 jest.mock('@db', () => ({
   db: {
-    apiKey: { updateMany: (args: unknown) => mockApiKeyUpdateMany(args) },
-    member: {
-      update: (args: unknown) => mockMemberUpdate(args),
-      delete: (args: unknown) => mockMemberDelete(args),
-    },
-    $transaction: (ops: unknown[]) => mockTransaction(ops),
+    $transaction: (run: (tx: typeof mockTx) => Promise<unknown>) =>
+      mockTransaction(run),
   },
 }));
 
 import {
   deactivateMemberAndRevokeApiKeys,
   deleteMemberAndRevokeApiKeys,
-  revokeApiKeysOfUser,
   revokeCreatedApiKeys,
 } from './api-key-offboarding';
 
 const PERSONAL_ACTIVE_KEYS = { organizationOwned: false, isActive: true };
+const REVOKE_MEM_1 = {
+  op: 'apiKey.updateMany',
+  args: {
+    where: { createdByMemberId: { in: ['mem_1'] }, ...PERSONAL_ACTIVE_KEYS },
+    data: { isActive: false },
+  },
+};
+
+function lockOf(memberIds: string[]) {
+  return {
+    op: 'lock',
+    args: {
+      sql: expect.stringMatching(/FROM "Member"[\s\S]*FOR UPDATE/) as unknown,
+      values: [memberIds],
+    },
+  };
+}
 
 describe('api key offboarding', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCalls.length = 0;
   });
 
   it('revokes only active personal keys created by the given members', async () => {
-    await revokeCreatedApiKeys({ memberIds: ['mem_1', 'mem_2'] });
-    expect(mockApiKeyUpdateMany).toHaveBeenCalledWith({
-      where: {
-        createdByMemberId: { in: ['mem_1', 'mem_2'] },
-        ...PERSONAL_ACTIVE_KEYS,
-      },
-      data: { isActive: false },
+    await revokeCreatedApiKeys({
+      tx: mockTx as unknown as Parameters<typeof revokeCreatedApiKeys>[0]['tx'],
+      memberIds: ['mem_1', 'mem_2'],
     });
+    expect(mockCalls).toEqual([
+      {
+        op: 'apiKey.updateMany',
+        args: {
+          where: {
+            createdByMemberId: { in: ['mem_1', 'mem_2'] },
+            ...PERSONAL_ACTIVE_KEYS,
+          },
+          data: { isActive: false },
+        },
+      },
+    ]);
   });
 
-  it('deactivates a member and revokes their keys in one transaction', async () => {
+  it('locks the member, revokes its keys, then deactivates it, in one transaction', async () => {
     const offboardDate = new Date('2026-10-05T00:00:00Z');
     await deactivateMemberAndRevokeApiKeys({
       memberId: 'mem_1',
       organizationId: 'org_1',
       offboardDate,
     });
-
     expect(mockTransaction).toHaveBeenCalledTimes(1);
-    const [ops] = mockTransaction.mock.calls[0];
-    expect(ops).toEqual([
-      {
-        op: 'apiKey.updateMany',
-        args: {
-          where: {
-            createdByMemberId: { in: ['mem_1'] },
-            ...PERSONAL_ACTIVE_KEYS,
-          },
-          data: { isActive: false },
-        },
-      },
+    expect(mockCalls).toEqual([
+      lockOf(['mem_1']),
+      REVOKE_MEM_1,
       {
         op: 'member.update',
         args: {
@@ -82,9 +100,12 @@ describe('api key offboarding', () => {
 
   it('leaves offboardDate untouched when none is given and scopes by id alone without an org', async () => {
     await deactivateMemberAndRevokeApiKeys({ memberId: 'mem_1' });
-    expect(mockMemberUpdate).toHaveBeenCalledWith({
-      where: { id: 'mem_1' },
-      data: { deactivated: true, isActive: false },
+    expect(mockCalls[2]).toEqual({
+      op: 'member.update',
+      args: {
+        where: { id: 'mem_1' },
+        data: { deactivated: true, isActive: false },
+      },
     });
   });
 
@@ -94,20 +115,24 @@ describe('api key offboarding', () => {
       organizationId: 'org_1',
       offboardDate: null,
     });
-    expect(mockMemberUpdate).toHaveBeenCalledWith({
-      where: { id: 'mem_1', organizationId: 'org_1' },
-      data: { deactivated: true, isActive: false, offboardDate: null },
+    expect(mockCalls[2]).toEqual({
+      op: 'member.update',
+      args: {
+        where: { id: 'mem_1', organizationId: 'org_1' },
+        data: { deactivated: true, isActive: false, offboardDate: null },
+      },
     });
   });
 
-  it('revokes keys before deleting a member, in one transaction', async () => {
+  it('locks the member, revokes its keys, then deletes it, in one transaction', async () => {
     await deleteMemberAndRevokeApiKeys({
       memberId: 'mem_1',
       organizationId: 'org_1',
     });
-    const [ops] = mockTransaction.mock.calls[0];
-    expect(ops).toEqual([
-      expect.objectContaining({ op: 'apiKey.updateMany' }),
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    expect(mockCalls).toEqual([
+      lockOf(['mem_1']),
+      REVOKE_MEM_1,
       {
         op: 'member.delete',
         args: { where: { id: 'mem_1', organizationId: 'org_1' } },
@@ -120,27 +145,5 @@ describe('api key offboarding', () => {
     await expect(
       deactivateMemberAndRevokeApiKeys({ memberId: 'mem_1' }),
     ).rejects.toThrow('db down');
-  });
-
-  it("revokes a user's keys in one organization", async () => {
-    await revokeApiKeysOfUser({ userId: 'usr_1', organizationId: 'org_1' });
-    expect(mockApiKeyUpdateMany).toHaveBeenCalledWith({
-      where: {
-        createdBy: { is: { userId: 'usr_1', organizationId: 'org_1' } },
-        ...PERSONAL_ACTIVE_KEYS,
-      },
-      data: { isActive: false },
-    });
-  });
-
-  it("revokes a user's keys in every organization when none is given", async () => {
-    await revokeApiKeysOfUser({ userId: 'usr_1' });
-    expect(mockApiKeyUpdateMany).toHaveBeenCalledWith({
-      where: {
-        createdBy: { is: { userId: 'usr_1' } },
-        ...PERSONAL_ACTIVE_KEYS,
-      },
-      data: { isActive: false },
-    });
   });
 });

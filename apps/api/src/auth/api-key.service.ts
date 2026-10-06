@@ -7,6 +7,7 @@ import {
 import { db } from '@db';
 import { statement } from '@trycompai/auth';
 import { randomBytes } from 'node:crypto';
+import { lockKeyCreator } from './api-key-creator-lock';
 import type { ApiKeyProvenance } from './api-key-provenance';
 import {
   extractKeyPrefix,
@@ -87,24 +88,34 @@ export class ApiKeyService {
 
     const keyPrefix = extractKeyPrefix(apiKey);
 
-    const record = await db.apiKey.create({
-      data: {
-        name,
-        key: hashedKey,
-        keyPrefix,
-        salt,
-        expiresAt: expirationDate,
+    // The creator's row stays locked until the key is committed, so a
+    // concurrent removal or deactivation either runs first (and creation is
+    // refused) or after (and revokes this key).
+    const record = await db.$transaction(async (tx) => {
+      const createdByMemberId = await lockKeyCreator({
+        tx,
         organizationId,
-        scopes,
-        createdByMemberId: provenance.createdByMemberId,
-        organizationOwned: provenance.organizationOwned,
-      },
-      select: {
-        id: true,
-        name: true,
-        createdAt: true,
-        expiresAt: true,
-      },
+        provenance,
+      });
+      return tx.apiKey.create({
+        data: {
+          name,
+          key: hashedKey,
+          keyPrefix,
+          salt,
+          expiresAt: expirationDate,
+          organizationId,
+          scopes,
+          createdByMemberId,
+          organizationOwned: provenance.organizationOwned,
+        },
+        select: {
+          id: true,
+          name: true,
+          createdAt: true,
+          expiresAt: true,
+        },
+      });
     });
 
     return {
