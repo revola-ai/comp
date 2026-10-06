@@ -1,131 +1,140 @@
 # Hosting Comp AI on AWS (design)
 
-Status: draft for review, 2026-10-05.
-Decisions taken with Kyle: Fargate on `revola-cluster`, Cloudflare Access for sign-in control, domain `*.comp.revola.ai`.
+Status: revision 2, 2026-10-06, after the `/autoplan` CEO, DX and Eng reviews (record: `docs/plans/2026-10-05-aws-hosting-review-history.md`).
+Decisions with Kyle: Fargate on `revola-cluster`; Cloudflare Access on the app and portal only; domain `*.comp.revola.ai`; Terraform for infrastructure; production reuses today's shared data and keys (D7); a fork-ownership contract.
 
 ## 1. Goal
 
-Run the Revola fork of Comp AI as a hosted web app that colleagues open in a browser, so nobody has to run the API, app and Trigger workers on a laptop.
-The compliance data stays where it is today (Supabase Postgres and Storage, Upstash Redis); only the servers and background jobs move.
+Run the Revola fork of Comp AI as a hosted web app that colleagues open in a browser, so nobody has to run the API, app and Trigger workers on a laptop to use it.
+The compliance data stays where it is today (Supabase Postgres and Storage, Upstash Redis); the servers and background jobs move to AWS and Trigger.dev cloud.
 
-Non-goals for this design: automatic deploys from GitHub (the GitHub Actions OIDC trust in account `455986776194` is broken across Revola repos), autoscaling, a staging environment, and multi-region.
+Non-goals: automatic deploys from GitHub (the GitHub Actions OIDC trust in account `455986776194` is broken across Revola repos; images build on push, releases stay a deliberate command), autoscaling, a staging environment, multi-region.
 
 ## 2. Current state (verified 2026-10-05)
 
-- AWS account `455986776194`, region `us-east-2`, one ECS cluster `revola-cluster`; every Revola service runs there on Fargate (for example `content-backend`, `interaction-service-production`).
-- Two internet-facing application load balancers, `revola-production-alb` and `revola-staging-alb`, each with an HTTPS listener on 443.
-- `revola.ai` DNS is served by Cloudflare (`laila.ns.cloudflare.com`, `rocky.ns.cloudflare.com`); Route 53 holds only a private zone.
-- Comp's state is already hosted: Supabase Postgres through the session pooler with verified TLS (`DATABASE_SSL_CA`), Supabase Storage through its S3 endpoint, Upstash Redis.
-- Upstream ships a root `Dockerfile` with `app` and `portal` targets (Node 22, Next.js standalone output) that take `NEXT_PUBLIC_*` values as build arguments, and an API image (`apps/api/Dockerfile`, `node:20-slim`) whose build context is assembled by `apps/api/buildspec.yml` for AWS CodeBuild.
-- Health endpoints: API `GET /v1/health`, app `GET /api/health`.
+- AWS account `455986776194`, region `us-east-2`, one ECS cluster `revola-cluster`; every Revola service runs there on Fargate.
+- `revola-production-alb` (internet-facing) with an HTTPS listener whose existing rules are path-based at priorities 5 to 62 and whose default action forwards to another service.
+- `revola.ai` DNS is served by Cloudflare; Route 53 holds only a private zone.
+- Comp's state is hosted: Supabase Postgres through the session pooler with verified TLS (`DATABASE_SSL_CA`), Supabase Storage through its S3 endpoint, Upstash Redis.
+  Laptops run the stack locally against this state.
+- Upstream ships `app` and `portal` Docker targets and an API image assembled by `apps/api/buildspec.yml`; the fork builds its own images (section 3.5).
+- Health endpoints today: API `GET /v1/health` (no database), app `GET /api/health` (`SELECT 1`).
 
 ## 3. Target architecture
 
 ```
-browser ──HTTPS──> Cloudflare (proxied DNS, Access: @revola.ai Google accounts only,
-                   adds X-Comp-Origin-Auth header)
-          ──HTTPS──> revola-production-alb (host + header rules)
-                   ├─ app.comp.revola.ai    -> ECS service comp-app    (Next.js, :3000)
-                   ├─ api.comp.revola.ai    -> ECS service comp-api    (NestJS, :3333)
-                   └─ portal.comp.revola.ai -> ECS service comp-portal (Next.js, :3000)
-ECS tasks ──> Supabase Postgres (verified TLS) and Storage (S3 API), Upstash Redis, Gemini/OpenAI/Resend
-Trigger.dev cloud (prod environment of comp-app and comp-api) runs background jobs and calls api.comp.revola.ai
+browser ──HTTPS──> Cloudflare (proxied DNS, edge certificate *.comp.revola.ai,
+                   adds X-Comp-Origin-Auth; Access in front of app and portal only)
+          ──HTTPS──> revola-production-alb (rules 1-3: host + origin header; rule 4: 403)
+                   ├─ api.comp.revola.ai    -> comp-api    (NestJS, :3333)
+                   ├─ app.comp.revola.ai    -> comp-app    (Next.js, :3000)
+                   └─ portal.comp.revola.ai -> comp-portal (Next.js, :3000)
+comp-app, comp-portal ──Service Connect──> comp-api.comp.internal:3333 (server-side calls)
+ECS tasks ──> Supabase (verified TLS), Supabase Storage, Upstash, Gemini, OpenAI, Resend
+Trigger.dev cloud prod (comp-app, comp-api) runs jobs and calls api.comp.revola.ai / app.comp.revola.ai
 ```
 
 ### 3.1 Services
 
-| Service | Image | Task size (ARM64) | Port | Health check | Desired count |
-|---|---|---|---|---|---|
-| `comp-api` | ECR `comp-api` | 1 vCPU, 2 GB | 3333 | `/v1/health` | 1 |
-| `comp-app` | ECR `comp-app` | 1 vCPU, 2 GB | 3000 | `/api/health` | 1 |
-| `comp-portal` | ECR `comp-portal` | 0.5 vCPU, 1 GB | 3000 | `/api/health` (added by this work, see 3.4) | 1 |
+| Service | Task size (ARM64) | Port | ALB health (liveness) | Readiness (smoke, alarms) |
+|---|---|---|---|---|
+| `comp-api` | 1 vCPU, 2 GB | 3333 | `/v1/health` | `/v1/health/ready` |
+| `comp-app` | 1 vCPU, 2 GB | 3000 | `/api/health/live` | `/api/health` |
+| `comp-portal` | 0.5 vCPU, 1 GB | 3000 | `/api/health` | `/api/health` |
 
-Tasks run on Fargate with the ARM64 runtime platform in the same subnets and security-group pattern as the existing services.
-ARM64 lets images build natively on Apple silicon and on ARM CodeBuild, and Fargate ARM is priced about 20% below x86.
-Logs go to CloudWatch log groups `/ecs/comp-api`, `/ecs/comp-app`, `/ecs/comp-portal`.
+One task per service; the deployment circuit breaker rolls back failed deployments.
+Readiness answers `503` with a reason (`tls_<CODE>`, a Prisma code, `timeout`, `unknown`) and never exposes connection details; liveness never touches the database, so a database outage does not cycle healthy tasks.
+Production containers without `DATABASE_SSL_CA` exit at boot (`ca_file_missing`).
+More than one task per service later needs Redis-backed throttling and a shared Next cache handler.
 
 ### 3.2 Configuration and secrets
 
-- A Secrets Manager secret `comp/production/config` (one JSON object of key/value pairs) holds every secret; task definitions reference individual keys as ECS `secrets` (`<secret-arn>:KEY::`), the same way the other Revola production services do (for example `interaction-service/production/config`). The shared `ecsTaskExecutionRole` already carries a `SecretsManagerRead` policy; the plan checks its resource scope covers `comp/*`.
-- Shared values are the ones colleagues already use (Supabase, Upstash, Google OAuth, Resend, Gemini, OpenAI), plus `ENCRYPTION_KEY` and `SECRET_KEY`, which must equal the values the team already uses because integration credentials in the shared database are encrypted with `ENCRYPTION_KEY`.
-- Public URLs: `BASE_URL`/`BETTER_AUTH_URL` = `https://api.comp.revola.ai`, `NEXT_PUBLIC_APP_URL`/`APP_URL` = `https://app.comp.revola.ai`, `PORTAL_URL` = `https://portal.comp.revola.ai`, `AUTH_TRUSTED_ORIGINS` = those three origins.
-- `NEXT_PUBLIC_*` values are compiled into the app and portal images at build time, so the images are built for this domain.
-- The Supabase CA certificate is public and is copied into each image at `/app/certs/supabase-ca.crt`; `DATABASE_SSL_CA` points there.
+- Secrets Manager `comp/production/config` (JSON) holds application secrets; `comp/production/origin-auth` holds the origin header value(s) and is generated by Terraform.
+  Task definitions reference keys with pinned version IDs, so a rollback restores the configuration as well as the image.
+- Non-secret per-service values (URLs, `AUTH_COOKIE_DOMAIN`, `AUTH_TRUSTED_ORIGINS`, `AUTH_ALLOWED_EMAIL_DOMAINS`, pool sizes, `BACKEND_API_URL`) are task-definition environment entries, not secrets.
+- Comp tasks use their own execution role `comp-task-execution-role` (only Comp's repositories, logs and `comp/production/*` secrets), not the account-wide shared role.
+- Production values are today's shared values (D7): the same Supabase project, Upstash database, `ENCRYPTION_KEY`, `SECRET_KEY` and tokens that laptops use; `sync-secrets.ts` copies them by name, never printing values, and refuses to change `ENCRYPTION_KEY`.
+- Trigger.dev `prod` environment variables are derived from the code that reads them and uploaded per release; their URLs are the public origins.
+- `NEXT_PUBLIC_*` values are compiled into the app and portal images, so images are built for this environment and are not promotable.
 
 ### 3.3 Edge, access control and origin lock
 
-- Cloudflare DNS: proxied CNAMEs `app.comp`, `api.comp`, `portal.comp` to the ALB's DNS name.
-- An ACM certificate for `*.comp.revola.ai` in `us-east-2`, validated with a CNAME in Cloudflare, attached to the ALB's 443 listener as an additional certificate.
-- Cloudflare Access application covering `*.comp.revola.ai`, Google as identity provider, policy: allow emails ending in `@revola.ai`.
-  This is what stops strangers from signing in, which matters because `SELF_HOSTED=true` auto-approves every new organization.
-- ALB rule priorities: the production listener's existing rules are path-based at priorities 5 to 36 and its default action forwards to another service, so Comp's host-and-header rules take priorities 1 to 3 and a priority-4 rule answers `403` for any `*.comp.revola.ai` request that lacks the origin header.
-- Origin lock: a Cloudflare Transform Rule adds `X-Comp-Origin-Auth: <secret>` to requests for `*.comp.revola.ai`, and every ALB listener rule for the three hosts requires that header.
-  Without it, anyone who learns the ALB address could send `Host: app.comp.revola.ai` straight to the ALB and skip Access.
-  Requests without the header get the priority-4 `403`; ALB target health checks do not pass through listener rules, so they are unaffected.
-- Machine callers: Trigger.dev tasks call the API (internal email sending, revalidation) and cannot pass Access.
-  The plan enumerates every endpoint called from Trigger tasks or external webhooks (the API's `@Public()` routes and the internal routes guarded by `INTERNAL_API_TOKEN` or service tokens) and adds Access Bypass policies for exactly those paths; those routes keep their own token checks.
+- Cloudflare: proxied CNAMEs for the three hosts; an Advanced Certificate Manager edge certificate for `*.comp.revola.ai` (Universal SSL does not cover second-level subdomains); SSL Full (strict) for the three hosts.
+- ACM certificate `*.comp.revola.ai` in `us-east-2`, attached to the shared 443 listener.
+- Cloudflare Access protects `app.comp.revola.ai` and `portal.comp.revola.ai` (Google sign-in, `@revola.ai` plus anyone who must acknowledge policies in the portal).
+  `api.comp.revola.ai` has no Access application: per-hostname Access cookies break the browser's cross-origin API calls.
+  The API is protected by its own authentication (session, API key, service token), a sign-up allowlist (`AUTH_ALLOWED_EMAIL_DOMAINS=revola.ai`, invited emails exempt), throttling keyed on verified identity, API-key revocation when a member is removed, and a self-hosted origin policy that trusts only its own hosts.
+- App-host routes that authenticate machines by a shared secret (for example `/api/revalidate/path`, called by Trigger jobs) get Access Bypass applications and keep their own checks.
+- Origin lock: a Cloudflare transform rule adds `X-Comp-Origin-Auth` (64 alphanumeric characters) to requests for the three hosts; ALB rules 1 to 3 require it, and rule 4 answers `403` `comp-alb: origin header missing or invalid` for any `*.comp.revola.ai` request without it.
+  Rotation is three reviewed steps: the ALB accepts old and new, Cloudflare switches, then the old value is retired.
 
 ### 3.4 Code changes in the fork
 
-1. `AUTH_COOKIE_DOMAIN`: `getCookieDomain()` in `apps/api/src/auth/auth.server.ts` only enables cross-subdomain cookies for `trycomp.ai`.
-   Add an `AUTH_COOKIE_DOMAIN` environment variable (here `.comp.revola.ai`) that takes precedence, with tests; without it the app at `app.comp.revola.ai` cannot see the session set by `api.comp.revola.ai`.
-2. API image: move `apps/api/Dockerfile` to Node 22 (Prisma 7.6 requires `^22.12`), build for `linux/arm64`, and copy the Supabase CA.
-   Adapt the context assembly from `apps/api/buildspec.yml` (built `dist`, `node_modules`, and the workspace packages copied in from their built output) into the fork's build.
-3. Trigger.dev deploy: `apps/api/customPrismaExtension.ts` installs `@trycompai/db` from npm, which is upstream's package and lacks the fork's exports (`resolveSslConfig`, `buildManifestFromFramework`).
-   Vendor the workspace `packages/db` build into the deploy, and extend `apps/api/caBundleExtension.ts` to ship the Supabase CA and set `DATABASE_SSL_CA`.
-   Apply the same check to the `apps/app` Trigger project.
-4. Portal health route `GET /api/health` returning 200 without touching the database, matching the app's, so the ALB health check does not depend on page rendering or session checks.
+1. API: `AUTH_COOKIE_DOMAIN` (must cover the API, app and portal hosts), self-hosted origin policy, sign-up allowlist, API-key revocation on offboarding, service-token overlap during rotation, readiness probe, verified-identity throttling, origin-header scrubbing from logs.
+2. App and portal: server-side API base URL helper (Service Connect), revalidation and unsubscribe URL fixes, a dev-schedule guard (local `trigger dev` does not run production schedules), app liveness route, portal health route, machine-route inventory and a readable sign-up rejection message.
+3. Database package: one adapter-options function (pool size, production TLS rule) for every Prisma client, a guard that refuses `migrate dev`, `migrate reset`, `db push` and `db:seed` against the production host unless explicitly opted in, and Trigger deploys that ship the fork's database package and the Supabase CA.
+4. Fork-owned images (`deploy/aws/Dockerfile`, `node:22-slim`, ARM64) with the committed public Supabase CA; upstream's Dockerfiles are untouched.
+Generic changes go upstream as PRs (section 3.9).
 
-### 3.5 Builds
+### 3.5 Builds and infrastructure as code
 
-- AWS CodeBuild project `comp-images` in `455986776194`, ARM64 Linux environment, source from the `revola-ai/comp` GitHub fork through an AWS CodeConnections connection (authorized once in the console by Kyle).
-- One build produces `comp-api`, `comp-app` and `comp-portal` images, tagged with the git short SHA, pushed to ECR.
-- Builds use a `docker-container` buildx builder with a registry cache at `<repo>:cache` and `--cache-to=type=registry,...,mode=max,image-manifest=true,oci-mediatypes=true`, as Revola's build rules require.
-- Started by hand (`aws codebuild start-build --project-name comp-images --source-version <sha>`), so nothing heavy runs on a laptop and the broken GitHub OIDC trust does not matter.
+- Terraform (`deploy/aws/terraform/`, pinned `aws` and `cloudflare` providers, S3 state with a lock) owns ECR, CodeBuild, the Comp execution role, log groups, the task security group, target groups, listener rules 1 to 4, the listener certificate attachment, ACM, Cloud Map, ECS services, alarms, the release-record bucket, the release lock table, secret containers and every Cloudflare resource.
+  The shared ALB, listener, cluster, VPC and subnets are data sources only; a plan test fails if Terraform would manage them.
+- CodeBuild project `comp-images` (ARM) builds the three images on every push to `revola/self-host`, tagged with the 12-character SHA, with a registry cache in `mode=max`.
 
-### 3.6 Deploys and migrations
+### 3.6 Releases and migrations
 
-- First deploy registers task definitions and creates the three services and target groups.
-- Updates follow Revola's manual deploy procedure: clone the running task definition, swap only the image, register it, `aws ecs update-service --force-new-deployment`, and wait for `RUNNING` and `HEALTHY`.
-- Database migrations stay a deliberate release step: `cd packages/db && bunx prisma migrate deploy` from an operator machine against Supabase, run before deploying images that need them.
-  Migrations are rare and the database is shared; a one-off ECS migration task is a later improvement.
-- Trigger.dev: `trigger deploy` for `comp-app` and `comp-api` to their `prod` environment, with environment variables set in the Trigger.dev dashboard (or `syncEnvVars`), pointing at `https://api.comp.revola.ai`.
-  After this, colleagues no longer need `trigger dev` running for jobs to complete.
+- `deploy/aws/release.sh release <ref>` is the one command: it checks the images, takes a lock (DynamoDB, fenced), writes a journal, checks migrations, renders and deploys task definitions api first, runs a smoke through the real hostnames, deploys Trigger.dev `prod` at the same SHA, and writes a release record to S3.
+  `rollback`, `restart` (after a secret change), `status`, `logs`, partial releases and a recorded `--skip-smoke --reason` hatch are subcommands.
+- Migrations are a deliberate step (`release.sh migrate --sha <sha>`) against a session-pooler or direct URL verified to be the production project.
+  The guard blocks a release with pending, failed or modified migrations and warns on extra applied ones (laptops share the database).
+  Migrations must stay compatible with the previous release (expand, release, contract), so rollback stays valid for one release.
+- A Terraform change that a release depends on is applied first.
 
 ### 3.7 Third-party configuration
 
-- Google OAuth client: add JavaScript origins `https://app.comp.revola.ai`, `https://api.comp.revola.ai` and redirect URI `https://api.comp.revola.ai/api/auth/callback/google`.
-- Supabase: move to the Pro plan for daily backups (the free plan has none), and turn on "Enforce SSL".
-- Resend: the existing sending domain keeps working; invitation links will point at `app.comp.revola.ai`.
+- Google OAuth client: origins `https://app.comp.revola.ai`, `https://api.comp.revola.ai`; redirect `https://api.comp.revola.ai/api/auth/callback/google`.
+- Supabase: Pro plan (backups), point-in-time recovery decided and recorded, Enforce SSL on; a connection budget keeps ECS pools, Trigger `prod` concurrency and two local stacks under the session pooler's limit.
+- Trigger.dev: prod keys per project, concurrency limits from the budget, an alert channel for prod run failures.
+
+### 3.8 Data state decision (D7)
+
+Production reuses today's shared Supabase project, Upstash database and keys; laptops keep using the same state.
+This avoids a data copy and a re-encryption while nothing important is stored.
+The accepted gap: every laptop can migrate, write and decrypt production data, which an auditor will treat as a change-management and least-privilege issue.
+Mitigations now: the production command guard, the dev-schedule guard and the migration guard.
+Upgrade trigger: before the SOC 2 audit window opens or the first real evidence is collected, local development moves to its own Supabase and Upstash project (tracked as a P1 issue).
+
+### 3.9 Ownership
+
+The fork is maintained by Kyle (primary) and a backup Kyle names; upstream is merged weekly and within 2 working days of any upstream security commit, following a checklist; generic fixes go to `trycompai/comp` as PRs, each tracked by an issue on `revola-ai/comp`.
+The decision record (why self-host the fork rather than hosted Comp) lives in `docs/self-hosting-aws.md`.
 
 ## 4. Security notes
 
-- Access at the edge plus the origin-lock header means the app is unreachable to anyone outside `@revola.ai`, including the sign-up flow that would otherwise auto-approve organizations.
-- Secrets live only in Secrets Manager and in task memory; images contain no secrets (the Supabase CA is public).
-- Bypass paths for machine callers stay narrow and keep their own token checks.
-- Outside parties (an auditor, employees signing policies in the portal) need an Access policy entry before they can reach the site.
+- The app and portal are reachable only by people Access admits; the API is internet-reachable through Cloudflare and relies on its own authentication, so API authorization bugs are reachable by anyone, which the allowlist, throttling, origin policy and key revocation mitigate.
+- No request reaches Comp without passing Cloudflare (origin lock); health checks bypass listener rules by design.
+- Secrets live in Secrets Manager and task memory; images hold no secrets; the origin header is scrubbed from logs.
+- Laptops hold production credentials until the D7 upgrade trigger (section 3.8).
 
 ## 5. Cost estimate (monthly, us-east-2, on-demand)
 
-- Fargate ARM64: about 2.5 vCPU and 5 GB running continuously, roughly $70 to $75.
-- ALB: shared with existing services; new rules and target groups add no meaningful cost.
-- CloudWatch logs and ECR storage: a few dollars.
-- Supabase Pro: $25. Upstash and Trigger.dev: usage-based, small at this volume. Cloudflare Access: free plan covers up to 50 users.
-- Figures are estimates to be confirmed against current AWS pricing in the plan.
+- Fargate ARM64 (about 2.5 vCPU and 5 GB): roughly $70 to $75.
+- Cloudflare Advanced Certificate Manager: about $10. Access: free plan up to 50 users.
+- Supabase Pro: $25. CloudWatch, ECR, S3, DynamoDB, CodeBuild: a few dollars. Upstash and Trigger.dev: usage-based, small at this volume.
+- Confirmed against current pricing in the runbook.
 
 ## 6. Acceptance criteria
 
-1. `https://app.comp.revola.ai` asks for Revola Google sign-in through Cloudflare Access, then loads the Revola AI organization with the same 28 policies and both frameworks as today.
-2. A request to the ALB with `Host: app.comp.revola.ai` but without the origin header gets `403`, not the app and not another Revola service.
-3. Signing in on `app.comp.revola.ai` keeps the session across app, API and portal (cookie domain `.comp.revola.ai`).
-4. A background job started from the hosted app (for example policy regeneration) completes on Trigger.dev `prod` with no laptop running `trigger dev`.
-5. Evidence upload to Supabase Storage and download back work from the hosted app.
-6. Each ECS service reports `RUNNING` and `HEALTHY` on the image tag of the deployed commit.
-7. Local development still works unchanged (`scripts/local-run.sh` against the same shared state).
+1. `https://app.comp.revola.ai` asks for Revola Google sign-in through Access, then loads the Revola AI organization with its policies and both frameworks; the portal works the same way.
+2. A request to the ALB for a Comp host without the origin header gets the `403` `comp-alb:` body.
+3. A fresh browser profile signs in at the app and the dashboard loads API data without visiting the API host directly; 30 page loads in a minute produce no `429`.
+4. A background job started from the hosted app completes on Trigger.dev `prod` with no laptop running `trigger dev`.
+5. Evidence upload and download, an evidence export, employee policy acknowledgment in the portal, and an auditor with a read-only role all work.
+6. After a member is removed, their session, API keys and portal session get `401`/`403` on direct API calls.
+7. Local development still works against the shared state.
+8. A restore drill restores the database and Storage sample into an isolated project and decrypts a credential with the production key; a second engineer completes a release from the runbook.
 
 ## 7. Open items needing Kyle
 
-- Authorize the CodeConnections GitHub connection for `revola-ai/comp` in the AWS console.
-- Create the Cloudflare Access application and the Transform Rule (or grant a scoped Cloudflare API token so the plan can script them).
-- Update the Google OAuth client.
-- Choose the Supabase plan.
+- CodeConnections GitHub connection; Cloudflare API token and the edge-certificate cost; Google OAuth client; Supabase plan and point-in-time recovery; Trigger.dev prod keys, concurrency and alert channel; the `comp-alerts` email address; the backup maintainer; the portal acknowledgment population.
