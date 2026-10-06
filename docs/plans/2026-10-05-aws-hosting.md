@@ -48,7 +48,7 @@
 2. A request that reaches the ALB with `Host: app.comp.revola.ai` and no or a wrong origin header must get the `403` `comp-alb:` body, never the app or another Revola service (Tasks 7, 8).
 3. An app-host machine route opened by an Access Bypass must still reject a request without its secret with the app's own `4xx` (per-path expectation in the test fixture), never be an open door (Task 8).
 4. A production container without `DATABASE_SSL_CA` must exit at boot with `ca_file_missing`; a runtime TLS or connection failure must make `GET /v1/health/ready` (API) and `GET /api/health` (app) answer `503` with a `tls_<CODE>`, Prisma-code, `timeout` or `unknown` reason, never connect without verification (Tasks 2, 3, 4).
-5. Because laptops share production state (D7), a local `prisma migrate dev`, `migrate reset`, `db push` or `db:seed` against the production host must be refused unless `COMP_I_AM_TOUCHING_PROD=1` is set (Task 4).
+5. Because laptops share production state (D7), every database-changing command against the production project must be refused unless `COMP_I_AM_TOUCHING_PROD=1` is set (Task 4): `prisma migrate dev`, `migrate reset`, `migrate deploy`, `migrate resolve`, `db push`, `db execute` and `db seed` (the guard in every `prisma.config.ts`), plus `bun run db:seed`, a direct `bun prisma/seed/seed.ts` and `bun run backfill:framework-versions` (`bun src/scripts/backfill-framework-versions.ts`).
 
 ---
 
@@ -163,7 +163,8 @@
   - `vendorWorkspaceDb({ repoRoot, outputPath })`: copies `packages/db/dist` and `package.json` into `<outputPath>/node_modules/@trycompai/db`. It throws `run bun run build in packages/db` when `dist/index.js` is missing, and it adds `packages/db`'s runtime `dependencies` (exact versions) to the layer.
   - `packages/db/production-target.json`: `{ "projectRefSha256": string, "poolerHost": string }`, committed, the single source of the production database identity (Task 0's `config.ts` imports it).
   - The guard identifies production by the project ref (pooler user `postgres.<ref>` or host `db.<ref>.supabase.co`), hashed and compared with `projectRefSha256`; the shared regional pooler host alone is not production.
-  - `assertNotProduction({ databaseUrl, env })`: throws unless the host differs from `poolerHost` in `production-target.json` or `COMP_I_AM_TOUCHING_PROD=1` is set. `packages/db` never imports from `deploy/aws`.
+  - `assertNotProduction({ databaseUrl, env, target })`: identifies production by the project ref the URL carries (the pooler user `postgres.<ref>` or the host `db.<ref>.supabase.co`), hashed and compared with `projectRefSha256`, never by `poolerHost`; it throws for a production URL (`production_target_refused`) or an unparseable one (`database_url_unverifiable`) unless `COMP_I_AM_TOUCHING_PROD=1` is set.
+    `packages/db` never imports from `deploy/aws`.
   - `db:migrate:create` (script `packages/db/scripts/migrate-create.ts`): runs `prisma migrate dev --create-only` with `DATABASE_URL` forced to `postgresql://postgres:postgres@127.0.0.1:5432/comp_dev` (database created if missing), ignoring any URL from env files, and refuses a non-local target. New migrations reach production only through `release.sh migrate --sha` (Task 7b).
   - `createAppStorageClient({ env })`: S3 client honoring `APP_AWS_ENDPOINT` with path-style access. Customer-cloud scanning clients stay separate.
 
@@ -288,6 +289,7 @@
     - started-but-unfinished rows fail, as does a checksum mismatch against that SHA's `migration.sql`;
     - `migration_lock.toml` is ignored.
   - Migration target: `migrate.ts` and the guard use `DATABASE_MIGRATION_URL` from `comp/production/config` (never local files, never printed); a transaction-pooler `:6543` URL is refused, and a pooler user or database whose ref's SHA-256 differs from `config.productionDbRefSha256` is refused.
+  - Production opt-in: `migrate.ts` (`release.sh migrate`) runs its own `prisma migrate deploy` child with `COMP_I_AM_TOUCHING_PROD=1` and with `DATABASE_MIGRATION_URL` passed as that child's `DATABASE_URL`, because the guard in `prisma.config.ts` checks `DATABASE_URL`; neither value is set in the parent shell or printed.
   - Architecture check: requires an `arm64` entry and ignores attestation entries; a wrong platform prints the found and expected platforms and `rebuild with release.sh`.
   - Release flow (`release.test.sh` with stubbed `aws`, `git`, `bun`, `curl`):
     - success; a missing tag; a failed guard (exits before any `update-service`); a failed smoke (exits non-zero and prints the rollback release ID); resume;
