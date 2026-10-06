@@ -5,6 +5,10 @@ import { loadProductionTarget } from './production-target-guard';
 // Each prisma.config.ts is loaded in-process by the Prisma CLI, so its process.argv is
 // the CLI's. Running the config file itself with Bun reproduces that argv without
 // starting Prisma: nothing here connects to any database.
+//
+// The committed target holds only the ref's hash, so no test can build the production
+// URL. These cases prove each config runs the guard with a URL the guard cannot verify
+// (it fails closed); production matching itself is covered in src/production-target.test.ts.
 const REPO_ROOT = resolve(import.meta.dir, '..', '..', '..');
 const CONFIGS = [
   'packages/db/prisma.config.ts',
@@ -14,7 +18,8 @@ const CONFIGS = [
 ];
 
 const target = loadProductionTarget();
-const PROD_URL = `postgresql://postgres.${target.projectRef}:pw@${target.poolerHost}:5432/postgres`;
+const UNVERIFIABLE_URL = 'not a url';
+const OTHER_PROJECT_ON_POOLER = `postgresql://postgres.zyxwvutsrqponmlkjihg:pw@${target.poolerHost}:5432/postgres`;
 const LOCAL_URL = 'postgresql://postgres:postgres@127.0.0.1:5432/comp_dev';
 
 function loadConfig({
@@ -38,34 +43,41 @@ function loadConfig({
 
 for (const config of CONFIGS) {
   describe(config, () => {
-    it('refuses `migrate dev` against the production target, without printing it', () => {
-      const { exitCode, stderr } = loadConfig({
-        config,
-        args: ['migrate', 'dev'],
-        env: { DATABASE_URL: PROD_URL },
+    for (const args of [
+      ['migrate', 'dev'],
+      ['db', 'push', '--accept-data-loss'],
+      ['migrate', 'deploy'],
+      ['migrate', 'resolve', '--applied', '20261005000000_x'],
+      ['db', 'execute', '--stdin'],
+    ]) {
+      it(`runs the guard for \`prisma ${args.join(' ')}\` and exits 1 when it refuses`, () => {
+        const { exitCode, stderr } = loadConfig({
+          config,
+          args,
+          env: { DATABASE_URL: UNVERIFIABLE_URL },
+        });
+        expect(exitCode).toBe(1);
+        expect(stderr).toContain('database_url_unverifiable');
       });
-      expect(exitCode).toBe(1);
-      expect(stderr).toContain('production_target_refused');
-      expect(stderr.includes(target.poolerHost)).toBe(false);
-      expect(stderr.includes(target.projectRef)).toBe(false);
-    });
-
-    it('refuses `db push --accept-data-loss` against the production target', () => {
-      const { exitCode } = loadConfig({
-        config,
-        args: ['db', 'push', '--accept-data-loss'],
-        env: { DATABASE_URL: PROD_URL },
-      });
-      expect(exitCode).toBe(1);
-    });
+    }
 
     it('allows it with COMP_I_AM_TOUCHING_PROD=1', () => {
       const { exitCode } = loadConfig({
         config,
-        args: ['migrate', 'dev'],
-        env: { DATABASE_URL: PROD_URL, COMP_I_AM_TOUCHING_PROD: '1' },
+        args: ['migrate', 'deploy'],
+        env: { DATABASE_URL: UNVERIFIABLE_URL, COMP_I_AM_TOUCHING_PROD: '1' },
       });
       expect(exitCode).toBe(0);
+    });
+
+    it('does not take the shared regional pooler host alone for production', () => {
+      const { exitCode, stderr } = loadConfig({
+        config,
+        args: ['migrate', 'dev'],
+        env: { DATABASE_URL: OTHER_PROJECT_ON_POOLER },
+      });
+      expect(exitCode).toBe(0);
+      expect(stderr).toBe('');
     });
 
     it('allows it for a local host', () => {
@@ -78,9 +90,11 @@ for (const config of CONFIGS) {
       expect(stderr).toBe('');
     });
 
-    it('allows `generate` and `migrate deploy` against the production target', () => {
-      for (const args of [['generate'], ['migrate', 'deploy']]) {
-        expect(loadConfig({ config, args, env: { DATABASE_URL: PROD_URL } }).exitCode).toBe(0);
+    it('allows `generate` and `migrate status` without checking the URL', () => {
+      for (const args of [['generate'], ['migrate', 'status']]) {
+        expect(loadConfig({ config, args, env: { DATABASE_URL: UNVERIFIABLE_URL } }).exitCode).toBe(
+          0,
+        );
       }
     });
   });

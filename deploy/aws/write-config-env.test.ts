@@ -27,6 +27,8 @@ describe('renderConfigEnv', () => {
     expect(text).toContain('COMP_COOKIE_DOMAIN=.comp.revola.ai\n');
     expect(text).toContain(`COMP_TRIGGER_CLI_VERSION=${config.triggerCliVersion}\n`);
     expect(text).toContain(`COMP_SUBNET_IDS=${config.subnetIds.join(',')}\n`);
+    expect(text).toContain(`COMP_PROD_DB_REF_SHA256=${config.productionDbRefSha256}\n`);
+    expect(text).not.toMatch(/^COMP_PROD_DB_REF=/m);
     expect(text).not.toMatch(/['"$` ]/);
   });
 

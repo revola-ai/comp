@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import { classifyPrismaCommand, enforcePrismaCliGuard } from './prisma-cli-guard';
+import { hashProjectRef } from './production-target';
 
-const TARGET = { projectRef: 'abcdefghijklmnop', poolerHost: 'aws-9-xx-test-1.pooler.example.com' };
-const PROD_URL = `postgresql://postgres.${TARGET.projectRef}:pw@${TARGET.poolerHost}:5432/postgres`;
+const REF = 'abcdefghijklmnopqrst';
+const TARGET = {
+  projectRefSha256: hashProjectRef(REF),
+  poolerHost: 'aws-9-xx-test-1.pooler.supabase.com',
+};
+const PROD_URL = `postgresql://postgres.${REF}:pw@${TARGET.poolerHost}:5432/postgres`;
 const LOCAL_URL = 'postgresql://postgres:postgres@127.0.0.1:5432/comp';
 
 describe('classifyPrismaCommand', () => {
@@ -16,7 +21,9 @@ describe('classifyPrismaCommand', () => {
     [['migrate', '--schema', 'prisma/schema', 'reset'], true, 'migrate reset'],
     [['generate'], false, 'generate'],
     [['generate', '--schema=prisma/schema'], false, 'generate'],
-    [['migrate', 'deploy'], false, 'migrate deploy'],
+    [['migrate', 'deploy'], true, 'migrate deploy'],
+    [['migrate', 'resolve', '--applied', '20261005000000_x'], true, 'migrate resolve'],
+    [['db', 'execute', '--file', 'x.sql'], true, 'db execute'],
     [['migrate', 'status'], false, 'migrate status'],
     [['migrate', 'diff', '--from-empty', '--to-schema', 'dev'], false, 'migrate diff'],
     [['studio'], false, 'studio'],
@@ -55,12 +62,16 @@ describe('enforcePrismaCliGuard', () => {
     ['migrate', 'reset'],
     ['db', 'push'],
     ['db', 'seed'],
+    ['migrate', 'deploy'],
+    ['migrate', 'resolve', '--rolled-back', '20261005000000_x'],
+    ['db', 'execute', '--stdin'],
   ]) {
     it(`refuses \`prisma ${args.join(' ')}\` against the production target and exits 1`, () => {
       const outcome = run({ args, env: { DATABASE_URL: PROD_URL } });
       expect(outcome.exitCode).toBe(1);
       const message = outcome.errors.join('\n');
-      expect(message).toContain(`prisma ${args.join(' ')}`);
+      expect(message).toContain(`prisma ${args.slice(0, 2).join(' ')}`);
+      expect(message).not.toContain(REF);
       expect(message).toContain('COMP_I_AM_TOUCHING_PROD=1');
       expect(message).not.toContain(TARGET.poolerHost);
       expect(message).not.toContain(':pw@');
@@ -86,7 +97,12 @@ describe('enforcePrismaCliGuard', () => {
   });
 
   it('lets allowed commands through against production', () => {
-    for (const args of [['generate'], ['migrate', 'deploy'], ['migrate', 'status'], ['studio']]) {
+    for (const args of [
+      ['generate'],
+      ['migrate', 'status'],
+      ['migrate', 'diff', '--from-migrations', 'prisma/migrations', '--to-schema', 'prisma/schema'],
+      ['studio'],
+    ]) {
       expect(run({ args, env: { DATABASE_URL: PROD_URL } })).toEqual({
         exitCode: undefined,
         errors: [],

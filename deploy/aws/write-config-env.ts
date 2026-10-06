@@ -22,7 +22,7 @@ function entries({ config }: { config: DeployConfig }): [string, string][] {
     ['COMP_HOST_APP', config.hosts.app],
     ['COMP_HOST_PORTAL', config.hosts.portal],
     ['COMP_COOKIE_DOMAIN', config.cookieDomain],
-    ['COMP_PROD_DB_REF', config.productionDbRef],
+    ['COMP_PROD_DB_REF_SHA256', config.productionDbRefSha256],
     ['COMP_PROD_POOLER_HOST', config.productionPoolerHost],
     ['COMP_TRIGGER_CLI_VERSION', config.triggerCliVersion],
     ['COMP_RELEASE_BUCKET', config.releaseBucket],

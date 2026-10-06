@@ -1,4 +1,4 @@
 {
-  "projectRef": "xxxxxxxxxxxxxxxxxxxx",
+  "projectRefSha256": "b413451fdead80fd8affa3c7468155109a5ce254ab48a20c45b2073c7356bb74",
   "poolerHost": "aws-0-us-east-2.pooler.supabase.com"
 }

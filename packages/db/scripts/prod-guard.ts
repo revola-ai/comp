@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 // Refuses destructive schema and data commands (prisma migrate dev / migrate reset /
-// db push, db:seed) when DATABASE_URL points at the production database. Laptops and
+// migrate deploy / db push / db execute, db:seed) when DATABASE_URL points at the
+// production database. Laptops and
 // production share one Supabase database (D7), so a local command is one typo away from
 // production. Usage, from packages/db scripts:
 //
@@ -27,6 +28,12 @@ export {
   type ProductionTarget,
 } from './production-target-guard';
 
+// Arguments that look like a connection string (a scheme, or any mention of postgres,
+// which covers pooler user names) never reach the terminal.
+function redactArgument(arg: string): string {
+  return arg.includes('://') || /postgres/i.test(arg) ? '<redacted>' : arg;
+}
+
 export function runGuarded({
   argv,
   env,
@@ -49,7 +56,7 @@ export function runGuarded({
     assertNotProduction({ databaseUrl: env.DATABASE_URL, env, target });
   } catch (error) {
     if (!(error instanceof ProdGuardError)) throw error;
-    printError(`refusing \`${argv.join(' ')}\`: ${error.message}`);
+    printError(`refusing \`${argv.map(redactArgument).join(' ')}\`: ${error.message}`);
     return 1;
   }
   return spawn({ command, args, env });

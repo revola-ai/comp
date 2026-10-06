@@ -11,10 +11,12 @@ import {
   assertNotProduction,
 } from './production-target-guard';
 
-// Commands that reset, rewrite or seed the database they point at.
+// Commands that reset, rewrite, migrate, seed or run SQL against the database they point
+// at. `migrate deploy` and `migrate resolve` change production's schema or migration
+// history, so they also need the opt-in (the release path sets it after review).
 const GUARDED: Record<string, ReadonlySet<string>> = {
-  migrate: new Set(['dev', 'reset']),
-  db: new Set(['push', 'seed']),
+  migrate: new Set(['dev', 'reset', 'deploy', 'resolve']),
+  db: new Set(['push', 'seed', 'execute']),
 };
 
 // Known subcommands, so a flag value (`--schema prisma/schema`) is never taken for one.

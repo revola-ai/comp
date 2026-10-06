@@ -2,24 +2,13 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import productionTargetFile from '../../packages/db/production-target.json' with { type: 'json' };
+import { productionTargetSchema } from '../../packages/db/scripts/production-target.ts';
 
 // Single source of the fixed AWS, host and release identifiers. Shell scripts get the same
 // values through config.env (see write-config-env.ts), so nothing is typed twice.
 
 const REPO_ROOT = join(import.meta.dir, '../..');
 const TRIGGER_MANIFESTS = ['apps/api/package.json', 'apps/app/package.json'] as const;
-
-const productionTargetSchema = z
-  .object({
-    projectRef: z.string().regex(/^[a-z0-9]{20}$/, 'projectRef must be 20 lowercase alphanumerics'),
-    poolerHost: z
-      .string()
-      .regex(
-        /^[a-z0-9.-]+\.pooler\.supabase\.com$/,
-        'poolerHost must end with .pooler.supabase.com',
-      ),
-  })
-  .strict();
 
 const configSchema = z
   .object({
@@ -33,7 +22,8 @@ const configSchema = z
     subnetIds: z.array(z.string().regex(/^subnet-[0-9a-f]{17}$/)).min(1),
     hosts: z.object({ api: z.string(), app: z.string(), portal: z.string() }).strict(),
     cookieDomain: z.string().regex(/^\.[a-z0-9.-]+$/, 'cookieDomain needs a leading dot'),
-    productionDbRef: productionTargetSchema.shape.projectRef,
+    // The project ref only as its SHA-256 (public fork); later tasks compare hashes.
+    productionDbRefSha256: productionTargetSchema.shape.projectRefSha256,
     productionPoolerHost: productionTargetSchema.shape.poolerHost,
     triggerCliVersion: z.string().regex(/^\d+\.\d+\.\d+$/, 'must be an exact pinned version'),
     releaseBucket: z.string().min(3),
@@ -125,7 +115,7 @@ export function loadConfig({
       portal: 'portal.comp.revola.ai',
     },
     cookieDomain: '.comp.revola.ai',
-    productionDbRef: target.projectRef,
+    productionDbRefSha256: target.projectRefSha256,
     productionPoolerHost: target.poolerHost,
     triggerCliVersion: readTriggerCliVersion({ repoRoot }),
     releaseBucket: 'comp-release-records-455986776194',

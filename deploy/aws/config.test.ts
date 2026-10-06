@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import productionTarget from '../../packages/db/production-target.json' with { type: 'json' };
 import { config, loadConfig } from './config.ts';
 
 const validTarget = {
-  projectRef: 'abcdefghij0123456789',
+  projectRefSha256: 'a'.repeat(64),
   poolerHost: 'aws-0-x.pooler.supabase.com',
 };
 const tempRoots: string[] = [];
@@ -61,9 +61,17 @@ describe('config values', () => {
     }
   });
 
-  test('the production identity equals packages/db/production-target.json', () => {
-    expect(config.productionDbRef).toBe(productionTarget.projectRef);
+  test('the production identity equals packages/db/production-target.json (ref as a hash)', () => {
+    expect(config.productionDbRefSha256).toBe(productionTarget.projectRefSha256);
     expect(config.productionPoolerHost).toBe(productionTarget.poolerHost);
+    expect(config).not.toHaveProperty('productionDbRef');
+  });
+
+  test('validates the target with the shared packages/db schema, not a copy', () => {
+    const source = readFileSync(join(import.meta.dir, 'config.ts'), 'utf8');
+    expect(source).toContain("from '../../packages/db/scripts/production-target.ts'");
+    expect(source).not.toMatch(/projectRefSha256:\s*z\./);
+    expect(source).not.toMatch(/poolerHost:\s*z\./);
   });
 
   test('the Trigger CLI version is the repo pin', () => {
@@ -133,14 +141,30 @@ describe('loadConfig', () => {
     );
   });
 
-  test('rejects a malformed project ref', () => {
+  test('rejects a malformed project ref hash', () => {
     const repoRoot = makeRepo({
       api: { devDependencies: { 'trigger.dev': '4.4.3' } },
       app: { devDependencies: { 'trigger.dev': '4.4.3' } },
     });
     expect(() =>
-      loadConfig({ repoRoot, productionTarget: { ...validTarget, projectRef: 'Not-A-Ref' } }),
-    ).toThrow(/projectRef/);
+      loadConfig({
+        repoRoot,
+        productionTarget: { ...validTarget, projectRefSha256: 'Not-A-Hash' },
+      }),
+    ).toThrow(/projectRefSha256/);
+  });
+
+  test('rejects a target that carries the plain project ref', () => {
+    const repoRoot = makeRepo({
+      api: { devDependencies: { 'trigger.dev': '4.4.3' } },
+      app: { devDependencies: { 'trigger.dev': '4.4.3' } },
+    });
+    expect(() =>
+      loadConfig({
+        repoRoot,
+        productionTarget: { ...validTarget, projectRef: 'abcdefghij0123456789' },
+      }),
+    ).toThrow();
   });
 
   test('rejects a pooler host outside pooler.supabase.com', () => {

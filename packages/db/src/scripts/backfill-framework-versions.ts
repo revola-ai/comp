@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { db } from '../client';
 import { buildManifestFromFramework, manifestFrameworkQuery } from '../framework-manifest';
+import { refuseProductionEntryPoint } from '../production-target';
 
 export interface BackfillResult {
   versionsCreated: number;
@@ -66,6 +67,8 @@ export async function backfillFrameworkVersions(): Promise<BackfillResult> {
 }
 
 if (require.main === module) {
+  // Run directly, this bypasses the Prisma CLI guard: refuse production first.
+  refuseProductionEntryPoint({ name: 'bun src/scripts/backfill-framework-versions.ts' });
   backfillFrameworkVersions()
     .then((result) => {
       console.log('Backfill complete:', result);
