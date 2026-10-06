@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { resolveSslConfig } from './ssl-config';
 
 describe('resolveSslConfig', () => {
@@ -25,14 +25,20 @@ describe('resolveSslConfig', () => {
   it('returns checkServerIdentity-noop for remote URLs (verified TLS via Node defaults)', () => {
     const result = resolveSslConfig('postgresql://u:p@db.prod.example.com:5432/x', {});
     expect(result).toBeDefined();
-    expect(typeof (result as { checkServerIdentity: unknown }).checkServerIdentity).toBe('function');
-    expect((result as { checkServerIdentity: () => undefined }).checkServerIdentity()).toBeUndefined();
+    expect(typeof (result as { checkServerIdentity: unknown }).checkServerIdentity).toBe(
+      'function',
+    );
+    expect(
+      (result as { checkServerIdentity: () => undefined }).checkServerIdentity(),
+    ).toBeUndefined();
   });
 
   it('treats malformed URLs as remote (defensive)', () => {
     const result = resolveSslConfig('not-a-valid-url', {});
     expect(result).toBeDefined();
-    expect(typeof (result as { checkServerIdentity: unknown }).checkServerIdentity).toBe('function');
+    expect(typeof (result as { checkServerIdentity: unknown }).checkServerIdentity).toBe(
+      'function',
+    );
   });
 });
 
@@ -44,9 +50,12 @@ describe('resolveSslConfig with DATABASE_SSL_CA', () => {
     fs.mkdirSync(`${import.meta.dir}/../certs`, { recursive: true });
     fs.writeFileSync(caPath, '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n');
     try {
-      const result = resolveSslConfig('postgresql://u:p@aws-0-us-east-1.pooler.supabase.com:5432/x', {
-        DATABASE_SSL_CA: caPath,
-      });
+      const result = resolveSslConfig(
+        'postgresql://u:p@aws-0-us-east-1.pooler.supabase.com:5432/x',
+        {
+          DATABASE_SSL_CA: caPath,
+        },
+      );
       expect(result).toBeDefined();
       const ca = (result as { ca: string[] }).ca;
       expect(Array.isArray(ca)).toBe(true);
@@ -73,12 +82,16 @@ describe('resolveSslConfig with DATABASE_SSL_CA', () => {
   });
 
   it('is ignored for localhost', () => {
-    expect(resolveSslConfig('postgresql://u:p@localhost:5432/x', { DATABASE_SSL_CA: caPath })).toBeUndefined();
+    expect(
+      resolveSslConfig('postgresql://u:p@localhost:5432/x', { DATABASE_SSL_CA: caPath }),
+    ).toBeUndefined();
   });
 
   it('throws a clear error when the CA file does not exist', () => {
     expect(() =>
-      resolveSslConfig('postgresql://u:p@db.example.com:5432/x', { DATABASE_SSL_CA: '/nonexistent/ca.crt' }),
+      resolveSslConfig('postgresql://u:p@db.example.com:5432/x', {
+        DATABASE_SSL_CA: '/nonexistent/ca.crt',
+      }),
     ).toThrow(/DATABASE_SSL_CA/);
   });
 });

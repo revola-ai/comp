@@ -113,9 +113,9 @@ describe('assertNotProduction checks the effective connection parameters (as pg 
   });
 
   it('refuses the direct host in upper case', () => {
-    expect(() =>
-      check(`postgresql://postgres:pw@${DIRECT.toUpperCase()}:5432/postgres`),
-    ).toThrow(/production_target_refused/);
+    expect(() => check(`postgresql://postgres:pw@${DIRECT.toUpperCase()}:5432/postgres`)).toThrow(
+      /production_target_refused/,
+    );
   });
 
   it('refuses a pooler URL whose user query parameter names the production ref', () => {
@@ -125,9 +125,9 @@ describe('assertNotProduction checks the effective connection parameters (as pg 
   });
 
   it('refuses a local URL whose host query parameter is the production host', () => {
-    expect(() =>
-      check(`postgresql://postgres:pw@127.0.0.1:5432/postgres?host=${DIRECT}`),
-    ).toThrow(/production_target_refused/);
+    expect(() => check(`postgresql://postgres:pw@127.0.0.1:5432/postgres?host=${DIRECT}`)).toThrow(
+      /production_target_refused/,
+    );
   });
 
   it('refuses when any of several hosts is production', () => {

@@ -97,9 +97,7 @@ describe('buildPgAdapterOptions: URL TLS parameters in production', () => {
       databaseUrl: `${BASE}?sslmode=require&application_name=comp-api`,
       env: production,
     });
-    expect(new URL(options.connectionString).searchParams.get('application_name')).toBe(
-      'comp-api',
-    );
+    expect(new URL(options.connectionString).searchParams.get('application_name')).toBe('comp-api');
   });
 
   it('logs the TLS mode pg will actually use', () => {

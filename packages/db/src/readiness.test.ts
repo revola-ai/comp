@@ -211,9 +211,7 @@ describe('createReadinessCheck (single flight)', () => {
   it('lets five concurrent checks during a stalled query share one underlying query', async () => {
     const stalled = stalledProbe();
     const check = createReadinessCheck({ probe: stalled.probe });
-    const results = await Promise.all(
-      Array.from({ length: 5 }, () => check({ timeoutMs: 10 })),
-    );
+    const results = await Promise.all(Array.from({ length: 5 }, () => check({ timeoutMs: 10 })));
     expect(stalled.calls()).toBe(1);
     expect(results).toEqual(Array(5).fill({ status: 'unavailable', reason: 'timeout' }));
   });

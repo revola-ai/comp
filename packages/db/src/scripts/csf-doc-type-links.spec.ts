@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { execSync } from 'node:child_process';
 import path from 'node:path';
-import { db } from '../client';
 import { syncCsfCrosswalk } from '../../prisma/seed/sync-framework-scoped-links';
+import { db } from '../client';
 import { CSF_FRAMEWORK_ID, loadCrosswalk } from './csf-crosswalk';
 import { isScratchDatabaseUrl } from './scratch-db';
 
@@ -33,7 +33,9 @@ describe.skipIf(!isScratchDb)('CSF doc-type scoped links', () => {
       select: { id: true },
     });
     if (!unmapped) {
-      throw new Error('Expected at least one seeded control template outside the CSF crosswalk mapping');
+      throw new Error(
+        'Expected at least one seeded control template outside the CSF crosswalk mapping',
+      );
     }
 
     const stale = await db.frameworkEditorControlDocumentTypeLink.create({
@@ -75,7 +77,8 @@ describe.skipIf(!isScratchDb)('CSF doc-type scoped links', () => {
       where: { frameworkId: CSF_FRAMEWORK_ID },
       select: { controlTemplateId: true, formType: true },
     });
-    const key = (l: { controlTemplateId: string; formType: string }) => `${l.controlTemplateId}|${l.formType}`;
+    const key = (l: { controlTemplateId: string; formType: string }) =>
+      `${l.controlTemplateId}|${l.formType}`;
     expect(new Set(after.map(key))).toEqual(new Set(before.map(key)));
   });
 });

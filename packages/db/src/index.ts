@@ -2,7 +2,11 @@ export * from '@prisma/client';
 export { DatabaseConfigError } from './database-config-error';
 export type { DatabaseConfigErrorCode } from './database-config-error';
 export * from './framework-manifest';
-export { DATABASE_CONNECT_TIMEOUT_MS, buildPgAdapterOptions, tlsModeOf } from './pg-adapter-options';
+export {
+  DATABASE_CONNECT_TIMEOUT_MS,
+  buildPgAdapterOptions,
+  tlsModeOf,
+} from './pg-adapter-options';
 export type { PgAdapterOptions, TlsMode } from './pg-adapter-options';
 export {
   READINESS_TIMEOUT_MS,
