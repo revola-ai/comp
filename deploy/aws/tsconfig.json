@@ -1,0 +1,10 @@
+{
+  "extends": "@trycompai/tsconfig/base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": ["bun"]
+  },
+  "include": ["*.ts", "tests/**/*.ts"],
+  "exclude": ["node_modules", "terraform"]
+}

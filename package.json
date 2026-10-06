@@ -79,12 +79,13 @@
     "test": "turbo test --parallel",
     "test:release": "node scripts/test-release.js",
     "typecheck": "turbo typecheck",
-    "typecheck:ci": "turbo typecheck --filter={apps/**} --filter={packages/**} --filter=!@trycompai/integrations --filter=!@trycompai/ui"
+    "typecheck:ci": "turbo typecheck --filter={apps/**} --filter={packages/**} --filter=@trycompai/deploy-aws --filter=!@trycompai/integrations --filter=!@trycompai/ui"
   },
   "workspaces": [
     "apps/*",
     "apps/browser-extension/*",
     "!apps/mcp-server",
+    "deploy/aws",
     "packages/*"
   ],
   "dependencies": {

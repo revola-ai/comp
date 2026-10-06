@@ -116,3 +116,7 @@ dbq_*.js
 
 # TLS CA certificates for hosted databases (downloaded per environment, never committed)
 packages/db/certs/*.crt
+
+# AWS deploy workspace: generated shell config and Terraform provider cache
+deploy/aws/config.env
+deploy/aws/terraform/.terraform
