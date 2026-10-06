@@ -23,6 +23,7 @@ import { HybridAuthGuard } from '../auth/hybrid-auth.guard';
 import { PermissionGuard } from '../auth/permission.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
 import { ApiKeyService } from '../auth/api-key.service';
+import { resolveKeyProvenance } from '../auth/api-key-provenance';
 import type { AuthContext as AuthContextType } from '../auth/types';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import type { TransferOwnershipDto } from './dto/transfer-ownership.dto';
@@ -277,7 +278,7 @@ export class OrganizationController {
   @Get('api-keys/available-scopes')
   @RequirePermission('apiKey', 'read')
   @ApiOperation({ summary: 'Get available API key scopes' })
-  async getAvailableScopes() {
+  getAvailableScopes() {
     return { data: this.apiKeyService.getAvailableScopes() };
   }
 
@@ -365,15 +366,15 @@ export class OrganizationController {
     if (!body.name) {
       throw new BadRequestException('Name is required');
     }
-    return this.apiKeyService.create(
+    return this.apiKeyService.create({
       organizationId,
-      body.name,
-      body.expiresAt,
-      body.scopes,
-      // Attribute the key to the member creating it (session auth). Null when
-      // created via API key/service token — falls back to org owner at use time.
-      authContext.memberId ?? null,
-    );
+      name: body.name,
+      expiresAt: body.expiresAt,
+      scopes: body.scopes,
+      // The creating member, or the authenticating key's creator for a key
+      // minted through an API key; refused when neither is known.
+      provenance: resolveKeyProvenance(authContext),
+    });
   }
 
   @Post('api-keys/revoke')

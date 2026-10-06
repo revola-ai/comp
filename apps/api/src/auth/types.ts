@@ -36,5 +36,7 @@ export interface AuthContext {
   memberId?: string; // Member ID for assignment filtering (only available for session auth)
   memberDepartment?: string; // Member department for visibility filtering (only available for session auth)
   apiKeyScopes?: string[]; // Scopes for API key auth (empty = legacy full access)
+  apiKeyCreatedByMemberId?: string | null; // Member that created the authenticating key - only set for API key auth. Keys it creates inherit this creator.
+  apiKeyOrganizationOwned?: boolean; // Whether the authenticating key is organization-owned - only set for API key auth. Keys it creates inherit this.
   impersonatedBy?: string; // User ID of the admin who initiated impersonation (only set during impersonation sessions)
 }

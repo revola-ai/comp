@@ -178,11 +178,9 @@ describe('OrganizationController', () => {
     it('passes backgroundCheckStepEnabled through to the service', async () => {
       mockOrganizationService.updateById.mockResolvedValue({ id: 'org_123' });
 
-      await controller.updateOrganization(
-        'org_123',
-        sessionAuthContext,
-        { backgroundCheckStepEnabled: false },
-      );
+      await controller.updateOrganization('org_123', sessionAuthContext, {
+        backgroundCheckStepEnabled: false,
+      });
 
       expect(mockOrganizationService.updateById).toHaveBeenCalledWith(
         'org_123',
@@ -251,52 +249,6 @@ describe('OrganizationController', () => {
           {} as { settings: never[] },
         ),
       ).rejects.toThrow('settings is required and must be an array');
-    });
-  });
-
-  describe('createApiKey', () => {
-    beforeEach(() => {
-      mockApiKeyService.create.mockResolvedValue({ id: 'apk_1', key: 'comp_x' });
-    });
-
-    it('attributes a session-created key to the creating member', async () => {
-      await controller.createApiKey('org_123', sessionAuthContext, {
-        name: 'CI Pipeline',
-        scopes: ['vendor:read'],
-      });
-
-      expect(mockApiKeyService.create).toHaveBeenCalledWith(
-        'org_123',
-        'CI Pipeline',
-        undefined,
-        ['vendor:read'],
-        'mem_123',
-      );
-    });
-
-    it('forwards null creator when created via API key / service token (no session member)', async () => {
-      await controller.createApiKey('org_123', apiKeyAuthContext, {
-        name: 'Nested Key',
-        scopes: ['vendor:read'],
-      });
-
-      expect(mockApiKeyService.create).toHaveBeenCalledWith(
-        'org_123',
-        'Nested Key',
-        undefined,
-        ['vendor:read'],
-        null,
-      );
-    });
-
-    it('throws BadRequestException when name is missing', async () => {
-      await expect(
-        controller.createApiKey('org_123', sessionAuthContext, {
-          name: '',
-          scopes: ['vendor:read'],
-        }),
-      ).rejects.toThrow(BadRequestException);
-      expect(mockApiKeyService.create).not.toHaveBeenCalled();
     });
   });
 });

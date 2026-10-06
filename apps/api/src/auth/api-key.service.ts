@@ -7,6 +7,7 @@ import {
 import { db } from '@db';
 import { statement } from '@trycompai/auth';
 import { randomBytes } from 'node:crypto';
+import type { ApiKeyProvenance } from './api-key-provenance';
 import {
   extractKeyPrefix,
   findMatchingApiKey,
@@ -14,7 +15,7 @@ import {
 } from './api-key-lookup';
 import {
   type ApiKeyValidationResult,
-  hasInactiveCreator,
+  apiKeyRejection,
   LEGACY_KEY_SCAN_LIMIT,
   toValidationResult,
 } from './api-key-validation';
@@ -34,13 +35,19 @@ export class ApiKeyService {
     return randomBytes(16).toString('hex');
   }
 
-  async create(
-    organizationId: string,
-    name: string,
-    expiresAt?: string,
-    scopes?: string[],
-    createdByMemberId?: string | null,
-  ) {
+  async create({
+    organizationId,
+    name,
+    expiresAt,
+    scopes,
+    provenance,
+  }: {
+    organizationId: string;
+    name: string;
+    expiresAt?: string;
+    scopes?: string[];
+    provenance: ApiKeyProvenance;
+  }) {
     // New keys must have explicit scopes — no more legacy empty-scope keys
     if (!scopes || scopes.length === 0) {
       throw new BadRequestException(
@@ -89,7 +96,8 @@ export class ApiKeyService {
         expiresAt: expirationDate,
         organizationId,
         scopes,
-        createdByMemberId: createdByMemberId ?? null,
+        createdByMemberId: provenance.createdByMemberId,
+        organizationOwned: provenance.organizationOwned,
       },
       select: {
         id: true,
@@ -174,10 +182,12 @@ export class ApiKeyService {
       const { record: matchingRecord, backfillPrefix } = match;
 
       // Offboarding: a personal key stops working once its creator is no
-      // longer an active member, even before revocation has run.
-      if (hasInactiveCreator(matchingRecord)) {
+      // longer an active member, even before revocation has run, and a
+      // creatorless personal key newer than the legacy cutoff is an orphan.
+      const rejection = apiKeyRejection(matchingRecord);
+      if (rejection) {
         this.logger.warn(
-          `API key ${matchingRecord.id} rejected: its creator is no longer an active member`,
+          `API key ${matchingRecord.id} rejected (${rejection}): its creator is no longer an active member`,
         );
         return null;
       }

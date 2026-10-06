@@ -40,6 +40,7 @@ function keyRecord(overrides: Record<string, unknown>) {
     createdByMemberId: 'mem_departed',
     organizationOwned: false,
     createdBy: { isActive: false, deactivated: true },
+    createdAt: new Date('2026-10-07T00:00:00Z'),
     ...overrides,
   };
 }
@@ -95,4 +96,30 @@ describe('HybridAuthGuard with a key whose creator left the organization', () =>
       expect(request.apiKeyOrganizationOwned).toBe(true);
     },
   );
+
+  it.each(['GET', 'POST', 'DELETE'])(
+    'answers 401 on a %s request with a creatorless personal key minted after the cutoff',
+    async (method) => {
+      mockApiKeyFindMany.mockResolvedValueOnce([
+        keyRecord({ createdByMemberId: null, createdBy: null }),
+      ]);
+      const { context } = contextFor(method);
+      await expect(guard.canActivate(context)).rejects.toThrow(
+        UnauthorizedException,
+      );
+    },
+  );
+
+  it('still accepts a creatorless legacy key minted before the cutoff', async () => {
+    mockApiKeyFindMany.mockResolvedValueOnce([
+      keyRecord({
+        createdByMemberId: null,
+        createdBy: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+      }),
+    ]);
+    const { context, request } = contextFor('POST');
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(request.apiKeyCreatedByMemberId).toBeNull();
+  });
 });
