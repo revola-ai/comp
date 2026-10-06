@@ -75,7 +75,8 @@ if [ -f "../../apps/app/.env.test.local" ]; then
     export $(grep DATABASE_URL ../../apps/app/.env.test.local | xargs)
 fi
 # Create database and push schema (will create DB if it doesn't exist)
-bunx prisma db push --skip-generate --accept-data-loss
+# The guard refuses the shared production database (also enforced in prisma.config.ts).
+bun scripts/prod-guard.ts bunx prisma db push --skip-generate --accept-data-loss
 cd ../../apps/app
 echo -e "${GREEN}✓ Migrations complete${NC}"
 

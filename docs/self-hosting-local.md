@@ -109,9 +109,9 @@ With `NODE_ENV=production` and a non-local host it refuses to start without `DAT
 
 ### Schema changes against the shared database
 
-Laptops and production share this database, so `bun run db:migrate`, `db:migrate:reset`, `db:push` and `db:seed` in `packages/db` (and `db:migrate` in the apps) refuse to run when `DATABASE_URL` points at the production project recorded in `packages/db/production-target.json`.
+Laptops and production share this database, so `prisma migrate dev`, `migrate reset`, `db push` and `db seed` refuse to run when `DATABASE_URL` points at the production project recorded in `packages/db/production-target.json`.
+The check runs inside every `prisma.config.ts` (`packages/db`, `apps/app`, `apps/portal`, `apps/framework-editor`), so it applies to the package scripts and to `bunx prisma ...` alike; `bun run db:seed` checks too.
 `COMP_I_AM_TOUCHING_PROD=1` runs them anyway; use it only when you mean to change production by hand.
-Calling `bunx prisma migrate dev` directly skips that guard, so always go through the scripts.
 
 The schema flow:
 
