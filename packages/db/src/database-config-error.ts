@@ -1,5 +1,9 @@
 export type DatabaseConfigErrorCode =
-  'ca_file_missing' | 'database_url_invalid' | 'database_url_missing' | 'pool_max_invalid';
+  | 'ca_file_missing'
+  | 'database_url_invalid'
+  | 'database_url_missing'
+  | 'pool_max_invalid'
+  | 'ssl_param_conflict';
 
 // A connection setting that makes it unsafe or impossible to build a Prisma client.
 // The code leads the message so it shows up in a crashed container's stderr; the

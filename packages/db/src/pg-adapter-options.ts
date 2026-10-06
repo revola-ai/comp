@@ -67,6 +67,39 @@ function assertProductionCa({ databaseUrl, env }: { databaseUrl: string; env: En
   });
 }
 
+// pg parses the connection string over the explicit options, so these URL parameters
+// would replace the enforced `ssl` config (ssl=0 turns TLS off, sslrootcert swaps the
+// trust store, uselibpqcompat or sslnegotiation=direct rewrite it). sslmode values the
+// enforced verified TLS already satisfies are stripped instead (stripSslMode).
+const TLS_OVERRIDE_PARAMS = ['ssl', 'sslrootcert', 'sslcert', 'sslkey', 'uselibpqcompat'];
+const SATISFIED_SSL_MODES = new Set(['require', 'verify-ca', 'verify-full']);
+
+function conflictingTlsParams(databaseUrl: string): string[] {
+  const params = new URL(databaseUrl).searchParams;
+  const conflicts = TLS_OVERRIDE_PARAMS.filter((name) => params.has(name));
+  if (params.getAll('sslmode').some((mode) => !SATISFIED_SSL_MODES.has(mode))) {
+    conflicts.push('sslmode');
+  }
+  if (params.getAll('sslnegotiation').some((value) => value !== 'postgres')) {
+    conflicts.push('sslnegotiation');
+  }
+  return conflicts;
+}
+
+function assertNoTlsParamConflict({ databaseUrl, env }: { databaseUrl: string; env: Env }): void {
+  if (env.NODE_ENV !== 'production') return;
+  if (isLocalhostUrl(databaseUrl)) return;
+  const conflicts = conflictingTlsParams(databaseUrl);
+  if (conflicts.length === 0) return;
+  throw new DatabaseConfigError({
+    code: 'ssl_param_conflict',
+    detail:
+      `DATABASE_URL sets ${conflicts.join(', ')}, which would override the enforced TLS ` +
+      'settings (DATABASE_SSL_CA, verified chain and hostname). Remove it from the URL; ' +
+      'sslmode=require, verify-ca and verify-full are accepted and stripped.',
+  });
+}
+
 export function tlsModeOf(ssl: SslConfig): TlsMode {
   if (ssl === undefined) return 'disabled';
   if ('ca' in ssl) return 'verified';
@@ -99,6 +132,7 @@ export function buildPgAdapterOptions({
   }
   const max = parsePoolMax(env.DATABASE_POOL_MAX);
   assertProductionCa({ databaseUrl, env });
+  assertNoTlsParamConflict({ databaseUrl, env });
   const ssl = resolveSslConfig(databaseUrl, env);
   const connectionString = ssl === undefined ? databaseUrl : stripSslMode(databaseUrl);
 

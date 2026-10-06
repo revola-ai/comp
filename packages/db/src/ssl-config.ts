@@ -11,11 +11,16 @@ export type SslConfig =
 
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
 
+// pg connects to a `host` query parameter instead of the authority host, so every
+// host the URL could reach must be local.
 export function isLocalhostUrl(connectionString: string): boolean {
   try {
-    const { hostname } = new URL(connectionString);
-    const stripped = hostname.replace(/^\[/, '').replace(/\]$/, '');
-    return LOCAL_HOSTNAMES.has(stripped);
+    const url = new URL(connectionString);
+    const queryHosts = url.searchParams.getAll('host');
+    const hosts = (queryHosts.length > 0 ? queryHosts : [url.hostname]).flatMap((value) =>
+      value.split(','),
+    );
+    return hosts.every((host) => LOCAL_HOSTNAMES.has(host.replace(/^\[/, '').replace(/\]$/, '')));
   } catch {
     // Malformed URL — be conservative and treat as remote so we don't
     // accidentally disable TLS verification.
