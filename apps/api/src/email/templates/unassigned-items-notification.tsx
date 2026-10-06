@@ -36,7 +36,11 @@ const ITEM_TYPE_LABELS: Record<UnassignedItem['type'], string> = {
   vendor: 'Vendor',
 };
 
-function getItemUrl(baseUrl: string, organizationId: string, item: UnassignedItem): string {
+function getItemUrl(
+  baseUrl: string,
+  organizationId: string,
+  item: UnassignedItem,
+): string {
   const paths: Record<UnassignedItem['type'], string> = {
     task: 'tasks',
     policy: 'policies',
@@ -54,10 +58,12 @@ export const UnassignedItemsNotificationEmail = ({
   unassignedItems,
   email,
 }: Props) => {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-    ?? process.env.BETTER_AUTH_URL
-    ?? 'https://app.trycomp.ai';
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    process.env.BETTER_AUTH_URL ??
+    'https://app.trycomp.ai';
   const link = `${baseUrl}/${organizationId}`;
+  const unsubscribeUrl = email ? getUnsubscribeUrl(email) : undefined;
 
   const groupedItems = unassignedItems.reduce(
     (acc, item) => {
@@ -98,22 +104,29 @@ export const UnassignedItemsNotificationEmail = ({
               Member Removed - Items Require Reassignment
             </Heading>
 
-            <Text className="text-[14px] leading-[24px] text-[#121212]">Hi {userName},</Text>
+            <Text className="text-[14px] leading-[24px] text-[#121212]">
+              Hi {userName},
+            </Text>
 
             <Text className="text-[14px] leading-[24px] text-[#121212]">
               <strong>{removedMemberName}</strong> has been removed from{' '}
-              <strong>{organizationName}</strong>. As a result, the following items that were
-              previously assigned to them now require a new assignee:
+              <strong>{organizationName}</strong>. As a result, the following
+              items that were previously assigned to them now require a new
+              assignee:
             </Text>
 
             {Object.entries(groupedItems).map(([type, items]) => (
               <Section key={type} className="my-[12px]">
                 <Text className="text-[16px] font-medium text-[#121212] mb-[8px] mt-0">
-                  {ITEM_TYPE_LABELS[type as UnassignedItem['type']]}s ({items.length})
+                  {ITEM_TYPE_LABELS[type as UnassignedItem['type']]}s (
+                  {items.length})
                 </Text>
                 <ul className="list-disc pl-[12px]">
                   {items.map((item) => (
-                    <li key={item.id} className="text-[14px] leading-[24px] text-[#121212]">
+                    <li
+                      key={item.id}
+                      className="text-[14px] leading-[24px] text-[#121212]"
+                    >
                       <Link
                         href={getItemUrl(baseUrl, organizationId, item)}
                         className="text-[#121212] underline"
@@ -139,10 +152,13 @@ export const UnassignedItemsNotificationEmail = ({
               </a>
             </Section>
 
-            {email && (
+            {unsubscribeUrl && (
               <Section>
                 <Text className="text-[12px] leading-[24px] text-[#666666]">
-                  <Link href={getUnsubscribeUrl(email)} className="text-[#121212] underline">
+                  <Link
+                    href={unsubscribeUrl}
+                    className="text-[#121212] underline"
+                  >
                     Unsubscribe
                   </Link>
                 </Text>

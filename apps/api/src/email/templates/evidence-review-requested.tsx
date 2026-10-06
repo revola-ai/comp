@@ -96,15 +96,20 @@ export const EvidenceReviewRequestedEmail = ({
               </a>
             </Text>
 
-            <Section className="mt-[30px] mb-[20px]">
-              <Text className="text-[12px] leading-[20px] text-[#666666]">
-                Don't want to receive task assignment notifications?{' '}
-                <Link href={unsubscribeUrl} className="text-[#121212] underline">
-                  Manage your email preferences
-                </Link>
-                .
-              </Text>
-            </Section>
+            {unsubscribeUrl && (
+              <Section className="mt-[30px] mb-[20px]">
+                <Text className="text-[12px] leading-[20px] text-[#666666]">
+                  Don't want to receive task assignment notifications?{' '}
+                  <Link
+                    href={unsubscribeUrl}
+                    className="text-[#121212] underline"
+                  >
+                    Manage your email preferences
+                  </Link>
+                  .
+                </Text>
+              </Section>
+            )}
 
             <br />
 

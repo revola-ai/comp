@@ -5,7 +5,6 @@ import { ChangeEmailConfirmationEmail } from './change-email-confirmation';
 import { InviteEmail } from './invite';
 import { InvitePortalEmail } from './invite-portal';
 import { MagicLinkEmail } from './magic-link';
-import { VerifyEmail } from './verify-email';
 import { WelcomeEmail } from './marketing/welcome';
 import { OTPVerificationEmail } from './otp';
 import { PolicyAcknowledgmentDigestEmail } from './policy-acknowledgment-digest';
@@ -15,6 +14,7 @@ import { TaskStatusNotificationEmail } from './reminders/task-status-notificatio
 import { WeeklyTaskDigestEmail } from './reminders/weekly-task-digest';
 import { TrainingCompletedEmail } from './training-completed';
 import { UnassignedItemsNotificationEmail } from './unassigned-items-notification';
+import { VerifyEmail } from './verify-email';
 
 // Regression: PR #2501 removed <head> from every template, which broke
 // @react-email/tailwind's media-query injection (md:* classes) and caused
@@ -228,6 +228,28 @@ describe('email templates render to non-empty HTML', () => {
       expect(html).not.toContain(SUSPENSE_ERROR_MARKER);
       expect(html).toContain('<body');
       expect(html.length).toBeGreaterThan(2000);
+    });
+  }
+});
+
+describe('email templates without an unsubscribe secret', () => {
+  // Laptops may run without UNSUBSCRIBE_SECRET: mail still goes out, just without the link.
+  beforeAll(() => {
+    vi.stubEnv('UNSUBSCRIBE_SECRET', '');
+    vi.stubEnv('AUTH_SECRET', '');
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+  afterAll(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  for (const { name, el } of cases) {
+    it(`${name} renders without an unsubscribe link`, async () => {
+      const html = await render(el);
+      expect(html).toContain('<body');
+      expect(html).not.toContain('/unsubscribe/preferences');
+      expect(html).not.toContain('unsubscribe here');
     });
   }
 });

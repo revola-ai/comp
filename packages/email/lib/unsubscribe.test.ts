@@ -36,7 +36,6 @@ describe('unsubscribe tokens', () => {
     expect(() => verifyUnsubscribeToken({ email: EMAIL, token: 'x' })).toThrow(
       UnsubscribeSecretMissingError,
     );
-    expect(() => getUnsubscribeUrl(EMAIL)).toThrow(UnsubscribeSecretMissingError);
   });
 
   it('never signs with the old fallback-secret', () => {
@@ -60,7 +59,9 @@ describe('getUnsubscribeUrl', () => {
   it('points at the app host, never the API host in NEXT_PUBLIC_BETTER_AUTH_URL', () => {
     vi.stubEnv('NEXT_PUBLIC_BETTER_AUTH_URL', 'https://api.comp.revola.ai');
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.comp.revola.ai/');
-    const url = new URL(getUnsubscribeUrl(EMAIL));
+    const href = getUnsubscribeUrl(EMAIL);
+    expect(href).toBeDefined();
+    const url = new URL(href ?? '');
     expect(url.origin).toBe('https://app.comp.revola.ai');
     expect(url.pathname).toBe('/unsubscribe/preferences');
     expect(url.searchParams.get('email')).toBe(EMAIL);

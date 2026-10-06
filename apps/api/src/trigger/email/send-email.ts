@@ -1,7 +1,7 @@
 import { logger, queue, schemaTask } from '@trigger.dev/sdk';
 import { z } from 'zod';
 import { resend } from '../../email/resend';
-import { generateUnsubscribeToken } from '@trycompai/email';
+import { listUnsubscribeHeaders } from './list-unsubscribe-headers';
 
 const emailQueue = queue({
   name: 'send-email',
@@ -87,15 +87,8 @@ export const sendEmailTask = schemaTask({
     }
 
     try {
-      // Build List-Unsubscribe headers for Gmail/RFC 8058 one-click compliance
-      const apiBaseUrl =
-        process.env.NEXT_PUBLIC_API_URL || 'https://api.trycomp.ai';
-      const token = generateUnsubscribeToken(params.to);
-      const oneClickUrl = `${apiBaseUrl}/v1/email/unsubscribe?email=${encodeURIComponent(params.to)}&token=${encodeURIComponent(token)}`;
-      const headers: Record<string, string> = {
-        'List-Unsubscribe': `<${oneClickUrl}>`,
-        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-      };
+      // RFC 8058 one-click headers; absent when no unsubscribe secret is configured.
+      const headers = listUnsubscribeHeaders(params.to);
 
       const { data, error } = await resend.emails.send({
         from: fromAddress,

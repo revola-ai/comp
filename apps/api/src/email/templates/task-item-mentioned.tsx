@@ -34,9 +34,6 @@ export const TaskItemMentionedEmail = ({
   taskTitle,
   mentionedByName,
   entityName,
-  entityRoutePath,
-  entityId,
-  organizationId,
   taskUrl,
 }: Props) => {
   const unsubscribeUrl = getUnsubscribeUrl(toEmail);
@@ -94,15 +91,20 @@ export const TaskItemMentionedEmail = ({
               </a>
             </Text>
 
-            <Section className="mt-[30px] mb-[20px]">
-              <Text className="text-[12px] leading-[20px] text-[#666666]">
-                Don't want to receive task mention notifications?{' '}
-                <Link href={unsubscribeUrl} className="text-[#121212] underline">
-                  Manage your email preferences
-                </Link>
-                .
-              </Text>
-            </Section>
+            {unsubscribeUrl && (
+              <Section className="mt-[30px] mb-[20px]">
+                <Text className="text-[12px] leading-[20px] text-[#666666]">
+                  Don't want to receive task mention notifications?{' '}
+                  <Link
+                    href={unsubscribeUrl}
+                    className="text-[#121212] underline"
+                  >
+                    Manage your email preferences
+                  </Link>
+                  .
+                </Text>
+              </Section>
+            )}
 
             <br />
 
@@ -115,4 +117,3 @@ export const TaskItemMentionedEmail = ({
 };
 
 export default TaskItemMentionedEmail;
-

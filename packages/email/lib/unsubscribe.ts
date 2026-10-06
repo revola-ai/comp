@@ -15,10 +15,30 @@ export class UnsubscribeSecretMissingError extends Error {
  * apps/app verifies with). There is no built-in fallback: a public default would let
  * anyone forge a token for any address.
  */
+function configuredSecret(): string | undefined {
+  return process.env.UNSUBSCRIBE_SECRET?.trim() || process.env.AUTH_SECRET?.trim() || undefined;
+}
+
 function unsubscribeSecret(): string {
-  const secret = process.env.UNSUBSCRIBE_SECRET?.trim() || process.env.AUTH_SECRET?.trim();
+  const secret = configuredSecret();
   if (!secret) throw new UnsubscribeSecretMissingError();
   return secret;
+}
+
+/** Whether a signing secret is set, so unsubscribe links and headers can be built. */
+export function isUnsubscribeConfigured(): boolean {
+  return configuredSecret() !== undefined;
+}
+
+let warnedUnsubscribeDisabled = false;
+
+/** One warning per process, never per email: a laptop without the secret sends a lot of mail. */
+function warnUnsubscribeDisabledOnce(): void {
+  if (warnedUnsubscribeDisabled) return;
+  warnedUnsubscribeDisabled = true;
+  console.warn(
+    '[email] UNSUBSCRIBE_SECRET (or AUTH_SECRET) is not set: emails are sent without List-Unsubscribe headers or unsubscribe links. Copy the shared UNSUBSCRIBE_SECRET into the env file to enable them.',
+  );
 }
 
 /**
@@ -55,10 +75,23 @@ export function verifyUnsubscribeToken({
 }
 
 /**
- * Generate an unsubscribe URL for an email address (preferences page)
+ * The token for an outgoing email, or undefined (with one warning per process) when no
+ * secret is configured: the email is then sent without unsubscribe headers or links.
  */
-export function getUnsubscribeUrl(email: string): string {
-  const token = generateUnsubscribeToken(email);
-  const baseUrl = getBaseUrl();
-  return `${baseUrl}/unsubscribe/preferences?email=${encodeURIComponent(email)}&token=${token}`;
+export function getUnsubscribeToken(email: string): string | undefined {
+  if (!isUnsubscribeConfigured()) {
+    warnUnsubscribeDisabledOnce();
+    return undefined;
+  }
+  return generateUnsubscribeToken(email);
+}
+
+/**
+ * The unsubscribe URL (preferences page) for an email address, or undefined when no
+ * secret is configured, in which case the email omits its unsubscribe link.
+ */
+export function getUnsubscribeUrl(email: string): string | undefined {
+  const token = getUnsubscribeToken(email);
+  if (token === undefined) return undefined;
+  return `${getBaseUrl()}/unsubscribe/preferences?email=${encodeURIComponent(email)}&token=${token}`;
 }
