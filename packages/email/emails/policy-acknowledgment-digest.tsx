@@ -33,8 +33,7 @@ export interface PolicyAcknowledgmentDigestEmailProps {
   orgs: PolicyAcknowledgmentDigestOrg[];
 }
 
-const pluralizePolicies = (count: number) =>
-  count === 1 ? '1 policy' : `${count} policies`;
+const pluralizePolicies = (count: number) => (count === 1 ? '1 policy' : `${count} policies`);
 
 /**
  * Shared subject-line builder so the trigger task and the email Preview
@@ -60,9 +59,10 @@ export const PolicyAcknowledgmentDigestEmail = ({
   const [firstOrg] = orgsWithPolicies;
   if (!firstOrg) return null;
 
-  const portalBase = (
-    process.env.NEXT_PUBLIC_PORTAL_URL ?? 'https://portal.trycomp.ai'
-  ).replace(/\/+$/, '');
+  const portalBase = (process.env.NEXT_PUBLIC_PORTAL_URL ?? 'https://portal.trycomp.ai').replace(
+    /\/+$/,
+    '',
+  );
   const subjectText = computePolicyAcknowledgmentDigestSubject(orgsWithPolicies);
   const isMultiOrg = orgsWithPolicies.length > 1;
 
@@ -88,15 +88,13 @@ export const PolicyAcknowledgmentDigestEmail = ({
 
             {isMultiOrg ? (
               <Text className="text-[14px] leading-[24px] text-[#121212]">
-                The following organizations have policies awaiting your review
-                and acknowledgment:
+                The following organizations have policies awaiting your review and acknowledgment:
               </Text>
             ) : (
               <Text className="text-[14px] leading-[24px] text-[#121212]">
-                Your organization{' '}
-                <strong>{firstOrg.name}</strong> has{' '}
-                {pluralizePolicies(firstOrg.policies.length)} awaiting
-                your review and acknowledgment:
+                Your organization <strong>{firstOrg.name}</strong> has{' '}
+                {pluralizePolicies(firstOrg.policies.length)} awaiting your review and
+                acknowledgment:
               </Text>
             )}
 
@@ -110,15 +108,9 @@ export const PolicyAcknowledgmentDigestEmail = ({
                     </Text>
                   )}
                   {org.policies.map((policy) => (
-                    <Text
-                      key={policy.id}
-                      className="m-0 text-[14px] leading-[24px] text-[#121212]"
-                    >
+                    <Text key={policy.id} className="m-0 text-[14px] leading-[24px] text-[#121212]">
                       &bull;{' '}
-                      <Link
-                        href={policy.url}
-                        className="text-[#121212] underline"
-                      >
+                      <Link href={policy.url} className="text-[#121212] underline">
                         {policy.name}
                       </Link>
                     </Text>
@@ -138,15 +130,11 @@ export const PolicyAcknowledgmentDigestEmail = ({
             <br />
             <Section>
               <Text className="text-[12px] leading-[24px] text-[#666666]">
-                This notification was intended for{' '}
-                <span className="text-[#121212]">{email}</span>.
+                This notification was intended for <span className="text-[#121212]">{email}</span>.
               </Text>
             </Section>
 
-            <UnsubscribeLink
-              email={email}
-              unsubscribeUrl={getUnsubscribeUrl(email)}
-            />
+            <UnsubscribeLink email={email} unsubscribeUrl={getUnsubscribeUrl(email)} />
 
             <br />
 
