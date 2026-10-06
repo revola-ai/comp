@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Portal self-service must NOT depend on the employee's org RBAC role. This
 // suite is the CS-774 regression guard: an employee on a custom role that lacks
@@ -19,7 +19,6 @@ const mocks = vi.hoisted(() => ({
   afterTasks: [] as Array<() => unknown>,
   env: {
     SERVICE_TOKEN_PORTAL: undefined as string | undefined,
-    NEXT_PUBLIC_API_URL: 'http://api.test',
   },
 }));
 
@@ -89,6 +88,10 @@ describe('POST /api/portal/complete-training', () => {
     vi.clearAllMocks();
     mocks.afterTasks.length = 0;
     mocks.env.SERVICE_TOKEN_PORTAL = undefined;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('returns 401 when there is no session', async () => {
@@ -315,7 +318,16 @@ describe('POST /api/portal/complete-training', () => {
     // dev-only `logger` util would have swallowed it outside development).
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    const res = await POST(makeRequest({ videoId: 'hipaa-sat-1', organizationId: 'org_1' }));
+    // Server-side calls use the internal API address and identify themselves.
+    vi.stubEnv('BACKEND_API_URL', 'http://api.internal.test');
+    vi.stubEnv('INTERNAL_API_TOKEN', 'internal-test-token');
+    const req = new NextRequest('http://localhost/api/portal/complete-training', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.7, 10.0.0.1' },
+      body: JSON.stringify({ videoId: 'hipaa-sat-1', organizationId: 'org_1' }),
+    });
+
+    const res = await POST(req);
 
     // Completion is persisted regardless — the email is best-effort.
     expect(res.status).toBe(200);
@@ -326,12 +338,17 @@ describe('POST /api/portal/complete-training', () => {
     await flushAfterTasks();
 
     expect(mocks.fetch).toHaveBeenCalledWith(
-      'http://api.test/v1/training/send-hipaa-completion-email',
+      'http://api.internal.test/v1/training/send-hipaa-completion-email',
       // The request is bounded: Node's fetch otherwise waits ~5 minutes, which
       // would keep the invocation alive long after the response was sent.
       expect.objectContaining({
         method: 'POST',
         signal: expect.any(AbortSignal),
+        headers: expect.objectContaining({
+          'x-service-token': 'svc-token',
+          'X-Internal-Token': 'internal-test-token',
+          'X-Forwarded-For': '203.0.113.7',
+        }),
       }),
     );
     // The HTTP failure must surface (in prod too), not be swallowed as success.

@@ -4,6 +4,7 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from '@sentry/nextjs';
+import { scrubSensitiveHeaders } from './src/lib/sentry-scrub';
 
 Sentry.init({
   dsn:
@@ -18,4 +19,9 @@ Sentry.init({
   tracesSampleRate: process.env.NODE_ENV === 'development' ? 1.0 : 0.1,
 
   enableLogs: true,
+
+  // X-Comp-Origin-Auth (set by Cloudflare for the ALB) and the internal API
+  // token are secrets; never ship them to Sentry with request headers.
+  beforeSend: scrubSensitiveHeaders,
+  beforeSendTransaction: scrubSensitiveHeaders,
 });

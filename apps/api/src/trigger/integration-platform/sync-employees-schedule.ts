@@ -1,6 +1,7 @@
 import { getManifest } from '@trycompai/integration-platform';
 import { db } from '@db';
 import { logger, schedules } from '@trigger.dev/sdk';
+import { isScheduledRunAllowed } from '../lib/schedule-guard';
 
 const API_BASE_URL = process.env.BASE_URL || 'http://localhost:3333';
 
@@ -12,7 +13,8 @@ export const syncEmployeesSchedule = schedules.task({
   id: 'sync-employees-schedule',
   cron: '0 7 * * *', // Daily at 7:00 AM UTC
   maxDuration: 1000 * 60 * 30, // 30 minutes
-  run: async (payload) => {
+  run: async (payload, { ctx }) => {
+    if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
     logger.info('Starting scheduled employee sync', {
       scheduledAt: payload.timestamp,
       lastRun: payload.lastTimestamp,

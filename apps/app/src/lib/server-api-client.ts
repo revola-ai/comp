@@ -1,6 +1,5 @@
 import { headers } from 'next/headers';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+import { getServerApiBaseUrl, getServerApiHeaders } from './server-api-base-url';
 
 interface ApiResponse<T = unknown> {
   data?: T;
@@ -24,12 +23,14 @@ async function call<T = unknown>(
 ): Promise<ApiResponse<T>> {
   const { method = 'GET', body, headers: customHeaders } = options;
 
+  const headerStore = await headers();
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...getServerApiHeaders({ incoming: headerStore }),
   };
 
   // Forward cookies for auth - better-auth handles session validation
-  const cookieHeader = (await headers()).get('cookie');
+  const cookieHeader = headerStore.get('cookie');
   if (cookieHeader) {
     requestHeaders['Cookie'] = cookieHeader;
   }
@@ -40,7 +41,7 @@ async function call<T = unknown>(
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const response = await fetch(`${getServerApiBaseUrl()}${endpoint}`, {
       method,
       headers: requestHeaders,
       body: body ? JSON.stringify(body) : undefined,

@@ -1,7 +1,5 @@
-import { env } from '@/env.mjs';
+import { getServerApiBaseUrl, getServerApiHeaders } from '@/app/lib/server-api-base-url';
 import { NextResponse } from 'next/server';
-
-const API_BASE = env.BACKEND_API_URL || env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
 
 /**
  * Thin proxy that forwards device-agent requests to the NestJS API.
@@ -17,9 +15,9 @@ export async function proxyToApi(
   apiPath: string,
   method: 'GET' | 'POST' | 'HEAD' = 'GET',
 ): Promise<Response> {
-  const url = `${API_BASE}${apiPath}`;
+  const url = `${getServerApiBaseUrl()}${apiPath}`;
 
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = getServerApiHeaders({ incoming: req.headers });
 
   if (method === 'POST') {
     headers['Content-Type'] = 'application/json';

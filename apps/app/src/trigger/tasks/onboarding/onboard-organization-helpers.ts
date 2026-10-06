@@ -34,6 +34,7 @@ import {
   type MitigationCitation,
 } from './select-mitigation-citations';
 import { updatePolicy } from './update-policy';
+import { getRevalidateUrl } from '../../lib/revalidate-url';
 
 type VendorForRiskAssessmentTrigger = {
   id: string;
@@ -369,11 +370,11 @@ function combineSentencesWithCitations({
  */
 export async function revalidateOrganizationPath(organizationId: string): Promise<void> {
   try {
-    logger.info(`Revalidating path ${process.env.BETTER_AUTH_URL}/${organizationId}`);
+    logger.info(`Revalidating path /${organizationId}`);
     const revalidateResponse = await axios.post(
-      `${process.env.BETTER_AUTH_URL}/api/revalidate/path`,
+      getRevalidateUrl(),
       {
-        path: `${process.env.BETTER_AUTH_URL}/${organizationId}`,
+        path: `/${organizationId}`,
         secret: process.env.REVALIDATION_SECRET,
         type: 'layout',
       },

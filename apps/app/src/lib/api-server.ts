@@ -1,5 +1,5 @@
-import { env } from '@/env.mjs';
 import { headers } from 'next/headers';
+import { getServerApiBaseUrl, getServerApiHeaders } from './server-api-base-url';
 
 export interface ApiResponse<T = unknown> {
   data?: T;
@@ -22,14 +22,15 @@ async function call<T = unknown>(
   options: CallOptions = {},
 ): Promise<ApiResponse<T>> {
   const { method = 'GET', body } = options;
-  const baseUrl = env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+  const baseUrl = getServerApiBaseUrl();
+  const headerStore = await headers();
 
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...getServerApiHeaders({ incoming: headerStore }),
   };
 
   // Forward cookies for auth - better-auth handles session validation
-  const headerStore = await headers();
   const cookieHeader = headerStore.get('cookie');
   if (cookieHeader) {
     requestHeaders['Cookie'] = cookieHeader;

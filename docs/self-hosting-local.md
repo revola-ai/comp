@@ -141,6 +141,24 @@ Deploying the workers with `trigger deploy` removes that dependency on someone's
 The deploy build of both projects vendors this fork's `packages/db/dist` into the worker image (`customPrismaExtension.ts`, via `packages/db/scripts/vendor-db-for-trigger.ts`) instead of installing upstream's `@trycompai/db` from npm, so run `bun run build` in `packages/db` first; the build stops if `dist/index.js` is missing.
 `caBundleExtension.ts` copies the committed Supabase CA (`deploy/aws/certs/supabase-ca.crt`) to `/app/certs/supabase-ca.crt` and sets `DATABASE_SSL_CA` (and `NODE_EXTRA_CA_CERTS`) to that path for deployed tasks.
 Tasks reach application storage through `createAppStorageClient` (`src/trigger/lib/app-storage-client.ts`), which honours `APP_AWS_ENDPOINT` with path-style access.
+Until the hosted deployment exists, run `trigger dev` locally for the jobs you start yourself, and see "Local runs write production data" below for who runs the scheduled jobs.
+
+### Local runs write production data
+
+The shared database, Storage and Redis are the production state (decision D7 of the AWS hosting plan), not a copy.
+Anything a local app, API or `trigger dev` worker does (onboarding, policy edits, emails, integration syncs) changes real production data and can reach real people.
+
+Scheduled tasks (`schedules.task`) are therefore skipped by default outside the Trigger.dev `PRODUCTION` environment: a local `trigger dev` logs "Skipping scheduled run outside production" and returns without doing any work, so the daily and weekly jobs do not run twice against production.
+`COMP_RUN_SCHEDULES_IN_DEV=true` in a worker's env file (`apps/app/.env` and `apps/api/.env`) turns schedules back on for that laptop's `trigger dev` after a restart; it then writes to production like a deployed schedule does.
+
+Until the first release deploys the hosted Trigger.dev `prod` environment, nothing else runs the schedules (token refresh, integration checks, reminders, digests).
+During that period exactly one designated laptop runs `trigger dev` for both projects with `COMP_RUN_SCHEDULES_IN_DEV=true` in `apps/app/.env` and `apps/api/.env`, and keeps it running.
+Everyone else leaves `COMP_RUN_SCHEDULES_IN_DEV` unset, so their `trigger dev` never fires a schedule a second time.
+Once the hosted `prod` deployment exists, the designated laptop removes the variable too, and schedules run only in production.
+The guard lives in `apps/{api,app}/src/trigger/lib/schedule-guard.ts`, and a test fails if a new `schedules.task` does not call it.
+
+App tasks reach the app's cache revalidation route through `NEXT_PUBLIC_APP_URL` (`http://localhost:3000` locally); set it in `apps/app/.env`, or revalidation logs `RevalidateUrlNotConfiguredError` and pages refresh only on their next load.
+Server-side app and portal code calls the API at `BACKEND_API_URL` when it is set (the internal Service Connect address in AWS) and at `NEXT_PUBLIC_API_URL` otherwise, so locally leave `BACKEND_API_URL` unset.
 
 Tests keep their guard: `packages/db` database suites only run when `DATABASE_URL` names a database ending in `_test`, so `bun test` never touches the shared database; keep a local Postgres for `comp_test`.
 

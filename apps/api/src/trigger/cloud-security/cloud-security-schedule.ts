@@ -2,6 +2,7 @@ import { getManifest } from '@trycompai/integration-platform';
 import { db } from '@db';
 import { logger, schedules } from '@trigger.dev/sdk';
 import { runCloudSecurityScan } from './run-cloud-security-scan';
+import { isScheduledRunAllowed } from '../lib/schedule-guard';
 
 /**
  * Daily scheduled task that triggers cloud security scans for all active
@@ -17,7 +18,8 @@ export const cloudSecuritySchedule = schedules.task({
   id: 'cloud-security-schedule',
   cron: '0 5 * * *', // 5:00 AM UTC daily (same as legacy)
   maxDuration: 1000 * 60 * 30, // 30 minutes for orchestration
-  run: async (payload) => {
+  run: async (payload, { ctx }) => {
+    if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
     logger.info('Starting daily cloud security scan orchestrator', {
       scheduledAt: payload.timestamp,
       lastRun: payload.lastTimestamp,

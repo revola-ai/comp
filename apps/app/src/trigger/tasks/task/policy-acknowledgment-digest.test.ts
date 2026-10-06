@@ -49,8 +49,11 @@ const mockGetUnsubscribedEmails = vi.mocked(getUnsubscribedEmails);
 
 // The mock replaces schedules.task with a passthrough that returns the config
 // directly, so `.run` is available on the exported constant at runtime.
-const taskUnderTest = policyAcknowledgmentDigest as unknown as {
-  run: (payload: unknown) => Promise<{
+const scheduledTask = policyAcknowledgmentDigest as unknown as {
+  run: (
+    payload: unknown,
+    params: { ctx: { environment: { type: string }; task: { id: string } } },
+  ) => Promise<{
     success: boolean;
     emailsSent: number;
     emailsFailed: number;
@@ -58,6 +61,15 @@ const taskUnderTest = policyAcknowledgmentDigest as unknown as {
     recipients: number;
     orgsSkippedUnsubscribed: number;
   }>;
+};
+
+// Runs as the PRODUCTION Trigger.dev environment; the schedule guard skips
+// every other environment (covered in trigger/lib/schedule-guard.test.ts).
+const taskUnderTest = {
+  run: (payload: unknown) =>
+    scheduledTask.run(payload, {
+      ctx: { environment: { type: 'PRODUCTION' }, task: { id: 'policy-acknowledgment-digest' } },
+    }),
 };
 
 describe('policyAcknowledgmentDigest', () => {

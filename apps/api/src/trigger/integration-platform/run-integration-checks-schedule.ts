@@ -8,6 +8,7 @@ import {
 import { runDeviceSync } from './run-device-sync';
 import { isCheckDisabledForTask } from '../../integration-platform/utils/disabled-task-checks';
 import { isDueToday } from '../shared/is-due-today';
+import { isScheduledRunAllowed } from '../lib/schedule-guard';
 
 /**
  * Pure helper extracted for unit testing. Filters a list of candidate tasks
@@ -130,7 +131,8 @@ export const integrationChecksSchedule = schedules.task({
   id: 'integration-checks-schedule',
   cron: '0 6 * * *', // Daily at 6:00 AM UTC
   maxDuration: 1000 * 60 * 60, // 1 hour
-  run: async (payload) => {
+  run: async (payload, { ctx }) => {
+    if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
     logger.info('Starting daily integration checks orchestrator', {
       scheduledAt: payload.timestamp,
       lastRun: payload.lastTimestamp,

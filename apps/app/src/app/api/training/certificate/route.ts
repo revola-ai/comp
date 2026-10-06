@@ -1,3 +1,4 @@
+import { getServerApiBaseUrl, getServerApiHeaders } from '@/lib/server-api-base-url';
 import { auth } from '@/utils/auth';
 import { db } from '@db/server';
 import { NextRequest, NextResponse } from 'next/server';
@@ -50,10 +51,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const apiUrl =
-      process.env.NEXT_PUBLIC_API_URL ||
-      process.env.API_BASE_URL ||
-      'http://localhost:3333';
+    const apiUrl = getServerApiBaseUrl();
 
     // Forward the user's session cookies to the NestJS API for authentication
     const cookieHeader = req.headers.get('cookie') || '';
@@ -61,6 +59,7 @@ export async function POST(req: NextRequest) {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      ...getServerApiHeaders({ incoming: req.headers }),
     };
     if (cookieHeader) headers['cookie'] = cookieHeader;
     if (authHeader) headers['authorization'] = authHeader;

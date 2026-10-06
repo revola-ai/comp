@@ -35,7 +35,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ policyI
     }
 
     const headerStore = await headers();
-    const cookieStr = headerStore.get('cookie') ?? '';
 
     const { messages, currentContent }: { messages: Array<UIMessage>; currentContent?: string } = await req.json();
 
@@ -200,7 +199,7 @@ You MUST produce the policy by starting from the <current_policy> text above and
       // input. Without an explicit cap, large policies can be truncated mid-JSON
       // (blank/partial content → CS-256). Give ample headroom for a full policy.
       maxOutputTokens: 16000,
-      tools: getPolicyTools({ currentPolicyId: policyId, cookieHeader: cookieStr }),
+      tools: getPolicyTools({ currentPolicyId: policyId, incoming: headerStore }),
     });
 
     return result.toUIMessageStreamResponse();

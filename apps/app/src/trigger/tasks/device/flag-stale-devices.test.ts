@@ -20,13 +20,25 @@ import { flagStaleDevices } from './flag-stale-devices';
 
 const FIXED_NOW = new Date('2026-04-17T12:00:00.000Z');
 
-const task = flagStaleDevices as unknown as {
-  run: (payload: unknown) => Promise<{
+const scheduledTask = flagStaleDevices as unknown as {
+  run: (
+    payload: unknown,
+    params: { ctx: { environment: { type: string }; task: { id: string } } },
+  ) => Promise<{
     success: boolean;
     flaggedCount: number;
     threshold: Date;
     error?: string;
   }>;
+};
+
+// Runs as the PRODUCTION Trigger.dev environment; the schedule guard skips
+// every other environment (covered in trigger/lib/schedule-guard.test.ts).
+const task = {
+  run: (payload: unknown) =>
+    scheduledTask.run(payload, {
+      ctx: { environment: { type: 'PRODUCTION' }, task: { id: 'flag-stale-devices' } },
+    }),
 };
 
 const mockUpdateMany = vi.mocked(

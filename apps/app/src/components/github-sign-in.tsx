@@ -2,6 +2,7 @@
 
 import { authClient } from '@/utils/auth-client';
 import { buildAuthCallbackUrl } from '@/utils/auth-callback';
+import { buildAuthErrorCallbackUrl } from '@/utils/auth-error';
 import { Button } from '@trycompai/ui/button';
 import { Icons } from '@trycompai/ui/icons';
 import { Loader2 } from 'lucide-react';
@@ -23,6 +24,7 @@ export function GithubSignIn({ inviteCode, redirectTo }: GithubSignInProps) {
     await authClient.signIn.social({
       provider: 'github',
       callbackURL,
+      errorCallbackURL: buildAuthErrorCallbackUrl({ inviteCode, redirectTo }),
     });
   };
 

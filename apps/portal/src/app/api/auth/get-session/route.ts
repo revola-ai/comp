@@ -1,11 +1,8 @@
-import { env } from '@/env.mjs';
+import { getServerApiBaseUrl, getServerApiHeaders } from '@/app/lib/server-api-base-url';
 import { type NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const API_BASE =
-  env.BACKEND_API_URL || env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
 
 /**
  * Backwards-compat alias for device-agent installs (pre-PR #2222) that call
@@ -16,13 +13,13 @@ const API_BASE =
  * TODO: Delete after the device-agent fleet has rolled past 1.0.5.
  */
 export async function GET(req: NextRequest): Promise<Response> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = getServerApiHeaders({ incoming: req.headers });
   const cookie = req.headers.get('cookie');
   if (cookie) headers['Cookie'] = cookie;
   const authorization = req.headers.get('authorization');
   if (authorization) headers['Authorization'] = authorization;
 
-  const response = await fetch(`${API_BASE}/api/auth/get-session`, {
+  const response = await fetch(`${getServerApiBaseUrl()}/api/auth/get-session`, {
     method: 'GET',
     headers,
     redirect: 'manual',

@@ -9,6 +9,7 @@ import {
 import { getUnsubscribedEmails } from '@trycompai/email/lib/check-unsubscribe';
 
 import { render } from '@react-email/render';
+import { isScheduledRunAllowed } from '../../lib/schedule-guard';
 import { sendBatchEmailViaApi } from '../../lib/send-email-via-api';
 import {
   computePendingPolicies,
@@ -38,7 +39,8 @@ export const policyAcknowledgmentDigest = schedules.task({
   machine: 'large-1x',
   cron: '0 14 * * 2', // Weekly on Tuesdays at 14:00 UTC
   maxDuration: 1000 * 60 * 15, // 15 minutes
-  run: async () => {
+  run: async (_payload, { ctx }) => {
+    if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
     const inactivityCutoff = new Date();
     inactivityCutoff.setDate(inactivityCutoff.getDate() - ORG_INACTIVITY_DAYS);
 
