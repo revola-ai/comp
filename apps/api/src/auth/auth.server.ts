@@ -31,6 +31,7 @@ import {
   isTrustedOriginWithCustomDomains,
 } from './origin-policy';
 import { getCookieDomain } from './cookie-domain';
+import { assertEdgeSecrets } from './edge-secrets';
 import {
   createAllowlistedMagicLinkSender,
   createEmailDomainAllowlistHook,
@@ -156,8 +157,10 @@ if (
 }
 
 // Throws at boot when AUTH_COOKIE_DOMAIN is malformed, too broad, or does not
-// cover the api, app and portal hosts (see ./cookie-domain.ts).
+// cover the api, app and portal hosts (see ./cookie-domain.ts), and, in that
+// production deployment, when an edge secret is missing (./edge-secrets.ts).
 const cookieDomain = getCookieDomain({ env: process.env });
+assertEdgeSecrets({ env: process.env });
 
 // ── Hosted MCP (Speakeasy Gram) OAuth ────────────────────────────────────────
 // The MCP server is hosted on Gram. Gram obtains an OAuth access token from this

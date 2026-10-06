@@ -109,13 +109,36 @@ export function getCookieDomain({ env }: { env: Env }): string | undefined {
   return parseConfiguredDomain({ raw, env });
 }
 
+const NO_ORIGINS: readonly string[] = Object.freeze([]);
+
+// Every variable the origins depend on; the cache key for the last result.
+const ORIGIN_INPUTS = [
+  VARIABLE,
+  ALLOW_BROAD_VARIABLE,
+  ...SERVICE_URL_VARIABLES,
+] as const;
+
+let cachedOrigins: { key: string; origins: readonly string[] } | undefined;
+
 /**
  * Origins of the api, app and portal services that share the configured
  * `AUTH_COOKIE_DOMAIN` session cookie. Empty when the variable is unset.
+ * Origin checks run on every request, so a configuration is validated once
+ * and its (frozen) result reused until one of its inputs changes.
  */
-export function getCookieDomainOrigins({ env }: { env: Env }): string[] {
+export function getCookieDomainOrigins({
+  env,
+}: {
+  env: Env;
+}): readonly string[] {
   const raw = env[VARIABLE]?.trim();
-  if (!raw) return [];
+  if (!raw) return NO_ORIGINS;
+  const key = JSON.stringify(ORIGIN_INPUTS.map((name) => env[name] ?? null));
+  if (cachedOrigins?.key === key) return cachedOrigins.origins;
   parseConfiguredDomain({ raw, env });
-  return readServiceUrls({ env }).map(({ url }) => url.origin);
+  const origins = Object.freeze(
+    readServiceUrls({ env }).map(({ url }) => url.origin),
+  );
+  cachedOrigins = { key, origins };
+  return origins;
 }

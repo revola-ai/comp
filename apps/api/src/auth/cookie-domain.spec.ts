@@ -284,4 +284,27 @@ describe('getCookieDomainOrigins', () => {
     ).toEqual([]);
     expect(getCookieDomainOrigins({ env: {} })).toEqual([]);
   });
+
+  it('validates a configuration once and reuses the result on every request', () => {
+    const env = { ...REVOLA_URLS, AUTH_COOKIE_DOMAIN: '.comp.revola.ai' };
+    const first = getCookieDomainOrigins({ env });
+    const second = getCookieDomainOrigins({ env: { ...env } });
+    expect(second).toBe(first);
+    expect(Object.isFrozen(first)).toBe(true);
+  });
+
+  it('recomputes when the configuration changes', () => {
+    const env = { ...REVOLA_URLS, AUTH_COOKIE_DOMAIN: '.comp.revola.ai' };
+    const before = getCookieDomainOrigins({ env });
+    const after = getCookieDomainOrigins({
+      env: { ...env, NEXT_PUBLIC_PORTAL_URL: 'https://people.comp.revola.ai' },
+    });
+    expect(after).not.toBe(before);
+    expect(after).toContain('https://people.comp.revola.ai');
+    expect(() =>
+      getCookieDomainOrigins({
+        env: { ...env, AUTH_COOKIE_DOMAIN: 'comp.revola.ai' },
+      }),
+    ).toThrow('AUTH_COOKIE_DOMAIN');
+  });
 });

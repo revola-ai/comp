@@ -6,18 +6,30 @@ import {
 } from './origin-policy';
 
 describe('isStaticTrustedOrigin', () => {
-  const originalTrustedOrigins = process.env.AUTH_TRUSTED_ORIGINS;
+  // Hermetic: a developer's SELF_HOSTED or cookie-domain settings must not
+  // change what the Comp AI cloud defaults below are checked against.
+  const KEYS = [
+    'SELF_HOSTED',
+    'NODE_ENV',
+    'AUTH_TRUSTED_ORIGINS',
+    'AUTH_COOKIE_DOMAIN',
+    'AUTH_COOKIE_DOMAIN_ALLOW_BROAD',
+    'BASE_URL',
+    'NEXT_PUBLIC_APP_URL',
+    'NEXT_PUBLIC_PORTAL_URL',
+    'COMP_EXTENSION_TRUSTED_ORIGINS',
+  ] as const;
+  const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
 
   beforeEach(() => {
-    delete process.env.AUTH_TRUSTED_ORIGINS;
+    for (const key of KEYS) delete process.env[key];
   });
 
-  afterAll(() => {
-    if (originalTrustedOrigins === undefined) {
-      delete process.env.AUTH_TRUSTED_ORIGINS;
-      return;
+  afterEach(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
     }
-    process.env.AUTH_TRUSTED_ORIGINS = originalTrustedOrigins;
   });
 
   it('trusts HTTPS subdomains of the wildcard domains', () => {

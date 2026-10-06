@@ -133,7 +133,10 @@ describe('identityTracker', () => {
     expect(identityTracker({ req: forged, env })).toBe('ip:127.0.0.1');
     const unconfigured = req({
       ip: '127.0.0.1',
-      headers: { 'x-comp-forwarded-auth': '', 'x-forwarded-for': '203.0.113.9' },
+      headers: {
+        'x-comp-forwarded-auth': '',
+        'x-forwarded-for': '203.0.113.9',
+      },
     });
     expect(identityTracker({ req: unconfigured, env: {} })).toBe(
       'ip:127.0.0.1',

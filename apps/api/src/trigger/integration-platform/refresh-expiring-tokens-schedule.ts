@@ -16,7 +16,7 @@ const REFRESH_LOOKAHEAD_HOURS = 24;
  */
 export const refreshExpiringTokensSchedule = schedules.task({
   id: 'refresh-expiring-tokens-schedule',
-  cron: '0 5 * * *', // Daily at 05:00 UTC — 1 hour before integration checks
+  cron: '0 5 * * *', // Daily at 05:00 UTC, 1 hour before integration checks
   maxDuration: 60 * 30, // 30 minutes
   run: async (payload, { ctx }) => {
     if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
@@ -27,7 +27,7 @@ export const refreshExpiringTokensSchedule = schedules.task({
 
     const apiUrl = process.env.API_URL;
     if (!apiUrl) {
-      logger.error('API_URL environment variable is not set — cannot refresh tokens');
+      logger.error('API_URL environment variable is not set; cannot refresh tokens');
       return { refreshed: 0, failed: 0, skipped: 0 };
     }
 
