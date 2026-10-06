@@ -1,30 +1,91 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createHmac } from 'node:crypto';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The module reads its signing secret at import time.
-vi.hoisted(() => {
-  process.env.UNSUBSCRIBE_SECRET = 'unsubscribe-test-secret';
-});
+const SECRET = 'unsubscribe-test-secret';
+const EMAIL = 'person@revola.ai';
 
-import { getUnsubscribeUrl } from './unsubscribe';
+/** A fresh copy of the module, so its once-per-process warning starts unsent. */
+async function freshModule() {
+  vi.resetModules();
+  return import('./unsubscribe');
+}
 
-describe('getUnsubscribeUrl', () => {
+describe('app unsubscribe links with a configured secret', () => {
+  beforeEach(() => {
+    vi.stubEnv('UNSUBSCRIBE_SECRET', SECRET);
+    vi.stubEnv('AUTH_SECRET', '');
+  });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('points at the app host, never the API host in BETTER_AUTH_URL', () => {
+  it('points at the app host, never the API host in BETTER_AUTH_URL', async () => {
     vi.stubEnv('NEXT_PUBLIC_BETTER_AUTH_URL', 'https://api.comp.revola.ai');
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.comp.revola.ai');
+    const { getUnsubscribeUrl } = await freshModule();
 
-    const url = new URL(getUnsubscribeUrl('person@revola.ai'));
+    const url = new URL(getUnsubscribeUrl(EMAIL) ?? '');
 
     expect(url.origin).toBe('https://app.comp.revola.ai');
     expect(url.pathname).toBe('/unsubscribe/preferences');
-    expect(url.searchParams.get('email')).toBe('person@revola.ai');
+    expect(url.searchParams.get('email')).toBe(EMAIL);
+    expect(url.searchParams.get('token')).toBe(
+      createHmac('sha256', SECRET).update(EMAIL).digest('base64url'),
+    );
   });
 
-  it('normalizes a trailing slash on NEXT_PUBLIC_APP_URL', () => {
+  it('normalizes a trailing slash on NEXT_PUBLIC_APP_URL', async () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.comp.revola.ai/');
-    expect(getUnsubscribeUrl('person@revola.ai')).toMatch(
+    const { getUnsubscribeUrl } = await freshModule();
+    expect(getUnsubscribeUrl(EMAIL)).toMatch(
       /^https:\/\/app\.comp\.revola\.ai\/unsubscribe\/preferences\?/,
+    );
+  });
+
+  it('verifies its own token and rejects a forged or foreign one', async () => {
+    const { verifyUnsubscribeToken } = await freshModule();
+    const token = createHmac('sha256', SECRET).update(EMAIL).digest('base64url');
+    const forged = createHmac('sha256', 'fallback-secret').update(EMAIL).digest('base64url');
+    expect(verifyUnsubscribeToken({ email: EMAIL, token })).toBe(true);
+    expect(verifyUnsubscribeToken({ email: EMAIL, token: forged })).toBe(false);
+    expect(verifyUnsubscribeToken({ email: 'other@revola.ai', token })).toBe(false);
+    expect(verifyUnsubscribeToken({ email: EMAIL, token: '' })).toBe(false);
+  });
+
+  it('reads the secret on every use, so AUTH_SECRET works as the fallback', async () => {
+    const { isUnsubscribeConfigured, verifyUnsubscribeToken } = await freshModule();
+    vi.stubEnv('UNSUBSCRIBE_SECRET', '');
+    vi.stubEnv('AUTH_SECRET', 'auth-secret');
+    const token = createHmac('sha256', 'auth-secret').update(EMAIL).digest('base64url');
+    expect(isUnsubscribeConfigured()).toBe(true);
+    expect(verifyUnsubscribeToken({ email: EMAIL, token })).toBe(true);
+  });
+});
+
+describe('app unsubscribe links without a configured secret', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.stubEnv('UNSUBSCRIBE_SECRET', '');
+    vi.stubEnv('AUTH_SECRET', '');
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    warn.mockRestore();
+  });
+
+  it('builds no link, warning once per process', async () => {
+    const { getUnsubscribeUrl, isUnsubscribeConfigured } = await freshModule();
+    expect(isUnsubscribeConfigured()).toBe(false);
+    expect(getUnsubscribeUrl(EMAIL)).toBeUndefined();
+    expect(getUnsubscribeUrl('other@revola.ai')).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('UNSUBSCRIBE_SECRET');
+  });
+
+  it('refuses to verify with a named error instead of a public default', async () => {
+    const { UnsubscribeSecretMissingError, verifyUnsubscribeToken } = await freshModule();
+    expect(() => verifyUnsubscribeToken({ email: EMAIL, token: 'x' })).toThrow(
+      UnsubscribeSecretMissingError,
     );
   });
 });

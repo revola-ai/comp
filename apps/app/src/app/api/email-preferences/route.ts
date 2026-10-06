@@ -1,7 +1,7 @@
-import { db } from "@db/server";
-import { verifyUnsubscribeToken } from "@/lib/unsubscribe";
-import { NextResponse } from "next/server";
-import { z } from "zod";
+import { isUnsubscribeConfigured, verifyUnsubscribeToken } from '@/lib/unsubscribe';
+import { db } from '@db/server';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
 const updatePreferencesSchema = z.object({
   email: z.string().email(),
@@ -22,19 +22,21 @@ export async function PUT(request: Request) {
     const parsed = updatePreferencesSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: "Invalid request body" },
-        { status: 400 },
-      );
+      return NextResponse.json({ success: false, error: 'Invalid request body' }, { status: 400 });
     }
 
     const { email, token, preferences } = parsed.data;
 
-    if (!verifyUnsubscribeToken(email, token)) {
+    // Without a signing secret no token can be checked: a named 503, not a 500.
+    if (!isUnsubscribeConfigured()) {
       return NextResponse.json(
-        { success: false, error: "Invalid token" },
-        { status: 403 },
+        { success: false, error: 'unsubscribe_not_configured' },
+        { status: 503 },
       );
+    }
+
+    if (!verifyUnsubscribeToken({ email, token })) {
+      return NextResponse.json({ success: false, error: 'Invalid token' }, { status: 403 });
     }
 
     const user = await db.user.findUnique({
@@ -42,15 +44,10 @@ export async function PUT(request: Request) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 },
-      );
+      return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
     }
 
-    const allUnsubscribed = Object.values(preferences).every(
-      (v) => v === false,
-    );
+    const allUnsubscribed = Object.values(preferences).every((v) => v === false);
 
     await db.user.update({
       where: { email },
@@ -62,9 +59,9 @@ export async function PUT(request: Request) {
 
     return NextResponse.json({ success: true, data: preferences });
   } catch (error) {
-    console.error("Error updating unsubscribe preferences:", error);
+    console.error('Error updating unsubscribe preferences:', error);
     return NextResponse.json(
-      { success: false, error: "Failed to update preferences" },
+      { success: false, error: 'Failed to update preferences' },
       { status: 500 },
     );
   }

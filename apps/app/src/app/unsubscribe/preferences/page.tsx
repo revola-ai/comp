@@ -1,4 +1,4 @@
-import { verifyUnsubscribeToken } from '@/lib/unsubscribe';
+import { isUnsubscribeConfigured, verifyUnsubscribeToken } from '@/lib/unsubscribe';
 import { db } from '@db/server';
 import { UnsubscribePreferencesClient, type EmailPreferences } from './client';
 
@@ -19,7 +19,11 @@ async function fetchUserPreferences(
   email: string,
   token: string,
 ): Promise<{ error: string } | { preferences: EmailPreferences }> {
-  if (!verifyUnsubscribeToken(email, token)) {
+  if (!isUnsubscribeConfigured()) {
+    return { error: 'Email preferences are not available on this server' };
+  }
+
+  if (!verifyUnsubscribeToken({ email, token })) {
     return { error: 'Invalid token' };
   }
 

@@ -1,6 +1,43 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
-const UNSUBSCRIBE_SECRET = process.env.UNSUBSCRIBE_SECRET || process.env.AUTH_SECRET;
+// Mirrors packages/email/lib/unsubscribe.ts (the API signs, this app verifies): the same
+// secret, the same token and the same rule for a missing secret.
+
+/** Neither UNSUBSCRIBE_SECRET nor AUTH_SECRET is set, so no token can be checked. */
+export class UnsubscribeSecretMissingError extends Error {
+  constructor() {
+    super(
+      'UNSUBSCRIBE_SECRET (or AUTH_SECRET) must be set to generate or verify unsubscribe tokens',
+    );
+    this.name = 'UnsubscribeSecretMissingError';
+  }
+}
+
+/** Read on every use; there is no built-in fallback, which would let anyone forge a token. */
+function configuredSecret(): string | undefined {
+  return process.env.UNSUBSCRIBE_SECRET?.trim() || process.env.AUTH_SECRET?.trim() || undefined;
+}
+
+/** Whether a signing secret is set, so unsubscribe links can be built and checked. */
+export function isUnsubscribeConfigured(): boolean {
+  return configuredSecret() !== undefined;
+}
+
+let warnedUnsubscribeDisabled = false;
+
+function warnUnsubscribeDisabledOnce(): void {
+  if (warnedUnsubscribeDisabled) return;
+  warnedUnsubscribeDisabled = true;
+  console.warn(
+    '[unsubscribe] UNSUBSCRIBE_SECRET (or AUTH_SECRET) is not set: unsubscribe links are left out and the preferences page is unavailable. Copy the shared UNSUBSCRIBE_SECRET into the env file to enable them.',
+  );
+}
+
+function signToken(email: string): string {
+  const secret = configuredSecret();
+  if (!secret) throw new UnsubscribeSecretMissingError();
+  return createHmac('sha256', secret).update(email).digest('base64url');
+}
 
 /**
  * Base URL for unsubscribe links. `/unsubscribe/preferences` is an app page,
@@ -10,40 +47,35 @@ const UNSUBSCRIBE_SECRET = process.env.UNSUBSCRIBE_SECRET || process.env.AUTH_SE
  */
 function getBaseUrl(): string {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (appUrl) {
-    return appUrl.replace(/\/+$/, '');
-  }
-
-  // Default fallback
+  if (appUrl) return appUrl.replace(/\/+$/, '');
   return 'https://app.trycomp.ai';
 }
 
 /**
- * Generate a secure unsubscribe token for an email address
+ * Timing-safe check of a token for an address. Throws UnsubscribeSecretMissingError when
+ * no secret is configured; callers check isUnsubscribeConfigured() first.
  */
-export function generateUnsubscribeToken(email: string): string {
-  if (!UNSUBSCRIBE_SECRET) {
-    throw new Error('UNSUBSCRIBE_SECRET or AUTH_SECRET environment variable must be set');
+export function verifyUnsubscribeToken({
+  email,
+  token,
+}: {
+  email: string;
+  token: string;
+}): boolean {
+  const expected = Buffer.from(signToken(email));
+  const presented = Buffer.from(token);
+  return expected.length === presented.length && timingSafeEqual(expected, presented);
+}
+
+/**
+ * The preferences page URL for an address, or undefined (with one warning per process)
+ * when no secret is configured, in which case the page shows no link.
+ */
+export function getUnsubscribeUrl(email: string): string | undefined {
+  if (!isUnsubscribeConfigured()) {
+    warnUnsubscribeDisabledOnce();
+    return undefined;
   }
-  const hmac = createHmac('sha256', UNSUBSCRIBE_SECRET);
-  hmac.update(email);
-  return hmac.digest('base64url');
+  const token = signToken(email);
+  return `${getBaseUrl()}/unsubscribe/preferences?email=${encodeURIComponent(email)}&token=${token}`;
 }
-
-/**
- * Verify an unsubscribe token matches an email address
- */
-export function verifyUnsubscribeToken(email: string, token: string): boolean {
-  const expectedToken = generateUnsubscribeToken(email);
-  return expectedToken === token;
-}
-
-/**
- * Generate an unsubscribe URL for an email address (preferences page)
- */
-export function getUnsubscribeUrl(email: string): string {
-  const token = generateUnsubscribeToken(email);
-  const baseUrl = getBaseUrl();
-  return `${baseUrl}/unsubscribe/preferences?email=${encodeURIComponent(email)}&token=${token}`;
-}
-
