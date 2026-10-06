@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { checkDatabaseReadiness, READINESS_TIMEOUT_MS, readinessReason } from './readiness';
+import {
+  checkDatabaseReadiness,
+  createReadinessCheck,
+  READINESS_TIMEOUT_MS,
+  readinessReason,
+} from './readiness';
 
 // The fixture was captured once (2026-10-06) from a real failed TLS handshake
 // against the Supabase us-east-2 session pooler: a `pg` Client and a PrismaClient
@@ -178,5 +183,76 @@ describe('checkDatabaseReadiness', () => {
     rejectLater(new Error('late'));
     await new Promise((settle) => setTimeout(settle, 5));
     expect(result).toEqual({ status: 'unavailable', reason: 'timeout' });
+  });
+});
+
+describe('createReadinessCheck (single flight)', () => {
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 1));
+
+  function stalledProbe() {
+    let calls = 0;
+    let settle: (value: unknown) => void = () => undefined;
+    let fail: (error: Error) => void = () => undefined;
+    const probe = () => {
+      calls += 1;
+      return new Promise((resolve, reject) => {
+        settle = resolve;
+        fail = reject;
+      });
+    };
+    return {
+      probe,
+      calls: () => calls,
+      settle: (value: unknown) => settle(value),
+      fail: (error: Error) => fail(error),
+    };
+  }
+
+  it('lets five concurrent checks during a stalled query share one underlying query', async () => {
+    const stalled = stalledProbe();
+    const check = createReadinessCheck({ probe: stalled.probe });
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => check({ timeoutMs: 10 })),
+    );
+    expect(stalled.calls()).toBe(1);
+    expect(results).toEqual(Array(5).fill({ status: 'unavailable', reason: 'timeout' }));
+  });
+
+  it('joins a later check to the query still in flight instead of queueing another', async () => {
+    const stalled = stalledProbe();
+    const check = createReadinessCheck({ probe: stalled.probe });
+    await check({ timeoutMs: 5 });
+    await check({ timeoutMs: 5 });
+    expect(stalled.calls()).toBe(1);
+  });
+
+  it('issues a new query once the previous one has settled', async () => {
+    const stalled = stalledProbe();
+    const check = createReadinessCheck({ probe: stalled.probe });
+    await check({ timeoutMs: 5 });
+    stalled.settle([{ '?column?': 1 }]);
+    await tick();
+    const next = check({ timeoutMs: 50 });
+    await tick(); // the probe starts on the next microtask
+    stalled.settle([{ '?column?': 1 }]);
+    expect(await next).toEqual({ status: 'ok' });
+    expect(stalled.calls()).toBe(2);
+  });
+
+  it('gives every sharer the same mapped reason when the shared query fails', async () => {
+    const stalled = stalledProbe();
+    const check = createReadinessCheck({ probe: stalled.probe });
+    const pending = [check({ timeoutMs: 100 }), check({ timeoutMs: 100 })];
+    await tick();
+    stalled.fail(prismaTlsError());
+    expect(await Promise.all(pending)).toEqual(
+      Array(2).fill({ status: 'unavailable', reason: 'tls_SELF_SIGNED_CERT_IN_CHAIN' }),
+    );
+    expect(stalled.calls()).toBe(1);
+  });
+
+  it('uses the 2-second readiness timeout by default', async () => {
+    const check = createReadinessCheck({ probe: async () => [{ '?column?': 1 }] });
+    expect(await check()).toEqual({ status: 'ok' });
   });
 });

@@ -10,8 +10,14 @@ import { isLocalhostUrl, resolveSslConfig, stripSslMode, type SslConfig } from '
 export type PgAdapterOptions = {
   connectionString: string;
   ssl: SslConfig;
+  connectionTimeoutMillis: number;
   max?: number;
 };
+
+// pg waits forever by default, both to open a connection and for a free pooled one.
+// Bounded, a database outage fails queries (and readiness probes) instead of leaving
+// them parked on a dead socket or in the pool queue.
+export const DATABASE_CONNECT_TIMEOUT_MS = 15_000;
 
 export type TlsMode = 'disabled' | 'verified' | 'chain-only' | 'insecure';
 
@@ -142,5 +148,6 @@ export function buildPgAdapterOptions({
     log(`[db] TLS ${TLS_MODE_DESCRIPTIONS[tlsModeOf(ssl)]}; pool max ${pool}`);
   }
 
-  return max === undefined ? { connectionString, ssl } : { connectionString, ssl, max };
+  const options = { connectionString, ssl, connectionTimeoutMillis: DATABASE_CONNECT_TIMEOUT_MS };
+  return max === undefined ? options : { ...options, max };
 }

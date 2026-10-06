@@ -2,10 +2,17 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ queryRaw: vi.fn() }));
+// $queryRaw records its SQL; $transaction is the one round trip the probe makes.
+const mocks = vi.hoisted(() => ({ transaction: vi.fn() }));
 
 vi.mock('@db/server', () => ({
-  db: { $queryRaw: mocks.queryRaw },
+  db: {
+    $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) => ({
+      sql: strings.join('?').trim(),
+      values,
+    }),
+    $transaction: mocks.transaction,
+  },
 }));
 
 import { GET } from './route';
@@ -41,21 +48,44 @@ function capturedPrismaTlsError(): Error {
 
 describe('GET /api/health (app readiness)', () => {
   beforeEach(() => {
-    mocks.queryRaw.mockReset();
+    mocks.transaction.mockReset();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
-  it('runs SELECT 1 and answers 200 {status: ok}', async () => {
-    mocks.queryRaw.mockResolvedValue([{ '?column?': 1 }]);
+  it('runs SELECT 1 under a 2-second statement_timeout and answers 200 {status: ok}', async () => {
+    mocks.transaction.mockResolvedValue([[{ set_config: '2000' }], [{ '?column?': 1 }]]);
     const response = await GET();
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ status: 'ok' });
-    const [strings] = mocks.queryRaw.mock.calls[0] as [TemplateStringsArray];
-    expect(strings.join('?').trim()).toBe('SELECT 1');
+    expect(mocks.transaction.mock.calls[0]?.[0]).toEqual([
+      { sql: "SELECT set_config('statement_timeout', ?, true)", values: ['2000'] },
+      { sql: 'SELECT 1', values: [] },
+    ]);
+  });
+
+  it('shares one in-flight query between overlapping requests', async () => {
+    vi.useFakeTimers();
+    let release: (value: unknown) => void = () => undefined;
+    try {
+      mocks.transaction.mockReturnValue(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+      const pending = Array.from({ length: 5 }, () => GET());
+      await vi.advanceTimersByTimeAsync(2000);
+      const responses = await Promise.all(pending);
+      expect(responses.map((response) => response.status)).toEqual([503, 503, 503, 503, 503]);
+      expect(mocks.transaction).toHaveBeenCalledTimes(1);
+    } finally {
+      release([]);
+      await vi.advanceTimersByTimeAsync(1);
+      vi.useRealTimers();
+    }
   });
 
   it('answers 503 tls_<CODE> for the captured Supabase TLS failure', async () => {
-    mocks.queryRaw.mockRejectedValue(capturedPrismaTlsError());
+    mocks.transaction.mockRejectedValue(capturedPrismaTlsError());
     const response = await GET();
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({
@@ -65,7 +95,7 @@ describe('GET /api/health (app readiness)', () => {
   });
 
   it('answers 503 with the Prisma code and no connection details', async () => {
-    mocks.queryRaw.mockRejectedValue(
+    mocks.transaction.mockRejectedValue(
       Object.assign(new Error("Can't reach database server at db.internal:5432"), {
         code: 'P1001',
       }),
@@ -79,20 +109,27 @@ describe('GET /api/health (app readiness)', () => {
 
   it('answers 503 timeout when SELECT 1 outlives two seconds', async () => {
     vi.useFakeTimers();
+    let release: (value: unknown) => void = () => undefined;
     try {
-      mocks.queryRaw.mockReturnValue(new Promise(() => undefined));
+      mocks.transaction.mockReturnValue(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
       const pending = GET();
       await vi.advanceTimersByTimeAsync(2000);
       const response = await pending;
       expect(response.status).toBe(503);
       expect(await response.json()).toEqual({ status: 'unavailable', reason: 'timeout' });
     } finally {
+      release([]);
+      await vi.advanceTimersByTimeAsync(1);
       vi.useRealTimers();
     }
   });
 
   it('answers 503 unknown for an uncoded failure', async () => {
-    mocks.queryRaw.mockRejectedValue(new Error('connection to 10.0.0.5 failed'));
+    mocks.transaction.mockRejectedValue(new Error('connection to 10.0.0.5 failed'));
     const response = await GET();
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ status: 'unavailable', reason: 'unknown' });

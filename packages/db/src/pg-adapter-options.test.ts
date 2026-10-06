@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildPgAdapterOptions } from './pg-adapter-options';
+import { DATABASE_CONNECT_TIMEOUT_MS, buildPgAdapterOptions } from './pg-adapter-options';
 
 const REMOTE_URL =
   'postgresql://postgres.ref:s3cret@pooler.example.com:5432/postgres?sslmode=require';
@@ -228,5 +228,15 @@ describe('buildPgAdapterOptions: startup log', () => {
     expect(modeFor(LOCAL_URL, {})).toContain('disabled');
     expect(modeFor(REMOTE_URL, { PRISMA_ALLOW_INSECURE_TLS: '1' })).toContain('insecure');
     expect(modeFor(REMOTE_URL, {})).toContain('chain-only');
+  });
+});
+
+describe('buildPgAdapterOptions: connection timeout', () => {
+  it('bounds connecting and waiting for a pooled connection (pg waits forever by default)', () => {
+    for (const databaseUrl of [LOCAL_URL, REMOTE_URL]) {
+      const options = buildPgAdapterOptions({ databaseUrl, env: {}, log: silent() });
+      expect(options.connectionTimeoutMillis).toBe(DATABASE_CONNECT_TIMEOUT_MS);
+    }
+    expect(DATABASE_CONNECT_TIMEOUT_MS).toBeGreaterThan(0);
   });
 });

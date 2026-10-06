@@ -172,3 +172,29 @@ export async function checkDatabaseReadiness({
     clearTimeout(timer);
   }
 }
+
+export type ReadinessCheck = (options?: { timeoutMs?: number }) => Promise<ReadinessResult>;
+
+/**
+ * A readiness check whose callers share one in-flight probe (single flight). The
+ * timeout only ends a caller's wait; the probe keeps running until the driver gives
+ * up, so during an outage a new probe per request would pile up queries and pool
+ * waiters. Here every check that arrives while a probe is pending waits on that same
+ * probe (with its own timeout), and the next probe starts only after it settles.
+ */
+export function createReadinessCheck({ probe }: { probe: () => Promise<unknown> }): ReadinessCheck {
+  let inFlight: Promise<unknown> | undefined;
+  const sharedProbe = (): Promise<unknown> => {
+    if (!inFlight) {
+      const started = Promise.resolve().then(probe);
+      inFlight = started;
+      const clear = () => {
+        if (inFlight === started) inFlight = undefined;
+      };
+      started.then(clear, clear);
+    }
+    return inFlight;
+  };
+  return ({ timeoutMs = READINESS_TIMEOUT_MS } = {}) =>
+    checkDatabaseReadiness({ probe: sharedProbe, timeoutMs });
+}
