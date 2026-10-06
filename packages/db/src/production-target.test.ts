@@ -101,6 +101,75 @@ describe('assertNotProduction identifies production by the project ref', () => {
   });
 });
 
+describe('assertNotProduction checks the effective connection parameters (as pg reads them)', () => {
+  const check = (databaseUrl: string, env: Record<string, string | undefined> = {}) =>
+    assertNotProduction({ databaseUrl, env, target: TARGET });
+  const DIRECT = `db.${REF}.supabase.co`;
+
+  it('refuses the direct host with a trailing dot', () => {
+    expect(() => check(`postgresql://postgres:pw@${DIRECT}.:5432/postgres`)).toThrow(
+      /production_target_refused/,
+    );
+  });
+
+  it('refuses the direct host in upper case', () => {
+    expect(() =>
+      check(`postgresql://postgres:pw@${DIRECT.toUpperCase()}:5432/postgres`),
+    ).toThrow(/production_target_refused/);
+  });
+
+  it('refuses a pooler URL whose user query parameter names the production ref', () => {
+    expect(() =>
+      check(`postgresql://someone:pw@${POOLER}:5432/postgres?user=postgres.${REF}`),
+    ).toThrow(/production_target_refused/);
+  });
+
+  it('refuses a local URL whose host query parameter is the production host', () => {
+    expect(() =>
+      check(`postgresql://postgres:pw@127.0.0.1:5432/postgres?host=${DIRECT}`),
+    ).toThrow(/production_target_refused/);
+  });
+
+  it('refuses when any of several hosts is production', () => {
+    expect(() => check(`postgresql://postgres:pw@127.0.0.1,${DIRECT}:5432/postgres`)).toThrow(
+      /production_target_refused/,
+    );
+    expect(() =>
+      check(`postgresql://postgres:pw@127.0.0.1:5432/postgres?host=localhost,${DIRECT}.`),
+    ).toThrow(/production_target_refused/);
+  });
+
+  it('refuses a URL without a user when PGUSER names the production ref', () => {
+    expect(() =>
+      check(`postgresql://${POOLER}:5432/postgres`, { PGUSER: `postgres.${REF}` }),
+    ).toThrow(/production_target_refused/);
+  });
+
+  it('refuses a URL without a host when PGHOST is the production host', () => {
+    expect(() => check('postgresql:///postgres', { PGHOST: DIRECT })).toThrow(
+      /production_target_refused/,
+    );
+  });
+
+  it('fails closed on a URL pg cannot parse, without echoing it', () => {
+    let message = '';
+    try {
+      check(`postgresql://postgres:pw@${POOLER}:5432/postgres?sslrootcert=/nonexistent/${REF}.crt`);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toMatch(/database_url_unverifiable/);
+    for (const secret of [REF, POOLER, ':pw@']) expect(message).not.toContain(secret);
+  });
+
+  it('still allows a local URL and another project', () => {
+    expect(check('postgresql://postgres:postgres@localhost.:5432/comp_dev')).toBe('not_production');
+    expect(
+      check(`postgresql://x:pw@${POOLER}:5432/postgres?user=postgres.zyxwvutsrqponmlkjihg`),
+    ).toBe('not_production');
+  });
+});
+
 describe('refuseProductionEntryPoint', () => {
   type Outcome = { exitCode: number | undefined; errors: string[] };
 

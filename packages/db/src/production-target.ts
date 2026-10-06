@@ -6,7 +6,10 @@
 // host. A URL is production when the ref it carries hashes to that value: the pooler
 // user `postgres.<ref>` on any regional pooler host, or the direct host
 // `db.<ref>.supabase.co`. The shared regional pooler host alone does not count, so a
-// separate development project in the same region is never refused.
+// separate development project in the same region is never refused. The check reads the
+// effective connection parameters the way pg does (query-parameter overrides, every host
+// of a host list, PGUSER/PGHOST fallbacks, case and trailing-dot normalized), and a URL
+// pg cannot parse is refused like a missing one.
 //
 // Lives in src (compiled into dist) so database-writing entry points under src can
 // guard themselves; scripts/production-target-guard.ts adds the committed default for
@@ -14,6 +17,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { parse } from 'pg-connection-string';
 import { z } from 'zod';
 
 export const productionTargetSchema = z
@@ -61,20 +65,85 @@ export function readProductionTargetFile(): ProductionTarget {
 
 const DIRECT_HOST = /^db\.([a-z0-9]+)\.supabase\.co$/;
 
-/** The project refs a URL names: the pooler user's suffix and the direct host's label. */
-function projectRefsIn(url: URL): string[] {
+/** DNS names compare case-insensitively and a trailing dot names the same host. */
+function normalizeHost(host: string): string {
+  return host.trim().toLowerCase().replace(/\.+$/, '');
+}
+
+/** A comma-separated host list (libpq form) as its individual hosts. */
+function splitHosts(value: string | null | undefined): string[] {
+  return (value ?? '').split(',').map(normalizeHost).filter(Boolean);
+}
+
+type ConnectionCandidates = { users: string[]; hosts: string[] };
+
+/**
+ * Every user and host the connection could use, read the way pg reads the URL
+ * (pg-connection-string's parse: a `user` or `host` query parameter overrides the
+ * authority, values are percent-decoded) plus libpq's spelling of both and pg's
+ * PGUSER and PGHOST fallbacks for what the URL leaves out. Throws when pg could not
+ * parse it either.
+ */
+function connectionCandidates({
+  databaseUrl,
+  env,
+}: {
+  databaseUrl: string;
+  env: GuardEnv;
+}): ConnectionCandidates {
+  const parsed = parse(databaseUrl);
+  const url = new URL(databaseUrl);
+  const users = [parsed.user, decodeURIComponent(url.username), url.searchParams.get('user')];
+  const hosts = [
+    ...splitHosts(parsed.host),
+    ...splitHosts(decodeURIComponent(url.hostname)),
+    ...url.searchParams.getAll('host').flatMap(splitHosts),
+  ];
+  if (!parsed.user) users.push(env.PGUSER);
+  if (!parsed.host) hosts.push(...splitHosts(env.PGHOST));
+  return {
+    users: users.filter((user): user is string => Boolean(user)),
+    hosts,
+  };
+}
+
+/** The project refs the connection names: a pooler user's suffix or a direct host's label. */
+function projectRefsIn({ users, hosts }: ConnectionCandidates): string[] {
   const refs: string[] = [];
-  const username = decodeURIComponent(url.username);
-  const dot = username.lastIndexOf('.');
-  if (dot > 0 && dot < username.length - 1) refs.push(username.slice(dot + 1));
-  const direct = DIRECT_HOST.exec(url.hostname.toLowerCase());
-  if (direct?.[1]) refs.push(direct[1]);
+  for (const user of users) {
+    const dot = user.lastIndexOf('.');
+    if (dot > 0 && dot < user.length - 1) refs.push(user.slice(dot + 1));
+  }
+  for (const host of hosts) {
+    const direct = DIRECT_HOST.exec(host);
+    if (direct?.[1]) refs.push(direct[1]);
+  }
   return refs;
 }
 
-function isProductionUrl({ url, target }: { url: URL; target: ProductionTarget }): boolean {
-  return projectRefsIn(url).some((ref) => hashProjectRef(ref) === target.projectRefSha256);
+/** 'unverifiable' when pg could not parse the URL, so the guard fails closed. */
+function productionVerdict({
+  databaseUrl,
+  env,
+  target,
+}: {
+  databaseUrl: string;
+  env: GuardEnv;
+  target: ProductionTarget;
+}): 'production' | 'not_production' | 'unverifiable' {
+  let candidates: ConnectionCandidates;
+  try {
+    candidates = connectionCandidates({ databaseUrl, env });
+  } catch {
+    return 'unverifiable';
+  }
+  const production = projectRefsIn(candidates).some(
+    (ref) => hashProjectRef(ref) === target.projectRefSha256,
+  );
+  return production ? 'production' : 'not_production';
 }
+
+const UNVERIFIABLE_DETAIL = `DATABASE_URL is missing or cannot be parsed, so the production guard cannot check it. Set ${OPT_IN}=1 to run anyway.`;
 
 // Throws unless the URL is somewhere other than production or the opt-in is set.
 // Returns 'production_opted_in' when it lets a production URL through on the opt-in.
@@ -88,15 +157,15 @@ export function assertNotProduction({
   target: ProductionTarget;
 }): 'not_production' | 'production_opted_in' {
   const optedIn = env[OPT_IN] === '1';
-  if (!databaseUrl || !URL.canParse(databaseUrl)) {
-    if (optedIn) return 'production_opted_in';
-    throw new ProdGuardError({
-      code: 'database_url_unverifiable',
-      detail: `DATABASE_URL is missing or not a valid URL, so the production guard cannot check it. Set ${OPT_IN}=1 to run anyway.`,
-    });
-  }
-  if (!isProductionUrl({ url: new URL(databaseUrl), target })) return 'not_production';
+  const verdict =
+    databaseUrl && URL.canParse(databaseUrl)
+      ? productionVerdict({ databaseUrl, env, target })
+      : 'unverifiable';
+  if (verdict === 'not_production') return 'not_production';
   if (optedIn) return 'production_opted_in';
+  if (verdict === 'unverifiable') {
+    throw new ProdGuardError({ code: 'database_url_unverifiable', detail: UNVERIFIABLE_DETAIL });
+  }
   throw new ProdGuardError({
     code: 'production_target_refused',
     detail:
