@@ -1,7 +1,8 @@
 # shellcheck shell=bash
-# `migrate`, `trigger`, `prune`, `status` and `logs` of deploy/server/release.sh (sourced, never
-# run on its own; needs lib/release-remote.sh). The three that change production ask for a
-# typed word at the terminal (/dev/tty, never stdin) and refuse before any AWS call without one.
+# `migrate`, `trigger`, `prune`, `unlock`, `status` and `logs` of deploy/server/release.sh
+# (sourced, never run on its own; needs lib/release-remote.sh). The four that change the server
+# ask for a typed word at the terminal (/dev/tty, never stdin) and refuse before any AWS call
+# without one.
 
 TOOLS_SECONDS=3600 # a tools image build plus prisma or trigger.dev
 PRUNE_SECONDS=1800
@@ -82,6 +83,48 @@ cmd_prune() {
   # shellcheck disable=SC2086 # one image ref per word
   step prune "$PRUNE_SECONDS" "$run" new - prune apply $remove
   [[ "$REMOTE_CODE" -eq 0 ]] || die "pruning did not finish cleanly (above)"
+}
+
+# cmd_unlock: removes the lease a release or rollback holds between its steps when its laptop
+# stopped (interrupted, asleep, offline). The unlock step runs under that run's id, so the
+# server removes exactly the lease shown, and only while no step holds the server lock (a step
+# of that run, or any other, still running); the containers stay as they are.
+cmd_unlock() {
+  [[ $# -eq 0 ]] || die "usage: release.sh unlock"
+  require_local aws python3
+  need_terminal unlock
+  connect
+  TAG=""
+  REMOTE_QUIET=1 remote "comp release.sh status" 120 status lease
+  [[ "$REMOTE_CODE" -eq 0 ]] || die "could not read the lease from the server"
+  local holder what age left action
+  holder="$(result_of lease_holder)" what="$(result_of lease_what)"
+  age="$(result_of lease_age)" left="$(result_of lease_left)"
+  if [[ -z "$holder" ]]; then
+    echo "No lease on the server; nothing to unlock."
+    return 0
+  fi
+  if ((left <= 0)); then
+    echo "The lease of $what (run $holder) expired $((-left)) seconds ago; it blocks nothing."
+    return 0
+  fi
+  action="${what%% *}" TAG="${what#* }"
+  [[ "$action" =~ ^(release|rollback)$ && "$TAG" =~ ^[0-9a-f]{12}$ ]] || die "unexpected lease '$what' (run $holder)"
+  echo "The server is held between steps by $what (run $holder), taken $age seconds ago, for $left more seconds."
+  echo "Unlock it only when that run's release.sh has stopped: a run still running its smoke checks"
+  echo "could no longer record or revert its release. The containers stay as they are."
+  if ! confirmed unlock "Type unlock to remove the lease: "; then
+    die "Not unlocked."
+  fi
+  step unlock 120 "$holder" own - release unlock "$action" "$TAG"
+  case "$REMOTE_CODE" in
+    0)
+      echo "Unlocked. $TAG may be serving unverified: check with deploy/server/release.sh status, then"
+      echo "release $TAG again to verify and record it, or release the SHA that should serve."
+      ;;
+    75) die "not unlocked: a step is running on the server, or the lease changed (above)" ;;
+    *) die "unlocking failed (above)" ;;
+  esac
 }
 
 cmd_status() {

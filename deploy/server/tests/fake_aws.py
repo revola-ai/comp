@@ -21,13 +21,23 @@ Knobs (environment):
   FAKE_SSM_PENDING_POLLS       get-command-invocation answers InProgress this many times first
   FAKE_SSM_END                 "<n>:<Status>:<StatusDetails>:<ResponseCode>": command n (from 0)
                                ends that way instead, with no output (timed out, cancelled...)
+  FAKE_SSM_CANCEL              what cancel-command does: "ok" (default; the command ends
+                               Cancelled with no output) or "late" (it had ended already)
+  FAKE_AWS_INTERRUPT           "<SIG>@<trigger>,...": each trigger once, the fake sends SIG (INT,
+                               TERM or HUP) to its process group (the laptop's release.sh, as a
+                               Ctrl-C or a closed terminal would) and dies of it without answering.
+                               A trigger is "<service> <operation>" (send-command runs the
+                               command first, so it reached the server) or a command id
+                               ("fake-command-0": while release.sh waits for it)
 Nothing here talks to AWS.
 """
 import json
 import os
 import shlex
+import signal
 import subprocess
 import sys
+import time
 from typing import NoReturn
 
 argv = sys.argv[1:]
@@ -96,6 +106,26 @@ def out(text: str = '') -> NoReturn:
 
 
 service, operation = argv[0], argv[1]
+
+
+def interrupt(trigger: str) -> None:
+    """Delivers the signal FAKE_AWS_INTERRUPT names for <trigger>, once per trigger."""
+    for item in filter(None, os.environ.get('FAKE_AWS_INTERRUPT', '').split(',')):
+        name, _, wanted = item.partition('@')
+        done = state.setdefault('interrupted', [])
+        if wanted != trigger or item in done:
+            continue
+        done.append(item)
+        save()
+        number = getattr(signal, f'SIG{name}')
+        signal.signal(number, signal.SIG_DFL)
+        os.killpg(os.getpgrp(), number)
+        time.sleep(5)  # the signal ends this process first
+        sys.exit(1)
+
+
+if service != 'ssm' or operation != 'send-command':
+    interrupt(f'{service} {operation}')
 if os.environ.get('FAKE_AWS_DENY') == f'{service} {operation}':
     error('AccessDenied', operation, 'User is not authorized to perform this action')
 
@@ -182,13 +212,23 @@ if (service, operation) == ('ssm', 'send-command'):
     state['commands'][command_id] = {
         'instance': required_opt('--instance-ids'), 'code': run.returncode, 'polls': 0,
         'stdout': run.stdout[:keep], 'stderr': run.stderr[:8000],
+        'comment': opt('--comment'), 'cancelled': False,
     }
+    interrupt('ssm send-command')
     out(command_id)
+
+if (service, operation) == ('ssm', 'cancel-command'):
+    command = state['commands'].get(required_opt('--command-id'))
+    if command is None or command['instance'] != required_opt('--instance-ids'):
+        error('InvalidCommandId', 'CancelCommand', 'no such command')
+    command['cancelled'] = os.environ.get('FAKE_SSM_CANCEL', 'ok') == 'ok'
+    out()
 
 if (service, operation) == ('ssm', 'get-command-invocation'):
     command = state['commands'].get(required_opt('--command-id'))
     if command is None or command['instance'] != required_opt('--instance-id'):
         error('InvocationDoesNotExist', 'GetCommandInvocation', 'no such invocation')
+    interrupt(required_opt('--command-id'))
     command['polls'] += 1
     pending = command['polls'] <= int(os.environ.get('FAKE_SSM_PENDING_POLLS', '1'))
     status = 'InProgress' if pending else ('Success' if command['code'] == 0 else 'Failed')
@@ -197,6 +237,8 @@ if (service, operation) == ('ssm', 'get-command-invocation'):
     end = os.environ.get('FAKE_SSM_END', '').split(':')
     if not pending and len(end) == 4 and required_opt('--command-id') == f'fake-command-{end[0]}':
         status, details, code, stdout, stderr = end[1], end[2], int(end[3]), '', ''
+    if command.get('cancelled'):
+        status, details, code, stdout, stderr = 'Cancelled', 'Cancelled', -1, '', ''
     out(json.dumps({
         'Status': status, 'StatusDetails': details, 'ResponseCode': code,
         'StandardOutputContent': stdout, 'StandardErrorContent': stderr,

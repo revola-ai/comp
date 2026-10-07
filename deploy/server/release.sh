@@ -9,6 +9,7 @@
 #   deploy/server/release.sh status                           tags, containers, last releases, disk
 #   deploy/server/release.sh logs <service> | --release <log> the logs tail command, or a step's log
 #   deploy/server/release.sh prune                            remove old images (typed: prune)
+#   deploy/server/release.sh unlock                           free a lease a stopped run left (typed: unlock)
 #
 # It drives the server (the one running instance named comp-server) through SSM Run Command,
 # never SSH: each step's script runs there as root (deploy/server/on-server/), its full log
@@ -42,6 +43,8 @@ source "$SERVER_DIR/lib/release-remote.sh"
 source "$SERVER_DIR/lib/release-flow.sh"
 # shellcheck source=deploy/server/lib/release-ops.sh
 source "$SERVER_DIR/lib/release-ops.sh"
+# shellcheck source=deploy/server/lib/release-interrupt.sh
+source "$SERVER_DIR/lib/release-interrupt.sh" # traps INT, TERM and HUP
 
 usage() {
   sed -n 's/^#   deploy/  deploy/p' "${BASH_SOURCE[0]}"
@@ -58,6 +61,7 @@ case "$command" in
   status) cmd_status "$@" ;;
   logs) cmd_logs "$@" ;;
   prune) cmd_prune "$@" ;;
+  unlock) cmd_unlock "$@" ;;
   -h | --help) usage ;;
   *) usage >&2; exit 2 ;;
 esac

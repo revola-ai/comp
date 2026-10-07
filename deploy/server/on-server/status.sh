@@ -6,6 +6,8 @@
 #   status.sh show                 current and previous tag, the lease, the comp containers with
 #                                  their health, the last 10 lines of releases.log, disk use of /
 #   status.sh tags                 only comp-result: current=... and previous=...
+#   status.sh lease                comp-result: lease_holder, lease_what, lease_age (seconds since
+#                                  it was taken) and lease_left (seconds to expiry, <= 0: expired)
 #   status.sh log <name> <offset>  bytes <offset>.. (at most 15000, base64) of the last 500 lines
 #                                  of /opt/comp/logs/<name>, with the total size; release.sh
 #                                  pages through them because SSM keeps 24000 characters
@@ -43,17 +45,28 @@ page() { # page <name> <offset>
   PAGE_DATA="$(set +o pipefail; tail -n 500 "$path" | tail -c +"$(($2 + 1))" | head -c 15000 | base64 | tr -d '\n')"
 }
 
-status=0 PAGE_TOTAL="" PAGE_DATA=""
+status=0 PAGE_TOTAL="" PAGE_DATA="" LEASE=""
 case "${1:-}" in
   show) show || status=$? ;;
   tags) ;;
+  lease) LEASE=1 ;;
   log) page "${2:-}" "${3:-}" || status=$? ;;
-  *) echo "usage: status.sh show | tags | log <name> <offset>"; status=2 ;;
+  *) echo "usage: status.sh show | tags | lease | log <name> <offset>"; status=2 ;;
 esac
 echo comp-meta-begin
 result "current=$(current_tag)"
 result "previous=$(previous_tag)"
 [[ -z "$PAGE_TOTAL" ]] || result "total=$PAGE_TOTAL"
 [[ -z "$PAGE_TOTAL" ]] || result "page=$PAGE_DATA"
+if [[ -n "$LEASE" ]]; then
+  lease_read
+  if [[ -n "$LEASE_HOLDER" ]]; then
+    now="$(date +%s)"
+    result "lease_holder=$LEASE_HOLDER"
+    result "lease_what=$LEASE_WHAT"
+    result "lease_age=$((now - (LEASE_EXPIRES - LEASE_SECONDS)))"
+    result "lease_left=$((LEASE_EXPIRES - now))"
+  fi
+fi
 echo "comp-end: $status"
 exit "$status"

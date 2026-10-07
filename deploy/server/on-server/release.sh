@@ -9,6 +9,9 @@
 #                                     whose three images are gone, or the serving one
 #   release.sh finish <action> <sha12>  after the laptop's smoke checks passed: records ok
 #   release.sh revert <action> <sha12>  after they failed: brings the previous tag back
+#   release.sh unlock <action> <sha12>  `release.sh unlock` on the laptop: removes the lease of
+#                                     a run whose laptop stopped (entry.sh checked it is that
+#                                     run's and holds the lock, so no step runs); records it
 #
 # "up" that succeeds leaves the lease (COMP_RUN_ID) for finish or revert; a failed "up" brings
 # the previous ok tag back by itself. Every attempt adds one line to /opt/comp/releases.log,
@@ -24,7 +27,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/server-stack.sh"
 set -uo pipefail
 
 usage() {
-  echo "usage: release.sh up|finish|revert release|rollback <sha12>" >&2
+  echo "usage: release.sh up|finish|revert|unlock release|rollback <sha12>" >&2
   exit 2
 }
 [[ $# -eq 3 && "$2" =~ ^(release|rollback)$ && "$3" =~ $TAG_RE ]] || usage
@@ -114,8 +117,15 @@ case "$step" in
     ;;
   revert)
     lease_drop
-    echo "The smoke checks of $tag failed."
+    echo "The smoke checks of $tag failed, or the laptop was interrupted."
     restore "$(current_tag)"
+    ;;
+  unlock)
+    lease_drop
+    record "$action" "$tag" unlocked
+    echo "Removed the lease of $action $tag (run ${COMP_RUN_ID:-?}); no container was changed."
+    echo "Recorded serving tag: $(current_tag); the comp containers run: $(docker ps --all \
+      --filter label=com.docker.compose.project=comp --format '{{.Image}}' | paste -sd ' ' -)"
     ;;
   *) usage ;;
 esac

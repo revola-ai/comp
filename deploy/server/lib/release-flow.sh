@@ -39,10 +39,12 @@ smoke() { # smoke <tag>: the public checks, stopping at the first that fails
     smoke_one https://app.comp.revola.ai/ access
 }
 
-# after_restore: reports a server step that ended with the previous tag back (4), nothing
-# serving (5) or an unknown state; smoke-checks the restored tag. Always fails the command.
+# after_restore [what]: reports a server step that ended with the previous tag back (4),
+# nothing serving (5) or an unknown state; smoke-checks the restored tag. <what> says what
+# happened to $TAG (default: it failed). Always fails the command.
 after_restore() {
-  local serving
+  local what="${1:-$TAG failed}" serving
+  STAGE=done
   serving="$(result_of serving)"
   case "$REMOTE_CODE:$serving" in
     4:?*)
@@ -52,8 +54,8 @@ after_restore() {
         echo "Now serving $serving, but its smoke checks fail too: the site may be down (deploy/server/release.sh status)."
       fi
       ;;
-    5:*) echo "THE SITE IS DOWN: $TAG failed and there was no earlier release to bring back." ;;
-    *) unknown_state "$TAG failed" ;;
+    5:*) echo "THE SITE IS DOWN: $what and there was no earlier release to bring back." ;;
+    *) unknown_state "$what" ;;
   esac
   exit 1
 }
@@ -71,8 +73,10 @@ bring_up() {
   if [[ "$action" == release ]]; then
     sha="$FULL_SHA" timeout="$RELEASE_SECONDS"
   fi
+  STAGE=up UP_RUN="$run" UP_ACTION="$action" # an interrupt from here on reverts (lib/release-interrupt.sh)
   step "$action" "$timeout" "$run" new "$sha" release up "$action" "$TAG"
   if [[ "$REMOTE_STATUS" != Success ]] || [[ "$REMOTE_CODE" -ne 0 ]]; then
+    STAGE=done
     if unchanged; then
       die "$action of $TAG stopped before any container changed (above); still serving the earlier release"
     fi
@@ -82,8 +86,10 @@ bring_up() {
     unknown_state "The $action step of $TAG did not end normally"
     exit 1
   fi
+  STAGE=verify
   if smoke "$TAG"; then
     step finish "$UP_SECONDS" "$run" own - release finish "$action" "$TAG"
+    STAGE=done
     [[ "$REMOTE_CODE" -eq 0 ]] ||
       die "$TAG is up and passes the smoke checks, but recording it failed (above); rerun: deploy/server/release.sh $action $TAG"
     echo

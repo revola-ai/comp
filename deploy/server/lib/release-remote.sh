@@ -15,6 +15,13 @@ REMOTE_STATUS="" # how SSM says the command ended (Success, Failed, TimedOut, Ca
 REMOTE_ENDED=""  # set when the server's end marker (comp-end) arrived
 REMOTE_LOG=""    # the server's log of the last step, when it reported one
 REMOTE_QUIET=""  # set: keep the step's output to itself (paging through a log)
+# What is in flight, for lib/release-interrupt.sh:
+SENDING=""       # set while send-command runs: a command may be on its way, its id unknown
+SENT_ANY=""      # set once any command was sent
+INFLIGHT_ID=""   # the SSM command being waited for
+INFLIGHT_KIND="" # its kind: entry or status
+INFLIGHT_STEP="" # its step name (status for a read-only one)
+LAST_STEP=""     # the name of the last step that ended
 DELIVERY_SECONDS=600
 POLL_SECONDS=5
 WORK="$(mktemp -d)"
@@ -106,15 +113,27 @@ PY
 # remote <comment> <timeout-seconds> <entry|status> <args...>: runs one server step and waits
 # for it; sets REMOTE_CODE and REMOTE_LOG and keeps its comp-result lines for result_of.
 remote() {
-  local comment="$1" timeout="$2" kind="$3" parameters id polls=0 max status code details
+  local comment="$1" timeout="$2" kind="$3" parameters
   shift 3
   parameters="$(ssm_parameters "$timeout" "$kind" "$@")"
-  capture aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript \
+  INFLIGHT_KIND="$kind"
+  [[ "$kind" == entry ]] || INFLIGHT_STEP=status
+  SENDING=1 SENT_ANY=1
+  if ! capture aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript \
     --comment "$comment" --timeout-seconds "$DELIVERY_SECONDS" --parameters "$parameters" \
-    --query Command.CommandId --output text --region "$REGION" ||
+    --query Command.CommandId --output text --region "$REGION"; then
+    SENDING=""
     die "could not send the SSM command: $ERR"
-  id="$OUT"
-  max=$(((timeout + DELIVERY_SECONDS + 300) / POLL_SECONDS))
+  fi
+  INFLIGHT_ID="$OUT"
+  SENDING=""
+  await_command "$INFLIGHT_ID" $(((timeout + DELIVERY_SECONDS + 300) / POLL_SECONDS))
+}
+
+# await_command <command-id> <max polls>: waits for an SSM command to end, prints its output
+# and sets REMOTE_STATUS, REMOTE_CODE, REMOTE_ENDED and REMOTE_LOG.
+await_command() {
+  local id="$1" max="$2" polls=0 status code details
   while :; do
     ((polls++ < max)) || die "gave up waiting for SSM command $id; it may still run (aws ssm get-command-invocation --command-id $id --instance-id $INSTANCE_ID --region $REGION)"
     sleep "$POLL_SECONDS"
@@ -134,6 +153,7 @@ print(answer.get("Status", "Unknown"), answer.get("ResponseCode", -1), answer.ge
     esac
     break
   done
+  INFLIGHT_ID=""
   REMOTE_STATUS="$status"
   split_output
   case "$status" in
@@ -181,8 +201,9 @@ step() {
   local name="$1" timeout="$2" run="$3" lease="$4" sha="$5" log
   shift 5
   log="$(step_name "$name" "$TAG").log"
-  CUT_SHORT=""
+  CUT_SHORT="" INFLIGHT_STEP="$name"
   remote "comp release.sh $name${TAG:+ $TAG}" "$timeout" entry "$log" "$run" "$lease" "$sha" "$@"
+  LAST_STEP="$name"
   if [[ -n "$CUT_SHORT" ]]; then
     echo "Full log: /opt/comp/logs/$log (fetch it with: deploy/server/release.sh logs --release $log)"
   elif [[ -n "$REMOTE_LOG" ]]; then
