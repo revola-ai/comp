@@ -3,7 +3,7 @@ declare const __API_URL__: string;
 declare const __AUTO_UPDATE_URL__: string;
 declare const __AGENT_VERSION__: string;
 
-// Injected at build time via electron-vite define (src/build/build-urls.cjs); the build
+// Injected at build time via electron-vite define (src/build-config/build-urls.cjs); the build
 // fails without them, so there is no upstream default here.
 
 /** Default portal base URL */

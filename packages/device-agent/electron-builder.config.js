@@ -1,4 +1,4 @@
-const { requiredBuildUrl } = require('./src/build/build-urls.cjs');
+const { requiredBuildUrl } = require('./src/build-config/build-urls.cjs');
 
 // Use a space-free product name for Linux to avoid path issues
 const isLinuxBuild = process.argv.includes('--linux') || process.env.BUILD_TARGET === 'linux';

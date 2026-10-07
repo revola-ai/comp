@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 
 const require = createRequire(import.meta.url);
 const pkg = require('./package.json');
-const { deviceAgentUrls } = require('./src/build/build-urls.cjs');
+const { deviceAgentUrls } = require('./src/build-config/build-urls.cjs');
 
 export default defineConfig(({ command }) => {
   // A build fails when PORTAL_URL, API_URL or AUTO_UPDATE_URL is unset (no upstream
