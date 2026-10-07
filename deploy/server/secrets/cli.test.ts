@@ -245,6 +245,35 @@ describe('push-secrets', () => {
     expect(readFake({ sandbox }).state.secret).toBeNull();
   }, 60_000);
 
+  function alive(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  test('SIGTERM to push-secrets alone also stops the aws child and says the write is unknown', async () => {
+    const { sandbox, checkout } = setup();
+    const run = startCli({
+      sandbox,
+      args: ['--source', checkout],
+      terminal: PUSH,
+      env: { FAKE_AWS_BLOCK: 'secretsmanager create-secret', FAKE_AWS_IGNORE_HUP: '1' },
+    });
+    const blocked = await waitForBlocked(`${sandbox.state}.blocked`);
+    process.kill(blocked.ppid, 'SIGTERM');
+    expect(await run.exited).toBe(143);
+    for (let tries = 0; tries < 50 && alive(blocked.pid); tries++) await Bun.sleep(100);
+    const survived = alive(blocked.pid);
+    if (survived) process.kill(blocked.pid, 'SIGKILL');
+    expect(survived).toBe(false);
+    expect(existsSync(dirname(blocked.path))).toBe(false);
+    expect(run.output()).toContain('the secret write may or may not have completed; check with --dry-run');
+    expectNoValues(run.output());
+  }, 60_000);
+
   test('refusals go to stderr and the plan to stdout', () => {
     const { sandbox, checkout } = setup(sources({ prod: { TUNNEL_TOKEN: '' } }));
     const run = runPiped({ sandbox, args: ['--source', checkout, '--dry-run'] });

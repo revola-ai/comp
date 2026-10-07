@@ -77,16 +77,36 @@ function laptopCopyProblems({
     );
 }
 
+/** A value holding another key's `KEY=` is two lines glued together (a missing line break). */
+function gluedLineProblems({
+  key,
+  file,
+  value,
+  keys,
+}: {
+  key: string;
+  file: SourceFile;
+  value: string;
+  keys: readonly string[];
+}): string[] {
+  if (!keys.some((other) => value.includes(`${other}=`))) return [];
+  return [
+    `${key} in ${file} holds another KEY=VALUE pair, as if two lines were glued together; put each on its own line`,
+  ];
+}
+
 function resolveKey({
   key,
   spec,
   sources,
   target,
+  keys,
 }: {
   key: string;
   spec: SecretKeySpec;
   sources: SourceValues;
   target: ProductionTarget;
+  keys: readonly string[];
 }): { value?: string; problems: string[]; notes: string[] } {
   const file = sources[spec.file];
   const primary = spec.name ?? key;
@@ -107,6 +127,7 @@ function resolveKey({
     const suffix = place.name === name ? '' : ` (${place.name})`;
     return `${key} disagrees between ${spec.file} and ${place.file}${suffix}`;
   });
+  problems.push(...gluedLineProblems({ key, file: spec.file, value, keys }));
   problems.push(...laptopCopyProblems({ key, spec, name, value, sources }));
   problems.push(...valueProblems({ key, value, target }));
   return problems.length === 0 ? { value, problems, notes } : { problems, notes };
@@ -125,7 +146,7 @@ export function resolveDesired({
   const problems: string[] = [];
   const notes: string[] = [];
   for (const [key, spec] of Object.entries(secretKeys)) {
-    const resolved = resolveKey({ key, spec, sources, target });
+    const resolved = resolveKey({ key, spec, sources, target, keys: Object.keys(secretKeys) });
     problems.push(...resolved.problems);
     notes.push(...resolved.notes);
     if (resolved.value !== undefined) values[key] = resolved.value;

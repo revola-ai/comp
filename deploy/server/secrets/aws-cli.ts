@@ -19,24 +19,39 @@ export class AwsError extends Error {
   }
 }
 
+type Killable = Readonly<{ kill: (signal?: NodeJS.Signals) => void }>;
+
+/** The aws processes running now, so an interrupted push can stop them too. */
+const inFlight = new Set<Killable>();
+
+/** Stops every aws process this one started and that is still running (SIGTERM). */
+export function stopAwsChildren(): void {
+  for (const child of inFlight) child.kill('SIGTERM');
+}
+
 /** The aws executable on PATH, with no pager and no stdin. */
 export const spawnAws: AwsRunner = async (args) => {
+  let child: Killable | undefined;
   try {
-    const child = Bun.spawn({
+    const spawned = Bun.spawn({
       cmd: ['aws', ...args],
       env: { ...process.env, AWS_PAGER: '' },
       stdin: 'ignore',
       stdout: 'pipe',
       stderr: 'pipe',
     });
+    child = spawned;
+    inFlight.add(spawned);
     const [stdout, stderr, status] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
+      new Response(spawned.stdout).text(),
+      new Response(spawned.stderr).text(),
+      spawned.exited,
     ]);
     return { status, stdout, stderr };
   } catch (error) {
     return { status: 127, stdout: '', stderr: error instanceof Error ? error.message : String(error) };
+  } finally {
+    if (child) inFlight.delete(child);
   }
 };
 

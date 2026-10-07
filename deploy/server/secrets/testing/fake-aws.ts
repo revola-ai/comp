@@ -17,6 +17,8 @@ import { z } from 'zod';
 //   FAKE_AWS_DENY      "<service> <operation>" that fails with AccessDeniedException
 //   FAKE_AWS_BLOCK     "<service> <operation>" that, once it has read its paramfile, writes
 //                      {pid, ppid, path} to $FAKE_AWS_STATE.blocked and never returns
+//   FAKE_AWS_IGNORE_HUP while blocked, survive SIGHUP (the terminal closing), so only a signal
+//                      sent to this process itself ends it
 
 const stateSchema = z.object({
   secret: z
@@ -89,7 +91,8 @@ function readParamFile(operation: string): string {
   const contents = readFileSync(path, 'utf8');
   if (process.env.FAKE_AWS_BLOCK === `${argv[0]} ${operation}`) {
     writeFileSync(`${env.FAKE_AWS_STATE}.blocked`, JSON.stringify({ pid: process.pid, ppid: process.ppid, path }));
-    // Sleeps (at most 10 minutes) until a signal ends this process; it has no handlers.
+    if (process.env.FAKE_AWS_IGNORE_HUP === '1') process.on('SIGHUP', () => undefined);
+    // Sleeps (at most 10 minutes) until a signal ends this process.
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 600_000);
     process.exit(255);
   }

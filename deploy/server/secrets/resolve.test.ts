@@ -123,6 +123,17 @@ describe('resolveDesired', () => {
     ]);
   });
 
+  test('a value holding another KEY= (two lines glued together) is refused', () => {
+    const files = sources({
+      api: { OPENAI_API_KEY: 'fakesecret-openaiRESEND_API_KEY=fakesecret' },
+      prod: { TRIGGER_ACCESS_TOKEN: 'tr_pat_fakesecretINTERNAL_API_TOKEN=fakesecret' },
+    });
+    expect(resolve(files).problems).toEqual([
+      'OPENAI_API_KEY in apps/api/.env holds another KEY=VALUE pair, as if two lines were glued together; put each on its own line',
+      'TRIGGER_ACCESS_TOKEN in deploy/server/.env.production.local holds another KEY=VALUE pair, as if two lines were glued together; put each on its own line',
+    ]);
+  });
+
   test('the production-only file holds only the keys read from it', () => {
     const files = sources({ prod: { DATABASE_URL: RUNTIME_URL, TUNNEL_TOKN: 'fakesecret' } });
     expect(resolve(files).problems).toEqual([
