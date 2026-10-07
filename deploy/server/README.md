@@ -222,7 +222,7 @@ Every step that may change something, on the server:
 
 - takes the server lock (`flock` on `/opt/comp/release.lock`, never waiting): release, rollback, migrate, trigger and prune run one at a time, and a second caller fails at once;
 - holds, for a release or rollback, a lease (`/opt/comp/release.lease`, 20 minutes) between bringing the tag up and recording it (while the laptop runs the smoke checks), so nothing starts in between; an expired lease is ignored;
-- with a SHA, fetches every branch of `origin` into `/opt/comp/src`, refuses local changes there and checks the SHA out detached;
+- with a SHA, fetches every branch of `origin` into `/opt/comp/src`, refuses local changes there and checks the SHA out detached under umask 022, then makes the checkout (not `.git`, never through a symlink) world-readable so the images' `node` user can read what BuildKit copies;
 - writes its full output to `/opt/comp/logs/<utc>-<step>-<sha12>.log` (0600 in a 0700 directory); `release.sh` prints the last 200 lines (at most 20,000 bytes, because SSM keeps 24,000 characters) and the log's path.
   When the output still arrives cut short, it says so and prints the `logs --release` command that fetches the full log in pages.
 - adds one line per attempt to `/opt/comp/releases.log`, `<utc> <action> <sha12> <ok|failed|rolled-back>`; the current tag is the top of the serving history (see rollback).
@@ -237,7 +237,7 @@ Every step that may change something, on the server:
 
 A failure after the containers changed (health or smoke) brings the previous `ok` tag back up the same way, smoke-checks it, and says which tag serves; the attempt is recorded `rolled-back`.
 After a first release there is nothing to go back to: the failed stack is stopped, the attempt recorded `failed`, and `release.sh` says the site is down.
-A refused release (build or migration gate) changes no container but leaves `/opt/comp/src` at the new SHA and the env files rendered from it; the next step starts from there.
+A refused release changes no container but leaves `/opt/comp/src` at the new SHA: after a build failure the env files are still those of the previous render, after a migration-gate refusal they are re-rendered from the new SHA.
 When SSM reports the up step timed out, cancelled, undeliverable or terminated, or its output lacks the end marker, `release.sh` says the serving state is unknown and prints `deploy/server/release.sh status`.
 If the laptop is interrupted after the new tag came up, it keeps serving unrecorded; `status` shows the running images next to the recorded tag, and rerunning `release <sha>` (nothing to build) records it.
 
@@ -270,7 +270,7 @@ The tasks' own env vars are set in the Trigger.dev dashboard (each project, Envi
 
 ### prune
 
-`prune` lists what it keeps and what it would remove, then asks for the typed word `prune`; it keeps the images of the current tag and the 3 most recent other `ok` tags (`rollback` needs them), the image of every container of the `comp` project, running or stopped, and the pinned `cloudflared` image, which is never a candidate (only `comp-api`, `comp-app`, `comp-portal` and `comp-migrate` images are removed), so it stays even when its container is gone.
+`prune` lists what it keeps and what it would remove, then asks for the typed word `prune`; it keeps the images of the current tag, the 3 most recent other `ok` tags and the default rollback target (`rollback` needs them), the image of every container of the `comp` project, running or stopped, and the pinned `cloudflared` image, which is never a candidate (only `comp-api`, `comp-app`, `comp-portal` and `comp-migrate` images are removed), so it stays even when its container is gone.
 It then trims the build cache to 20 GB (`docker builder prune --keep-storage 20GB -f`) and never runs `docker image prune`, which can delete the digest-pinned `cloudflared` image (Docker lists it untagged).
 
 ## Tests

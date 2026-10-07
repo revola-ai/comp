@@ -7,7 +7,8 @@
 #                            cache to 20 GB (docker builder prune --keep-storage 20GB -f)
 #
 # Only comp-api, comp-app, comp-portal and comp-migrate images are ever removed. Kept: the tags
-# of the current release and the last 3 other ok releases (releases.log), and the image of
+# of the current release and the last 3 other ok releases (releases.log), the default rollback
+# target (the entry below the top of the serving history), and the image of
 # every container of the comp project, running or stopped. The pinned cloudflared image is
 # never a candidate (it is not comp-*), so it stays even when its container is gone; Docker
 # shows it untagged, which is why this never runs `docker image prune`. The laptop asks for
@@ -21,11 +22,15 @@ set -uo pipefail
 CANDIDATE_RE='^comp-(api|app|portal|migrate):[0-9a-f]{12}$'
 KEEP_TAGS=4 # the current tag and the last 3 others
 
+kept_tags() { # the 4 newest distinct ok tags and the default rollback target, each once
+  { recent_ok_tags | sed -n "1,${KEEP_TAGS}p"; previous_tag; } | awk 'NF && !seen[$0]++'
+}
+
 # removable: prints, one per line, every comp-* image outside the kept tags and unused by a
 # container of the project. Fails when docker cannot be read.
 removable() {
   local keep in_use images ref
-  keep="$(recent_ok_tags | sed -n "1,${KEEP_TAGS}p")"
+  keep="$(kept_tags)"
   in_use="$(docker ps --all --filter label=com.docker.compose.project=comp --format '{{.Image}}')" || return 1
   images="$(docker image ls --format '{{.Repository}}:{{.Tag}}')" || return 1
   while read -r ref; do
@@ -40,7 +45,7 @@ plan() {
   local remove tunnel ref
   remove="$(removable)" || { echo "could not list the images or containers"; return 1; }
   tunnel="$(grep -oE 'docker\.io/cloudflare/cloudflared:[^@[:space:]]+@sha256:[0-9a-f]{64}' "$COMPOSE_FILE" | head -n 1)"
-  echo "Keeping the tags of the current release and the last 3 others: $(recent_ok_tags | sed -n "1,${KEEP_TAGS}p" | tr '\n' ' ')"
+  echo "Keeping the tags of the current release, the last 3 others and the rollback target: $(kept_tags | tr '\n' ' ')"
   echo "Keeping the images of the comp containers: $(docker ps --all --filter label=com.docker.compose.project=comp --format '{{.Image}}' | tr '\n' ' ')"
   echo "Keeping the pinned cloudflared image: ${tunnel:-(not found in compose.yaml)}"
   if [[ -n "$remove" ]]; then

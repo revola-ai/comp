@@ -2,7 +2,7 @@
 # Shared setup of deploy/server/tests/release*.test.sh (sourced after tests/lib.sh, never run).
 # One sandbox plays both machines. The laptop runs deploy/server/release.sh; the fake aws
 # (tests/fake_aws.py) runs each SSM command at once, locally, with /bin/sh and
-# COMP_ROOT=$SERVER (the server's /opt/comp, whose src/ is this repository), as SSM would run
+# COMP_ROOT=$SERVER (the server's /opt/comp; src/ holds a copy of deploy/server), as SSM would run
 # it as root on the server. docker, git, curl, flock and sleep are fakes on PATH, so nothing
 # reaches AWS, GitHub, Docker, Trigger.dev, a database or the internet.
 
@@ -37,8 +37,8 @@ install_release_fakes() {
 # empty call logs; knobs from an earlier case are cleared.
 reset_server() {
   rm -rf "$SERVER"
-  mkdir -p "$SERVER"
-  ln -s "$ROOT" "$SERVER/src"
+  mkdir -p "$SERVER/src/deploy"
+  cp -Rp "$SERVER_DIR" "$SERVER/src/deploy/"
   write_fixture "$TMP/secret.json"
   printf '{"instances": ["%s"]}\n' "$INSTANCE" >"$FAKE_AWS_STATE"
   printf '{"images": ["%s"], "containers": {}, "migrations": "up-to-date"}\n' "$TUNNEL_REF" \

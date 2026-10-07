@@ -41,6 +41,12 @@ check "another AWS_REGION: refused" grep -qF "only works in us-east-2" "$TMP/reg
 # ---------------------------------------------------------------- a release that works
 reset_server
 released "$TAG_A"
+# A server that checked out under umask 077 before: a tracked file and a directory too tight
+# for the node user of the images; and a symlink in the tree to a root-only file outside it.
+chmod 600 "$SERVER/src/deploy/server/README.md"
+chmod 700 "$SERVER/src/deploy/server/env"
+printf 'outside\n' >"$TMP/root-only" && chmod 600 "$TMP/root-only"
+ln -s "$TMP/root-only" "$SERVER/src/deploy/server/link"
 release_sh "$TMP/ok.out" release "$TAG_B"
 status=$?
 cp -f "$FAKE_AWS_LOG" "$TMP/ok.aws.log"
@@ -90,6 +96,14 @@ check "release: migrate.env holds only DATABASE_URL (the migration URL)" \
 check "release: migrate.env is the secret's DATABASE_MIGRATION_URL" \
   test "$(value_of "$SERVER/env/migrate.env" DATABASE_URL)" = "$MIGRATION_URL"
 check "release: logs directory 0700" test "$(mode_of "$SERVER/logs")" = 700
+check "release: env files stay 0600" bash -c "for f in '$SERVER'/env/*.env; do [[ \$(python3 -c 'import os,sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' \$f) == 0o600 ]] || exit 1; done"
+MIGRATION_DIR="$SERVER/src/packages/db/prisma/migrations/20261001000000_add_widget"
+check "release: a file new in the checkout is world-readable" test "$(mode_of "$MIGRATION_DIR/migration.sql")" = 644
+check "release: a directory new in the checkout is world-readable" test "$(mode_of "$MIGRATION_DIR")" = 755
+check "release: a tracked file left 0600 by an older run is readable again" \
+  test "$(mode_of "$SERVER/src/deploy/server/README.md")" = 644
+check "release: a directory left 0700 is readable again" test "$(mode_of "$SERVER/src/deploy/server/env")" = 755
+check "release: a symlink's target outside the tree is left alone" test "$(mode_of "$TMP/root-only")" = 600
 check "release: one log per step, 0600, named <utc>-<step>-<sha12>.log" bash -c "
   cd '$SERVER/logs' && [[ \$(ls | wc -l) -eq 2 ]] && for f in *; do
     [[ \$f =~ ^$LOG_NAME_RE\$ ]] && [[ \$(python3 -c 'import os,sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' \$f) == 0o600 ]] || exit 1

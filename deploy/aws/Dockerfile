@@ -110,7 +110,8 @@ RUN cd apps/portal \
 # `prisma migrate status|deploy`, and apps/api and apps/app with their schema files for
 # `trigger.dev deploy` (whose CA extension reads deploy/aws/certs). Prisma verifies the
 # database against the Supabase CA (DATABASE_SSL_CA). Runs as node, with HOME on the tmpfs
-# compose mounts at /tmp; apps/api and apps/app are node's, for what trigger.dev writes there.
+# compose mounts at /tmp. trigger.dev deploy writes in the project only under .trigger (its
+# build output) and prisma/schema (the Prisma extension's copy), so only those are node's.
 FROM libs AS migrate
 COPY deploy/aws/certs/supabase-ca.crt /app/certs/supabase-ca.crt
 COPY deploy/aws/certs/supabase-ca.crt ./deploy/aws/certs/supabase-ca.crt
@@ -118,7 +119,9 @@ COPY apps/api ./apps/api
 COPY apps/app ./apps/app
 RUN cd apps/api && bun run db:getschema \
   && cd ../app && bun run db:getschema && bunx prisma generate --schema=prisma/schema \
-  && chown -R node:node /repo/apps/api /repo/apps/app
+  && mkdir -p /repo/apps/api/.trigger /repo/apps/app/.trigger \
+  && chown -R node:node /repo/apps/api/.trigger /repo/apps/app/.trigger \
+       /repo/apps/api/prisma /repo/apps/app/prisma
 ENV DATABASE_SSL_CA=/app/certs/supabase-ca.crt \
     HOME=/tmp
 WORKDIR /repo/packages/db

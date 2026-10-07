@@ -7,13 +7,23 @@
 #   FAKE_GIT_DIRTY     what `status --porcelain` prints (local changes on the server)
 #   FAKE_GIT_HEAD      the file that holds the checked-out SHA
 #   FAKE_GIT_STALE     full SHAs only on a branch deleted on GitHub: `fetch --prune` drops it
+# A checkout writes a file new to the tree, packages/db/prisma/migrations/<new>/migration.sql,
+# under the caller's umask, as git would.
 printf 'git %s\n' "$*" >>"$FAKE_GIT_LOG"
-args=("$@")
-while [[ "${args[0]:-}" == -C || "${args[0]:-}" == -c ]]; do args=("${args[@]:2}"); done
+args=("$@") dir=.
+while [[ "${args[0]:-}" == -C || "${args[0]:-}" == -c ]]; do
+  [[ "${args[0]}" == -C ]] && dir="${args[1]}"
+  args=("${args[@]:2}")
+done
 case "${args[0]:-}" in
   fetch) [[ " ${args[*]} " == *" --prune "* ]] && : >"$FAKE_GIT_HEAD.pruned"; exit 0 ;;
   status) [[ -z "${FAKE_GIT_DIRTY:-}" ]] || printf '%s\n' "$FAKE_GIT_DIRTY"; exit 0 ;;
-  checkout) printf '%s\n' "${args[-1]}" >"$FAKE_GIT_HEAD"; exit 0 ;;
+  checkout)
+    printf '%s\n' "${args[-1]}" >"$FAKE_GIT_HEAD"
+    mkdir -p "$dir/packages/db/prisma/migrations/20261001000000_add_widget"
+    printf 'CREATE TABLE widget ();\n' >"$dir/packages/db/prisma/migrations/20261001000000_add_widget/migration.sql"
+    exit 0
+    ;;
   branch)
     for sha in ${FAKE_GIT_STALE:-}; do
       [[ "$sha" == "${args[-1]}" && ! -e "$FAKE_GIT_HEAD.pruned" ]] && printf '  origin/old-branch\n' && exit 0

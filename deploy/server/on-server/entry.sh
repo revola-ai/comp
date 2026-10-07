@@ -11,7 +11,10 @@
 #    checks): "new" refuses while another run holds it, "own" needs it to be <run-id>'s.
 # 3. Writes everything after this to /opt/comp/logs/<log-name> (0600 in a 0700 directory).
 # 4. With a sha: fetches every branch of origin into /opt/comp/src, refuses local changes, and
-#    checks the sha out detached.
+#    checks the sha out detached, under umask 022 (the public source is not secret, and the
+#    images' node user must read what BuildKit copies); then makes every file and directory of
+#    the checkout (not .git, never through a symlink) world-readable, which also heals a tree
+#    an earlier run checked out under umask 077. Logs, env files, lock and lease stay 077.
 # 5. Runs deploy/server/on-server/<script>.sh [args...] from the checkout, with COMP_RUN_ID.
 # 6. Prints the end of the log (200 lines, at most 20000 bytes: SSM keeps 24000 characters),
 #    then the lines release.sh reads (see `meta`), and exits with the script's status.
@@ -60,8 +63,9 @@ elif [[ "$lease_mode" == own ]]; then
 fi
 [[ ! -e "$log" ]] || refuse 1 "$log exists already; rerun the command"
 
-checkout() { # checkout <sha>: the full checkout at <sha>, or a refusal
+checkout() { # checkout <sha>: the full checkout at <sha>, or a refusal (run in a subshell)
   local changes head
+  umask 022
   git -C "$COMP_SRC" fetch --quiet origin '+refs/heads/*:refs/remotes/origin/*' || {
     echo "git fetch in $COMP_SRC failed"
     return 1
@@ -74,12 +78,16 @@ checkout() { # checkout <sha>: the full checkout at <sha>, or a refusal
   git -C "$COMP_SRC" checkout --quiet --detach "$1" || return 1
   head="$(git -C "$COMP_SRC" rev-parse HEAD)" || return 1
   [[ "$head" == "$1" ]] || { echo "the checkout is at $head, not $1"; return 1; }
+  find "$COMP_SRC" -path "$COMP_SRC/.git" -prune -o ! -type l -exec chmod a+rX {} + || {
+    echo "could not make $COMP_SRC world-readable"
+    return 1
+  }
   echo "== checked out $1 in $COMP_SRC"
 }
 
 run_step() {
   echo "== $script $* (run $run_id, $(utc_now))"
-  if [[ "$sha" != - ]] && ! checkout "$sha"; then
+  if [[ "$sha" != - ]] && ! (checkout "$sha"); then
     result "changed=no"
     return 1
   fi

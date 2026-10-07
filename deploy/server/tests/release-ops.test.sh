@@ -177,4 +177,17 @@ check "prune: never touches other images" grep -qF '"busybox:latest"' "$FAKE_DOC
 check "prune: trims the build cache to 20 GB" has_line "$FAKE_DOCKER_LOG" "docker builder prune --keep-storage 20GB -f"
 check "prune: never prunes images wholesale" bash -c "! grep -qE 'image prune|system prune' '$FAKE_DOCKER_LOG'"
 check "prune: no container changed" test -z "$(container_changes)"
+
+# Release F, A, B, C, D, E, then roll back to D, C and B: the serving history is [F, A, B], so a
+# default rollback goes to A, which is not among the 4 newest ok tags (B, C, D, E).
+reset_server
+released "$TAG_F" "$TAG_A" "$TAG_B" "$TAG_C" "$TAG_D" "$TAG_E"
+for tag in "$TAG_D" "$TAG_C" "$TAG_B"; do
+  printf '2026-10-03T00:00:00Z rollback %s ok\n' "$tag" >>"$SERVER/releases.log"
+done
+docker_state "s['containers'] = {n: f'comp-{n}:$TAG_B' for n in ('api', 'app', 'portal')}"
+release_typed "prune" "$TMP/prune-stack.out" prune
+check "prune after rollbacks: keeps the default rollback target" grep -qF "\"comp-api:$TAG_A\"" "$FAKE_DOCKER_STATE"
+check "prune after rollbacks: removes what is outside the history and the newest tags" \
+  bash -c "! grep -qF 'comp-api:$TAG_F' '$FAKE_DOCKER_STATE'"
 finish
