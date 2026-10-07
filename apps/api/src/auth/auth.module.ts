@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { AuthModule as BetterAuthModule } from '@thallesp/nestjs-better-auth';
 import { auth } from './auth.server';
 import { ActingUserResolver } from './acting-user.service';
 import { ApiKeyGuard } from './api-key.guard';
 import { ApiKeyService } from './api-key.service';
 import { AuthController } from './auth.controller';
+import { CredentialStoreUnavailableFilter } from './credential-store-unavailable.filter';
 import { HybridAuthGuard } from './hybrid-auth.guard';
 import { PermissionGuard } from './permission.guard';
 
@@ -31,6 +33,8 @@ import { PermissionGuard } from './permission.guard';
     HybridAuthGuard,
     PermissionGuard,
     ActingUserResolver,
+    // Credential-store outages answer 503 with Retry-After.
+    { provide: APP_FILTER, useClass: CredentialStoreUnavailableFilter },
   ],
   exports: [
     ApiKeyService,

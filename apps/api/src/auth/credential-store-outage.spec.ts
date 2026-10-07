@@ -20,6 +20,7 @@ jest.mock('./auth.server', () => ({
 }));
 const mockApiKeyFindMany = jest.fn();
 const mockOrgFindUnique = jest.fn();
+const mockMemberFindFirst = jest.fn();
 jest.mock('@db', () => ({
   db: {
     apiKey: {
@@ -28,6 +29,9 @@ jest.mock('@db', () => ({
     },
     organization: {
       findUnique: (...args: unknown[]) => mockOrgFindUnique(...args),
+    },
+    member: {
+      findFirst: (...args: unknown[]) => mockMemberFindFirst(...args),
     },
   },
 }));
@@ -131,5 +135,39 @@ describe('credential validation during a database outage', () => {
     await expect(
       guard.canActivate(contextWith({ cookie: 'session=abc' })),
     ).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('validateApiKey rethrows an error that is not a store failure (a bug stays a bug)', async () => {
+    const bug = new TypeError('cannot read properties of undefined');
+    mockApiKeyFindMany.mockRejectedValue(bug);
+    await expect(
+      new ApiKeyService().validateApiKey(`comp_${'ab'.repeat(32)}`),
+    ).rejects.toBe(bug);
+  });
+
+  it('a service-token request answers 503 when the x-user-id member lookup fails', async () => {
+    mockOrgFindUnique.mockResolvedValue({ id: 'org_1' });
+    mockMemberFindFirst.mockRejectedValue(prismaOutage());
+    expectOutage(
+      await failureOf(() =>
+        guard.canActivate(
+          contextWith({
+            'x-service-token': 't',
+            'x-organization-id': 'org_1',
+            'x-user-id': 'usr_1',
+          }),
+        ),
+      ),
+    );
+  });
+
+  it('a service-token organization lookup failing for another reason is not a 503', async () => {
+    const bug = new TypeError('unexpected');
+    mockOrgFindUnique.mockRejectedValue(bug);
+    await expect(
+      guard.canActivate(
+        contextWith({ 'x-service-token': 't', 'x-organization-id': 'org_1' }),
+      ),
+    ).rejects.toBe(bug);
   });
 });
