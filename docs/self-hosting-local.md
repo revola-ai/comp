@@ -84,6 +84,15 @@ Portal (`cd apps/portal && bun run dev`, :3002) and framework-editor (`cd apps/f
 MinIO console: http://localhost:9001 (`minioadmin` / `minioadmin`).
 Redis is required (not optional as the upstream env example says): `/setup` sessions, safe-action wrappers, device-agent tokens and rate limits all use `@upstash/redis`, which needs the REST facade on :8079.
 
+## Using hosted Comp
+
+Comp runs hosted on the tunnel server (`docs/self-hosting-server.md`): the app at `https://app.comp.revola.ai`, the employee portal at `https://portal.comp.revola.ai` and the API at `https://api.comp.revola.ai`.
+Open the app and sign in with your `@revola.ai` Google account, first at Cloudflare Access and then in Comp; one session then covers the app, the portal and the API.
+Everyday compliance work happens there, with nothing running on your laptop.
+The laptop stack described in this file stays for development: change the code, run it here, and ship it with a release.
+A laptop in team mode (Shared state below) uses the same database, Storage and Redis as hosted Comp, so what a local run does shows up in the hosted app for everyone.
+Hosted Trigger.dev prod runs the schedules, so leave `COMP_RUN_SCHEDULES_IN_DEV` unset (Local runs write production data, below).
+
 ## Shared state (team mode)
 
 Everything above runs against containers on one laptop, so each person has their own database and nobody sees anyone else's policies or evidence.

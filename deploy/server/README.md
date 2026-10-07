@@ -1,7 +1,8 @@
 # Comp on the tunnel server
 
 One ARM64 EC2 instance runs Comp with Docker Compose, reached only through a Cloudflare Tunnel (plan: `docs/plans/2026-10-07-server-tunnel-hosting.md`).
-This file describes the stack, its configuration and how to release it (Releasing); the secrets runbook is added by the secrets task.
+This file describes the stack, its configuration and how to release it (Releasing).
+The runbook, from an empty account to the acceptance checks, is `docs/self-hosting-server.md`; running it day to day is `docs/self-hosting-server-day2.md`.
 
 ## Files
 
@@ -11,6 +12,7 @@ This file describes the stack, its configuration and how to release it (Releasin
 | `env/<service>.keys` | Names of the secret keys each container gets from `comp/production/config` (never values) |
 | `env/<service>.public.env` | Committed non-secret values each container gets (URLs, pool sizes, cookie domain) |
 | `render-env.sh` | Writes `/opt/comp/env/<service>.env` from the secret and the public files |
+| `push-secrets.ts`, `secrets/*.ts` | Runs on a laptop: builds `comp/production/config` from the operator's env files (runbook step 5); `bun test` in `deploy/server` runs its tests |
 | `provision.sh`, `lib/provision-*.sh` | Creates the AWS resources of the server, one confirmed command at a time (see Provisioning) |
 | `release.sh`, `lib/release-*.sh` | Runs on a laptop: release, rollback, migrate, Trigger.dev deploy, status, logs and prune, through SSM Run Command (see Releasing) |
 | `on-server/*.sh`, `lib/server-*.sh` | The server side of `release.sh`, run as root by SSM |
@@ -82,7 +84,7 @@ sudo deploy/server/render-env.sh            # writes /opt/comp/env/<service>.env
 ```
 
 It reads the Secrets Manager secret `comp/production/config` (one JSON object) in `us-east-2` with the instance profile and, for each `env/<service>.keys`, writes `/opt/comp/env/<service>.env` (mode 0600 in a 0700 directory) with exactly the listed keys followed by the lines of `env/<service>.public.env`.
-It checks every service before writing any file, and refuses by name a listed key that is missing from the secret, empty, not a string or containing a line break; on a refusal the previous files stay as they were.
+It checks every service before writing any file, and refuses by name a listed key that is missing from the secret, empty, not a string or containing a line break or a NUL character; on a refusal the previous files stay as they were.
 It never prints a value, never passes one as a command-line argument and writes each file through a temporary file in the same directory.
 Writes are atomic per file, not per run: an IO failure partway through can leave some files from the new secret and some from the old, so rerun `render-env.sh` until it succeeds before any `up`.
 Env files of a service removed from `env/` are not deleted; remove them by hand.
@@ -286,8 +288,10 @@ bash deploy/server/tests/user-data-units.test.sh   # restarter, reboot check, up
 bash deploy/server/tests/release.test.sh      # pushed check, exact calls, migration gate, rollback on failure
 bash deploy/server/tests/rollback.test.sh     # rollback, lock, lease, account checks, status, logs
 bash deploy/server/tests/release-ops.test.sh  # migrate, trigger and prune with typed confirmations
+(cd deploy/server && bun test)                # push-secrets: sources, refusals, diff, create or put, terminal
 ```
 
 The render-env tests stub `aws` with a fake secret; the provision tests use the stateful fake `tests/fake_aws.py` and type their answers into a pseudo-terminal (`tests/tty_run.py`); the user-data tests source the script and stub `curl`, `docker` and the system tools, so nothing is installed or fetched.
 The release tests run laptop and server in one sandbox: the fake `aws` runs each SSM command locally with `COMP_ROOT` pointing at a temporary `/opt/comp`, and `docker`, `git`, `curl` and `flock` are fakes, so nothing is built, fetched or started.
 `compose.test.sh` needs Docker and Bun (it compares build arguments with `deploy/aws/public-env.ts`) and starts no container; the provision and user-data tests need `shellcheck` and `python3`.
+The push-secrets tests run it as a separate process with `aws` on `PATH` being `secrets/testing/fake-aws.ts` and answers typed into a pseudo-terminal (`tests/tty_run.py`), over fixture env files in temporary checkouts, so nothing reaches AWS or a real env file.
