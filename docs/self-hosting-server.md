@@ -58,16 +58,18 @@ On the laptop that runs the scripts:
    It needs a Google OAuth client with the authorized JavaScript origin `https://<team>.cloudflareaccess.com` and the redirect URI `https://<team>.cloudflareaccess.com/cdn-cgi/access/callback` (`<team>` is the Zero Trust team name); "Test" on the login method succeeds.
 4. Zero Trust, Access, Applications, "Add an application", Self-hosted, twice: one for `app.comp.revola.ai` and one for `portal.comp.revola.ai`.
    Login method Google only; one policy, action Allow, include "Emails ending in" `@revola.ai`.
-5. Three more self-hosted applications, each with one policy of action Bypass that includes Everyone:
+5. Five more self-hosted applications, each with one policy of action Bypass that includes Everyone:
 
    | Host | Path | Why |
    |---|---|---|
    | `app.comp.revola.ai` | `api/health/live` | The Route 53 health check and the release smoke checks; a liveness probe that returns no data |
    | `portal.comp.revola.ai` | `api/health` | The same, for the portal |
    | `app.comp.revola.ai` | `api/revalidate/path` | `comp-app` Trigger.dev tasks (risk and vendor mitigation) POST here to refresh cached pages; the route checks `REVALIDATION_SECRET` in constant time and revalidates only app-relative paths |
+   | `portal.comp.revola.ai` | `api/device-agent` | The desktop device agent cannot pass Access; every route below this path is a thin proxy to the API, which is already public and authenticates the agent itself (HybridAuthGuard), and the portal forwards the visitor address from `CF-Connecting-IP`, which Cloudflare's edge sets and clients cannot forge |
+   | `app.comp.revola.ai` | `email/logo.png` | The logo in Comp's emails, which mail clients and their image proxies fetch without a session; a static image with no data |
 
-   `apps/app/src/lib/machine-routes.ts` lists every app route that authenticates without a session (its test fails when one is missing); `/api/revalidate/path` is the only one any server or task calls.
-   The others (upstream QA, Retool and reporting tools, end-to-end test helpers, the email-preferences page) stay behind Access on purpose, and no server or task calls a portal route.
+   `apps/app/src/lib/machine-routes.ts` lists every app route that authenticates without a session (its test fails when one is missing); `/api/revalidate/path` is the only one any server or task calls, and `/email/logo.png` is the one public file (`apps/app/src/lib/public-assets.ts`).
+   The others (upstream QA, Retool and reporting tools, end-to-end test helpers, the email-preferences page) stay behind Access on purpose; on the portal only the device agent's routes are opened.
    The API host gets no Access application at all: Trigger.dev jobs, API keys and MCP clients must reach it.
 6. Put the token into the production-only env file of the main checkout, `deploy/server/.env.production.local` (gitignored by `.env*.local`), with an editor: a line `TUNNEL_TOKEN=<token>`.
    Create the file first with `(umask 077 && mkdir -p deploy/server && touch deploy/server/.env.production.local)` so only you can read it.
@@ -259,4 +261,5 @@ Once both are deployed, the laptop that ran the schedules with `COMP_RUN_SCHEDUL
    ```
 
    Then regenerate a risk's mitigation in the app: the `generate-risk-mitigation` run (`comp-app`, Production, Runs) logs `Revalidated risk path` without `Failed to revalidate`, and the risk page shows the new mitigation.
-7. Alarms: the Route 53 health checks (console, Route 53, Health checks) turn healthy, and the alarm emails stop with an OK message for each of `comp-api-health`, `comp-app-health` and `comp-portal-health`.
+7. The email logo: an email Comp sends from production (a sign-in code or an invitation) shows the Comp logo in the mail client, loaded from `https://app.comp.revola.ai/email/logo.png`.
+8. Alarms: the Route 53 health checks (console, Route 53, Health checks) turn healthy, and the alarm emails stop with an OK message for each of `comp-api-health`, `comp-app-health` and `comp-portal-health`.

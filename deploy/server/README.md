@@ -175,7 +175,7 @@ SNS sends it a confirmation email, and the alarms reach nobody until the link in
 Until the first release brings the tunnel up, the health checks fail and the alarms fire, which is expected.
 Route 53 counts any 2xx or 3xx answer as healthy, and Cloudflare Access answers its login redirect at the edge even when the tunnel or the app is down.
 The app and portal checks are therefore only meaningful once `/api/health/live` on the app host and `/api/health` on the portal host have Cloudflare Access Bypass applications; until then those two checks report healthy whatever the server does.
-The runbook (`docs/self-hosting-server.md`, step 3) adds those two and a third for `/api/revalidate/path` on the app host, which `comp-app` Trigger.dev tasks call with `REVALIDATION_SECRET`; every other path of the two hosts stays behind Access.
+The runbook (`docs/self-hosting-server.md`, step 3) adds those two and three more: `/api/revalidate/path` on the app host (called by `comp-app` Trigger.dev tasks with `REVALIDATION_SECRET`), `/api/device-agent/` on the portal host (the desktop agent; the API authenticates it) and `/email/logo.png` on the app host (the email logo); every other path of the two hosts stays behind Access.
 The api host is not behind Access, so its check works from the start.
 
 The instance hop limit of 1 keeps containers on the bridge network away from the instance credentials; the Docker daemon (the `awslogs` driver) and `render-env.sh` run on the host and keep them.
