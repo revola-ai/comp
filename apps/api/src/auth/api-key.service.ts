@@ -58,7 +58,7 @@ export class ApiKeyService implements OnApplicationBootstrap {
     scopes?: string[];
     provenance: ApiKeyProvenance;
   }) {
-    // New keys must have explicit scopes — no more legacy empty-scope keys
+    // New keys must have explicit scopes - no more legacy empty-scope keys
     if (!scopes || scopes.length === 0) {
       throw new BadRequestException(
         'API keys must have at least one scope. Use the "Full Access" preset to grant all permissions.',
