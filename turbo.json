@@ -99,6 +99,12 @@
             "persistent": true,
             "cache": false
         },
+        "@trycompai/device-agent#build": {
+            "dependsOn": ["^build", "db:generate"],
+            "inputs": ["$TURBO_DEFAULT$", ".env*"],
+            "outputs": [".next/**", "!.next/cache/**", "next-env.d.ts", "dist/**"],
+            "env": ["PORTAL_URL", "API_URL", "AUTO_UPDATE_URL", "AGENT_VERSION"]
+        },
         "@trycompai/device-agent#dev": {
             "persistent": true,
             "cache": false,
