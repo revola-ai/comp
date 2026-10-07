@@ -187,6 +187,8 @@ describe('checkDatabaseReadiness', () => {
   });
 });
 
+// The result cache is off here (cacheMs: 0) so every check reaches the shared
+// probe; readiness-cache.test.ts covers the cache.
 describe('createReadinessCheck (single flight)', () => {
   const tick = () => new Promise((resolve) => setTimeout(resolve, 1));
 
@@ -211,7 +213,7 @@ describe('createReadinessCheck (single flight)', () => {
 
   it('lets five concurrent checks during a stalled query share one underlying query', async () => {
     const stalled = stalledProbe();
-    const check = createReadinessCheck({ probe: stalled.probe });
+    const check = createReadinessCheck({ probe: stalled.probe, cacheMs: 0 });
     const results = await Promise.all(Array.from({ length: 5 }, () => check({ timeoutMs: 10 })));
     expect(stalled.calls()).toBe(1);
     expect(results).toEqual(Array(5).fill({ status: 'unavailable', reason: 'timeout' }));
@@ -219,7 +221,7 @@ describe('createReadinessCheck (single flight)', () => {
 
   it('joins a later check to the query still in flight instead of queueing another', async () => {
     const stalled = stalledProbe();
-    const check = createReadinessCheck({ probe: stalled.probe });
+    const check = createReadinessCheck({ probe: stalled.probe, cacheMs: 0 });
     await check({ timeoutMs: 5 });
     await check({ timeoutMs: 5 });
     expect(stalled.calls()).toBe(1);
@@ -227,7 +229,7 @@ describe('createReadinessCheck (single flight)', () => {
 
   it('issues a new query once the previous one has settled', async () => {
     const stalled = stalledProbe();
-    const check = createReadinessCheck({ probe: stalled.probe });
+    const check = createReadinessCheck({ probe: stalled.probe, cacheMs: 0 });
     await check({ timeoutMs: 5 });
     stalled.settle([{ '?column?': 1 }]);
     await tick();
@@ -240,7 +242,7 @@ describe('createReadinessCheck (single flight)', () => {
 
   it('gives every sharer the same mapped reason when the shared query fails', async () => {
     const stalled = stalledProbe();
-    const check = createReadinessCheck({ probe: stalled.probe });
+    const check = createReadinessCheck({ probe: stalled.probe, cacheMs: 0 });
     const pending = [check({ timeoutMs: 100 }), check({ timeoutMs: 100 })];
     await tick();
     stalled.fail(prismaTlsError());
@@ -257,7 +259,7 @@ describe('createReadinessCheck (single flight)', () => {
 
   it('never starts another probe while one is outstanding, however long it has been', async () => {
     const stalled = stalledProbe();
-    const check = createReadinessCheck({ probe: stalled.probe });
+    const check = createReadinessCheck({ probe: stalled.probe, cacheMs: 0 });
     try {
       for (let minutes = 0; minutes < 4; minutes += 1) {
         // Move the clock a minute on each time: age never retires the probe.
@@ -276,6 +278,7 @@ describe('createReadinessCheck (single flight)', () => {
       probe: async ({ timeoutMs }) => {
         deadlines.push(timeoutMs);
       },
+      cacheMs: 0,
     });
     await check({ timeoutMs: 1234 });
     await check();

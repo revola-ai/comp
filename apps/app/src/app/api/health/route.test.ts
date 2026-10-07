@@ -1,6 +1,6 @@
 import type { AddressInfo } from 'node:net';
 import { createServer, type Socket } from 'node:net';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The readiness probe must never use the shared Prisma pool: a stalled database
 // would strand pooled connections behind it. Any use of it fails the test.
@@ -18,7 +18,9 @@ vi.mock('@db/server', () => ({
   ),
 }));
 
-import { GET } from './route';
+// Each test loads the route afresh, as a new process would: its readiness check
+// keeps the last result for two seconds.
+let GET: (typeof import('./route'))['GET'];
 
 // Throwaway local servers stand in for the database; nothing here connects to a
 // real one. `stall` accepts TCP and never answers (a stalled pooler); `answer`
@@ -90,6 +92,11 @@ describe('GET /api/health (app readiness, dedicated short-lived connection)', ()
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
   });
 
+  beforeEach(async () => {
+    vi.resetModules();
+    ({ GET } = await import('./route'));
+  });
+
   afterEach(async () => {
     await fake?.close();
     fake = undefined;
@@ -123,6 +130,24 @@ describe('GET /api/health (app readiness, dedicated short-lived connection)', ()
     await wait(50);
     expect(fake.open()).toBe(0);
   }, 10_000);
+
+  it('reuses its result for two seconds without opening a connection, then probes again', async () => {
+    fake = await fakeDatabase('answer');
+    process.env.DATABASE_URL = fake.url;
+    const start = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(start);
+    try {
+      expect((await GET()).status).toBe(200);
+      clock.mockReturnValue(start + 1999);
+      expect((await GET()).status).toBe(200);
+      expect(fake.connections()).toBe(1);
+      clock.mockReturnValue(start + 2000);
+      expect((await GET()).status).toBe(200);
+      expect(fake.connections()).toBe(2);
+    } finally {
+      clock.mockRestore();
+    }
+  });
 
   it('answers 503 with the Prisma code and no connection details when nothing listens', async () => {
     const closed = await fakeDatabase('stall');

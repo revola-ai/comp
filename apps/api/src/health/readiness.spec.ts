@@ -16,7 +16,11 @@ jest.mock('@db', () => ({
   ),
 }));
 
-import { checkApiReadiness } from './readiness';
+import type { ReadinessCheck } from '@trycompai/db';
+
+// Each test loads the module afresh, as a new process would: the check keeps
+// its last result for two seconds.
+let checkApiReadiness: ReadinessCheck;
 
 // Throwaway local servers stand in for the database; nothing here connects to a
 // real one. `stall` accepts TCP and never answers (a stalled pooler); `answer`
@@ -91,6 +95,13 @@ describe('checkApiReadiness (dedicated short-lived connection)', () => {
     jest.spyOn(console, 'info').mockImplementation(() => undefined);
   });
 
+  beforeEach(() => {
+    jest.isolateModules(() => {
+      ({ checkApiReadiness } =
+        jest.requireActual<typeof import('./readiness')>('./readiness'));
+    });
+  });
+
   afterEach(async () => {
     await fake?.close();
     fake = undefined;
@@ -126,6 +137,26 @@ describe('checkApiReadiness (dedicated short-lived connection)', () => {
     expect(fake.connections()).toBe(1);
     await wait(50);
     expect(fake.open()).toBe(0);
+  });
+
+  it('reuses its result for two seconds without opening a connection, then probes again', async () => {
+    fake = await fakeDatabase('answer');
+    process.env.DATABASE_URL = fake.url;
+    const start = Date.now();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(start);
+    try {
+      await checkApiReadiness({ timeoutMs: TIMEOUT_MS });
+      clock.mockReturnValue(start + 1999);
+      await expect(
+        checkApiReadiness({ timeoutMs: TIMEOUT_MS }),
+      ).resolves.toEqual({ status: 'ok' });
+      expect(fake.connections()).toBe(1);
+      clock.mockReturnValue(start + 2000);
+      await checkApiReadiness({ timeoutMs: TIMEOUT_MS });
+      expect(fake.connections()).toBe(2);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it('answers P1001 when nothing listens on the database port', async () => {

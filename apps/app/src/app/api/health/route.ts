@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic';
 // The probe runs on a dedicated short-lived connection (never the shared Prisma
 // pool), closed at the deadline, and overlapping requests share the one
 // outstanding probe, so an outage opens at most one probe connection at a time.
+// A result is reused for 2 seconds, so back-to-back requests do not each open one.
 const checkReadiness = createDatabaseReadinessCheck();
 
 export async function GET(): Promise<NextResponse> {

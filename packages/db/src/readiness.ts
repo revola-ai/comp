@@ -9,6 +9,11 @@
 
 export const READINESS_TIMEOUT_MS = 2000;
 
+// How long a readiness result is reused before the next check probes again. The
+// ALB health checks use the liveness routes, so readiness this fresh is enough,
+// and back-to-back callers do not each cost a handshake with the database.
+export const READINESS_CACHE_MS = 2000;
+
 export type ReadinessResult = { status: 'ok' } | { status: 'unavailable'; reason: string };
 
 // Node's X509 verification codes (https://nodejs.org/api/tls.html, "X509 certificate
@@ -191,7 +196,8 @@ export type ReadinessCheck = (options?: { timeoutMs?: number }) => Promise<Readi
 export type ReadinessProbe = (options: { timeoutMs: number }) => Promise<unknown>;
 
 /**
- * A readiness check whose callers share one in-flight probe (single flight): a check
+ * A readiness check that reuses its last result for `cacheMs` (default
+ * READINESS_CACHE_MS) and whose callers share one in-flight probe (single flight): a check
  * that arrives while a probe is outstanding waits on that same probe (with its own
  * timeout) and never starts another, so an outage cannot pile up probes or
  * connections. The probe gets the deadline of the check that starts it and must
@@ -199,7 +205,14 @@ export type ReadinessProbe = (options: { timeoutMs: number }) => Promise<unknown
  * connection at the deadline, or within a second of a successful query, and
  * settles only once it is closed); the next probe starts once it has settled.
  */
-export function createReadinessCheck({ probe }: { probe: ReadinessProbe }): ReadinessCheck {
+export function createReadinessCheck({
+  probe,
+  cacheMs = READINESS_CACHE_MS,
+}: {
+  probe: ReadinessProbe;
+  cacheMs?: number;
+}): ReadinessCheck {
+  let last: { result: ReadinessResult; at: number } | undefined;
   let inFlight: Promise<unknown> | undefined;
   const sharedProbe = (timeoutMs: number): Promise<unknown> => {
     if (!inFlight) {
@@ -212,6 +225,15 @@ export function createReadinessCheck({ probe }: { probe: ReadinessProbe }): Read
     }
     return inFlight;
   };
-  return ({ timeoutMs = READINESS_TIMEOUT_MS } = {}) =>
-    checkDatabaseReadiness({ probe: () => sharedProbe(timeoutMs), timeoutMs });
+  return async ({ timeoutMs = READINESS_TIMEOUT_MS } = {}) => {
+    // A clock that moved backwards (negative age) never keeps a result alive.
+    const age = last ? Date.now() - last.at : -1;
+    if (last && age >= 0 && age < cacheMs) return last.result;
+    const result = await checkDatabaseReadiness({
+      probe: () => sharedProbe(timeoutMs),
+      timeoutMs,
+    });
+    last = { result, at: Date.now() };
+    return result;
+  };
 }

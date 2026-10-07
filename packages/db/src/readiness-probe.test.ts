@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, setSystemTime } from 'bun:test';
 import type { AddressInfo } from 'node:net';
 import { createServer, type Socket } from 'node:net';
 import { createDatabaseReadinessCheck, probeDatabase } from './readiness-probe';
@@ -167,8 +167,32 @@ describe('createDatabaseReadinessCheck (dedicated short-lived client)', () => {
     );
     expect(db.connections()).toBe(1);
     await wait(50);
-    await check({ timeoutMs: TIMEOUT_MS });
+    // Past the two-second result cache, the next check starts a new probe.
+    setSystemTime(new Date(Date.now() + 2000));
+    try {
+      await check({ timeoutMs: TIMEOUT_MS });
+    } finally {
+      setSystemTime();
+    }
     expect(db.connections()).toBe(2);
+  });
+
+  it('reuses a result for two seconds without opening a connection, then probes again', async () => {
+    const db = await fakeDatabase({ behaviour: 'answer' });
+    const check = checkFor(db.url);
+    const now = Date.now();
+    try {
+      setSystemTime(new Date(now));
+      expect(await check({ timeoutMs: TIMEOUT_MS })).toEqual({ status: 'ok' });
+      setSystemTime(new Date(now + 1999));
+      expect(await check({ timeoutMs: TIMEOUT_MS })).toEqual({ status: 'ok' });
+      expect(db.connections()).toBe(1);
+      setSystemTime(new Date(now + 2000));
+      expect(await check({ timeoutMs: TIMEOUT_MS })).toEqual({ status: 'ok' });
+      expect(db.connections()).toBe(2);
+    } finally {
+      setSystemTime();
+    }
   });
 
   it('closes a connection whose server stalls after startup, within one deadline for connect and query together', async () => {
