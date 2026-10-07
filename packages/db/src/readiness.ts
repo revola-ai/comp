@@ -2,6 +2,7 @@
 // into a short, non-sensitive reason. Reasons, in order of precedence:
 // `tls_<CODE>` (a Node TLS code anywhere in the error), the Prisma code,
 // `timeout`, else `unknown`. Never returns messages, hosts or addresses.
+// The probe that talks to the database is in readiness-probe.ts (server only).
 //
 // No imports: this module is part of the package index, which browser bundles
 // reach through the apps' `@db` re-exports.
@@ -126,6 +127,15 @@ function tlsCode(node: ErrorNode): string | undefined {
   return tlsCodeFromMessage(stringField({ node, key: 'reason' }) ?? '');
 }
 
+// A probe that gives up at its own deadline rejects with this code.
+const READINESS_TIMEOUT_CODE = 'READINESS_TIMEOUT';
+
+export function readinessTimeoutError(): Error {
+  return Object.assign(new Error('database probe exceeded its deadline'), {
+    code: READINESS_TIMEOUT_CODE,
+  });
+}
+
 function prismaCode(node: ErrorNode): string | undefined {
   for (const key of ['code', 'errorCode']) {
     const value = stringField({ node, key });
@@ -144,7 +154,10 @@ export function readinessReason(error: unknown): string {
     const code = prismaCode(node);
     if (code) return code;
   }
-  return 'unknown';
+  const timedOut = chain.some(
+    (node) => stringField({ node, key: 'code' }) === READINESS_TIMEOUT_CODE,
+  );
+  return timedOut ? 'timeout' : 'unknown';
 }
 
 export async function checkDatabaseReadiness({
@@ -175,40 +188,29 @@ export async function checkDatabaseReadiness({
 
 export type ReadinessCheck = (options?: { timeoutMs?: number }) => Promise<ReadinessResult>;
 
-// A probe still pending after this long is presumed stuck on a dead connection and
-// is no longer shared: the next check starts a fresh one. Stuck probes are bounded by
-// the driver (connect timeout, statement_timeout, TCP keepalive), so at most one new
-// probe per this interval is ever added during an outage.
-export const READINESS_PROBE_MAX_AGE_MS = 3 * READINESS_TIMEOUT_MS;
+export type ReadinessProbe = (options: { timeoutMs: number }) => Promise<unknown>;
 
 /**
- * A readiness check whose callers share one in-flight probe (single flight). The
- * timeout only ends a caller's wait; the probe keeps running until the driver gives
- * up, so during an outage a new probe per request would pile up queries and pool
- * waiters. Here every check that arrives while a probe is pending waits on that same
- * probe (with its own timeout); the next probe starts after it settles or once it is
- * older than `maxAgeMs`.
+ * A readiness check whose callers share one in-flight probe (single flight): a check
+ * that arrives while a probe is outstanding waits on that same probe (with its own
+ * timeout) and never starts another, so an outage cannot pile up probes or
+ * connections. The probe gets the deadline of the check that starts it and must
+ * settle by then on its own (createDatabaseReadinessCheck's probe closes its
+ * connection at the deadline); the next probe starts once it has settled.
  */
-export function createReadinessCheck({
-  probe,
-  maxAgeMs = READINESS_PROBE_MAX_AGE_MS,
-}: {
-  probe: () => Promise<unknown>;
-  maxAgeMs?: number;
-}): ReadinessCheck {
-  let inFlight: { promise: Promise<unknown>; startedAt: number } | undefined;
-  const sharedProbe = (): Promise<unknown> => {
-    const now = Date.now();
-    if (!inFlight || now - inFlight.startedAt >= maxAgeMs) {
-      const started = { promise: Promise.resolve().then(probe), startedAt: now };
+export function createReadinessCheck({ probe }: { probe: ReadinessProbe }): ReadinessCheck {
+  let inFlight: Promise<unknown> | undefined;
+  const sharedProbe = (timeoutMs: number): Promise<unknown> => {
+    if (!inFlight) {
+      const started = Promise.resolve().then(() => probe({ timeoutMs }));
       inFlight = started;
       const clear = () => {
         if (inFlight === started) inFlight = undefined;
       };
-      started.promise.then(clear, clear);
+      started.then(clear, clear);
     }
-    return inFlight.promise;
+    return inFlight;
   };
   return ({ timeoutMs = READINESS_TIMEOUT_MS } = {}) =>
-    checkDatabaseReadiness({ probe: sharedProbe, timeoutMs });
+    checkDatabaseReadiness({ probe: () => sharedProbe(timeoutMs), timeoutMs });
 }

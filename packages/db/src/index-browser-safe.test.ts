@@ -46,4 +46,13 @@ describe('package index module graph', () => {
     );
     expect(offenders).toEqual([]);
   });
+
+  it('leaves out the readiness probe, which imports the pg driver (server only)', () => {
+    const files = collectGraph({ entry: resolve(import.meta.dir, 'index.ts'), seen: new Set() });
+    expect([...files].some((file) => file.endsWith('readiness-probe.ts'))).toBe(false);
+    const driverImports = [...files].filter((file) =>
+      /^\s*import\s+(?!type\s)[^;]*?from\s+['"]pg['"]/m.test(readFileSync(file, 'utf8')),
+    );
+    expect(driverImports).toEqual([]);
+  });
 });

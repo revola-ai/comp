@@ -1,26 +1,10 @@
-import { db } from '@db';
-import {
-  createReadinessCheck,
-  READINESS_TIMEOUT_MS,
-  type ReadinessCheck,
-} from '@trycompai/db';
+import type { ReadinessCheck } from '@trycompai/db';
+import { createDatabaseReadinessCheck } from '@trycompai/db/readiness-probe';
 
 /**
- * `SELECT 1` in one transaction whose statement_timeout is the readiness timeout,
- * so the server abandons the probe too. Connecting and waiting for a pooled
- * connection are bounded by the adapter's connectionTimeoutMillis.
+ * The API's readiness check: `SELECT 1` on a dedicated short-lived connection
+ * (never the shared Prisma pool), closed at the 2-second deadline. Overlapping
+ * calls share the one outstanding probe, so repeated probes during an outage
+ * open at most one connection at a time.
  */
-function readinessProbe(): Promise<unknown> {
-  return db.$transaction([
-    db.$queryRaw`SELECT set_config('statement_timeout', ${String(READINESS_TIMEOUT_MS)}, true)`,
-    db.$queryRaw`SELECT 1`,
-  ]);
-}
-
-/**
- * The API's readiness check. Overlapping calls share one in-flight probe, so
- * repeated probes during an outage do not pile up queries or pool waiters.
- */
-export const checkApiReadiness: ReadinessCheck = createReadinessCheck({
-  probe: readinessProbe,
-});
+export const checkApiReadiness: ReadinessCheck = createDatabaseReadinessCheck();

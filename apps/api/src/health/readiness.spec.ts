@@ -1,130 +1,139 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { createServer, type Socket } from 'node:net';
+import type { AddressInfo } from 'node:net';
 
-// $queryRaw records its SQL; $transaction is the one round trip the probe makes.
-type RecordedQuery = { sql: string; values: unknown[] };
-const mockTransaction = jest.fn<Promise<unknown>, [RecordedQuery[]]>();
+// The readiness probe must never use the shared Prisma pool: a stalled database
+// would strand pooled connections behind it. Any use of it fails the test.
+const mockSharedClientUse = jest.fn();
 jest.mock('@db', () => ({
-  db: {
-    $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) => ({
-      sql: strings.join('?').trim(),
-      values,
-    }),
-    $transaction: (ops: RecordedQuery[]) => mockTransaction(ops),
-  },
+  db: new Proxy(
+    {},
+    {
+      get: (_target, prop) => {
+        mockSharedClientUse(prop);
+        throw new Error('readiness used the shared Prisma client');
+      },
+    },
+  ),
 }));
 
-import { READINESS_TIMEOUT_MS } from '@trycompai/db';
 import { checkApiReadiness } from './readiness';
 
-// Captured once (2026-10-06) from a real failed TLS handshake against the
-// Supabase us-east-2 session pooler through PrismaClient + @prisma/adapter-pg,
-// with throwaway credentials and `ssl: { ca: <self-generated throwaway CA>,
-// rejectUnauthorized: true }`, so verification failed before authentication.
-// The fixture keeps only the error shape (see its `procedure` field).
-const fixture = JSON.parse(
-  readFileSync(
-    resolve(
-      __dirname,
-      '../../../../packages/db/src/__fixtures__/supabase-tls-failure.json',
-    ),
-    'utf8',
-  ),
-) as {
-  prismaAdapterPgQueryRaw: {
-    code: string;
-    meta: {
-      driverAdapterError: { name: string; message: string; cause: unknown };
-    };
-  };
+// Throwaway local servers stand in for the database; nothing here connects to a
+// real one. `stall` accepts TCP and never answers (a stalled pooler); `answer`
+// speaks just enough of the Postgres protocol to complete SELECT 1.
+const TIMEOUT_MS = 200;
+
+function frame(type: string, body: string | Buffer): Buffer {
+  const payload = typeof body === 'string' ? Buffer.from(body, 'latin1') : body;
+  const length = Buffer.alloc(4);
+  length.writeInt32BE(payload.length + 4);
+  return Buffer.concat([Buffer.from(type, 'latin1'), length, payload]);
+}
+
+const STARTED = Buffer.concat([frame('R', Buffer.alloc(4)), frame('Z', 'I')]);
+const ANSWERED = Buffer.concat([
+  frame('C', 'SELECT 1\0'),
+  frame('C', 'SELECT 1\0'),
+  frame('Z', 'I'),
+]);
+
+type Fake = {
+  url: string;
+  connections: () => number;
+  open: () => number;
+  close: () => Promise<void>;
 };
 
-function capturedPrismaTlsError(): Error {
-  const captured = fixture.prismaAdapterPgQueryRaw;
-  const driverAdapterError = new Error(
-    captured.meta.driverAdapterError.message,
-    { cause: captured.meta.driverAdapterError.cause },
-  );
-  driverAdapterError.name = captured.meta.driverAdapterError.name;
-  const error = new Error('Raw query failed');
-  error.name = 'PrismaClientKnownRequestError';
-  return Object.assign(error, {
-    code: captured.code,
-    meta: { driverAdapterError },
-  });
-}
-
-function deferred() {
-  let resolve: (value: unknown) => void = () => undefined;
-  const promise = new Promise((settle) => {
-    resolve = settle;
-  });
-  return { promise, resolve };
-}
-
-const flush = () => new Promise((settle) => setTimeout(settle, 1));
-
-describe('checkApiReadiness', () => {
-  beforeEach(() => mockTransaction.mockReset());
-
-  it('runs SELECT 1 in one transaction whose statement_timeout is the readiness timeout', async () => {
-    mockTransaction.mockResolvedValue([
-      [{ set_config: '2000' }],
-      [{ '?column?': 1 }],
-    ]);
-    await expect(checkApiReadiness()).resolves.toEqual({ status: 'ok' });
-    const [ops] = mockTransaction.mock.calls[0];
-    expect(ops).toEqual([
-      {
-        sql: "SELECT set_config('statement_timeout', ?, true)",
-        values: [String(READINESS_TIMEOUT_MS)],
-      },
-      { sql: 'SELECT 1', values: [] },
-    ]);
-  });
-
-  it('answers timeout when the query outlives the timeout', async () => {
-    const stalled = deferred();
-    mockTransaction.mockReturnValue(stalled.promise);
-    await expect(checkApiReadiness({ timeoutMs: 10 })).resolves.toEqual({
-      status: 'unavailable',
-      reason: 'timeout',
+async function fakeDatabase(behaviour: 'stall' | 'answer'): Promise<Fake> {
+  const sockets = new Set<Socket>();
+  let connections = 0;
+  const server = createServer((socket) => {
+    connections += 1;
+    sockets.add(socket);
+    let started = false;
+    socket.on('close', () => sockets.delete(socket));
+    socket.on('error', () => undefined);
+    socket.on('data', (chunk) => {
+      if (behaviour === 'stall') return;
+      if (!started) {
+        started = true;
+        socket.write(STARTED);
+      } else if (chunk[0] === 'Q'.charCodeAt(0)) {
+        socket.write(ANSWERED);
+      } else if (chunk[0] === 'X'.charCodeAt(0)) {
+        socket.end();
+      }
     });
-    stalled.resolve([]);
-    await flush();
+  });
+  await new Promise<void>((resolve) =>
+    server.listen(0, '127.0.0.1', () => resolve()),
+  );
+  const { port } = server.address() as AddressInfo;
+  return {
+    url: `postgresql://probe:probe@127.0.0.1:${port}/probe`,
+    connections: () => connections,
+    open: () => sockets.size,
+    close: () =>
+      new Promise<void>((resolve) => {
+        for (const socket of sockets) socket.destroy();
+        server.close(() => resolve());
+      }),
+  };
+}
+
+const wait = (ms: number) => new Promise((settle) => setTimeout(settle, ms));
+
+describe('checkApiReadiness (dedicated short-lived connection)', () => {
+  const savedUrl = process.env.DATABASE_URL;
+  let fake: Fake | undefined;
+
+  beforeAll(() => {
+    jest.spyOn(console, 'info').mockImplementation(() => undefined);
   });
 
-  it('shares one in-flight query between five overlapping probes', async () => {
-    const stalled = deferred();
-    mockTransaction.mockReturnValue(stalled.promise);
+  afterEach(async () => {
+    await fake?.close();
+    fake = undefined;
+    expect(mockSharedClientUse).not.toHaveBeenCalled();
+  });
+
+  afterAll(() => {
+    process.env.DATABASE_URL = savedUrl;
+    jest.restoreAllMocks();
+  });
+
+  it('answers ok from a database that answers SELECT 1, then closes the connection', async () => {
+    fake = await fakeDatabase('answer');
+    process.env.DATABASE_URL = fake.url;
+    await expect(checkApiReadiness({ timeoutMs: TIMEOUT_MS })).resolves.toEqual(
+      { status: 'ok' },
+    );
+    await wait(50);
+    expect(fake.open()).toBe(0);
+  });
+
+  it('leaves one probe outstanding for five concurrent checks against a stalled database, closed at the deadline', async () => {
+    fake = await fakeDatabase('stall');
+    process.env.DATABASE_URL = fake.url;
     const results = await Promise.all(
-      Array.from({ length: 5 }, () => checkApiReadiness({ timeoutMs: 10 })),
+      Array.from({ length: 5 }, () =>
+        checkApiReadiness({ timeoutMs: TIMEOUT_MS }),
+      ),
     );
     expect(results).toEqual(
       Array(5).fill({ status: 'unavailable', reason: 'timeout' }),
     );
-    expect(mockTransaction).toHaveBeenCalledTimes(1);
-    stalled.resolve([]);
-    await flush();
+    expect(fake.connections()).toBe(1);
+    await wait(50);
+    expect(fake.open()).toBe(0);
   });
 
-  it('answers the Prisma code for a Prisma-coded failure', async () => {
-    mockTransaction.mockRejectedValue(
-      Object.assign(new Error("Can't reach database server at db:5432"), {
-        code: 'P1001',
-      }),
+  it('answers P1001 when nothing listens on the database port', async () => {
+    const closed = await fakeDatabase('stall');
+    process.env.DATABASE_URL = closed.url;
+    await closed.close();
+    await expect(checkApiReadiness({ timeoutMs: TIMEOUT_MS })).resolves.toEqual(
+      { status: 'unavailable', reason: 'P1001' },
     );
-    await expect(checkApiReadiness()).resolves.toEqual({
-      status: 'unavailable',
-      reason: 'P1001',
-    });
-  });
-
-  it('answers tls_<CODE> for the captured Supabase TLS failure', async () => {
-    mockTransaction.mockRejectedValue(capturedPrismaTlsError());
-    await expect(checkApiReadiness()).resolves.toEqual({
-      status: 'unavailable',
-      reason: 'tls_SELF_SIGNED_CERT_IN_CHAIN',
-    });
   });
 });

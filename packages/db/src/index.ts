@@ -10,12 +10,12 @@ export {
 } from './pg-adapter-options';
 export type { PgAdapterOptions, TlsMode } from './pg-adapter-options';
 export {
-  READINESS_PROBE_MAX_AGE_MS,
   READINESS_TIMEOUT_MS,
   checkDatabaseReadiness,
   createReadinessCheck,
   readinessReason,
+  readinessTimeoutError,
 } from './readiness';
-export type { ReadinessCheck, ReadinessResult } from './readiness';
+export type { ReadinessCheck, ReadinessProbe, ReadinessResult } from './readiness';
 export { resolveSslConfig, stripSslMode } from './ssl-config';
 export type { SslConfig } from './ssl-config';

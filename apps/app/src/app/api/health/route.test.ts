@@ -1,137 +1,137 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AddressInfo } from 'node:net';
+import { createServer, type Socket } from 'node:net';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-// $queryRaw records its SQL; $transaction is the one round trip the probe makes.
-const mocks = vi.hoisted(() => ({ transaction: vi.fn() }));
+// The readiness probe must never use the shared Prisma pool: a stalled database
+// would strand pooled connections behind it. Any use of it fails the test.
+const mocks = vi.hoisted(() => ({ sharedClientUse: vi.fn() }));
 
 vi.mock('@db/server', () => ({
-  db: {
-    $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) => ({
-      sql: strings.join('?').trim(),
-      values,
-    }),
-    $transaction: mocks.transaction,
-  },
+  db: new Proxy(
+    {},
+    {
+      get: (_target, prop) => {
+        mocks.sharedClientUse(prop);
+        throw new Error('readiness used the shared Prisma client');
+      },
+    },
+  ),
 }));
 
 import { GET } from './route';
 
-// Captured once (2026-10-06) from a real failed TLS handshake against the
-// Supabase us-east-2 session pooler through PrismaClient + @prisma/adapter-pg,
-// with throwaway credentials and `ssl: { ca: <self-generated throwaway CA>,
-// rejectUnauthorized: true }`; see the fixture's `procedure` field.
-const fixture = JSON.parse(
-  readFileSync(
-    resolve(__dirname, '../../../../../../packages/db/src/__fixtures__/supabase-tls-failure.json'),
-    'utf8',
-  ),
-) as {
-  prismaAdapterPgQueryRaw: {
-    code: string;
-    meta: { driverAdapterError: { name: string; message: string; cause: unknown } };
-  };
-};
-
-function capturedPrismaTlsError(): Error {
-  const captured = fixture.prismaAdapterPgQueryRaw;
-  const driverAdapterError = new Error(captured.meta.driverAdapterError.message, {
-    cause: captured.meta.driverAdapterError.cause,
-  });
-  driverAdapterError.name = captured.meta.driverAdapterError.name;
-  return Object.assign(new Error('Raw query failed'), {
-    name: 'PrismaClientKnownRequestError',
-    code: captured.code,
-    meta: { driverAdapterError },
-  });
+// Throwaway local servers stand in for the database; nothing here connects to a
+// real one. `stall` accepts TCP and never answers (a stalled pooler); `answer`
+// speaks just enough of the Postgres protocol to complete SELECT 1.
+function frame(type: string, body: string | Buffer): Buffer {
+  const payload = typeof body === 'string' ? Buffer.from(body, 'latin1') : body;
+  const length = Buffer.alloc(4);
+  length.writeInt32BE(payload.length + 4);
+  return Buffer.concat([Buffer.from(type, 'latin1'), length, payload]);
 }
 
-describe('GET /api/health (app readiness)', () => {
-  beforeEach(() => {
-    mocks.transaction.mockReset();
+const STARTED = Buffer.concat([frame('R', Buffer.alloc(4)), frame('Z', 'I')]);
+const ANSWERED = Buffer.concat([
+  frame('C', 'SELECT 1\0'),
+  frame('C', 'SELECT 1\0'),
+  frame('Z', 'I'),
+]);
+
+type Fake = {
+  url: string;
+  connections: () => number;
+  open: () => number;
+  close: () => Promise<void>;
+};
+
+async function fakeDatabase(behaviour: 'stall' | 'answer'): Promise<Fake> {
+  const sockets = new Set<Socket>();
+  let connections = 0;
+  const server = createServer((socket) => {
+    connections += 1;
+    sockets.add(socket);
+    let started = false;
+    socket.on('close', () => sockets.delete(socket));
+    socket.on('error', () => undefined);
+    socket.on('data', (chunk) => {
+      if (behaviour === 'stall') return;
+      if (!started) {
+        started = true;
+        socket.write(STARTED);
+      } else if (chunk[0] === 'Q'.charCodeAt(0)) {
+        socket.write(ANSWERED);
+      } else if (chunk[0] === 'X'.charCodeAt(0)) {
+        socket.end();
+      }
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const { port } = server.address() as AddressInfo;
+  return {
+    url: `postgresql://probe:probe@127.0.0.1:${port}/probe`,
+    connections: () => connections,
+    open: () => sockets.size,
+    close: () =>
+      new Promise<void>((resolve) => {
+        for (const socket of sockets) socket.destroy();
+        server.close(() => resolve());
+      }),
+  };
+}
+
+const wait = (ms: number) => new Promise((settle) => setTimeout(settle, ms));
+
+describe('GET /api/health (app readiness, dedicated short-lived connection)', () => {
+  const savedUrl = process.env.DATABASE_URL;
+  let fake: Fake | undefined;
+
+  beforeAll(() => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
   });
 
-  it('runs SELECT 1 under a 2-second statement_timeout and answers 200 {status: ok}', async () => {
-    mocks.transaction.mockResolvedValue([[{ set_config: '2000' }], [{ '?column?': 1 }]]);
+  afterEach(async () => {
+    await fake?.close();
+    fake = undefined;
+    expect(mocks.sharedClientUse).not.toHaveBeenCalled();
+  });
+
+  afterAll(() => {
+    process.env.DATABASE_URL = savedUrl;
+    vi.restoreAllMocks();
+  });
+
+  it('answers 200 {status: ok} from a database that answers SELECT 1, then closes the connection', async () => {
+    fake = await fakeDatabase('answer');
+    process.env.DATABASE_URL = fake.url;
     const response = await GET();
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ status: 'ok' });
-    expect(mocks.transaction.mock.calls[0]?.[0]).toEqual([
-      { sql: "SELECT set_config('statement_timeout', ?, true)", values: ['2000'] },
-      { sql: 'SELECT 1', values: [] },
-    ]);
+    await wait(50);
+    expect(fake.open()).toBe(0);
   });
 
-  it('shares one in-flight query between overlapping requests', async () => {
-    vi.useFakeTimers();
-    let release: (value: unknown) => void = () => undefined;
-    try {
-      mocks.transaction.mockReturnValue(
-        new Promise((resolve) => {
-          release = resolve;
-        }),
-      );
-      const pending = Array.from({ length: 5 }, () => GET());
-      await vi.advanceTimersByTimeAsync(2000);
-      const responses = await Promise.all(pending);
-      expect(responses.map((response) => response.status)).toEqual([503, 503, 503, 503, 503]);
-      expect(mocks.transaction).toHaveBeenCalledTimes(1);
-    } finally {
-      release([]);
-      await vi.advanceTimersByTimeAsync(1);
-      vi.useRealTimers();
+  it('answers 503 timeout to five overlapping requests against a stalled database with one connection, closed at the deadline', async () => {
+    fake = await fakeDatabase('stall');
+    process.env.DATABASE_URL = fake.url;
+    const responses = await Promise.all(Array.from({ length: 5 }, () => GET()));
+    expect(responses.map((response) => response.status)).toEqual([503, 503, 503, 503, 503]);
+    for (const response of responses) {
+      expect(await response.json()).toEqual({ status: 'unavailable', reason: 'timeout' });
     }
-  });
+    expect(fake.connections()).toBe(1);
+    await wait(50);
+    expect(fake.open()).toBe(0);
+  }, 10_000);
 
-  it('answers 503 tls_<CODE> for the captured Supabase TLS failure', async () => {
-    mocks.transaction.mockRejectedValue(capturedPrismaTlsError());
-    const response = await GET();
-    expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({
-      status: 'unavailable',
-      reason: 'tls_SELF_SIGNED_CERT_IN_CHAIN',
-    });
-  });
-
-  it('answers 503 with the Prisma code and no connection details', async () => {
-    mocks.transaction.mockRejectedValue(
-      Object.assign(new Error("Can't reach database server at db.internal:5432"), {
-        code: 'P1001',
-      }),
-    );
+  it('answers 503 with the Prisma code and no connection details when nothing listens', async () => {
+    const closed = await fakeDatabase('stall');
+    process.env.DATABASE_URL = closed.url;
+    await closed.close();
     const response = await GET();
     expect(response.status).toBe(503);
     const text = await response.text();
     expect(JSON.parse(text)).toEqual({ status: 'unavailable', reason: 'P1001' });
-    expect(text).not.toContain('db.internal');
-  });
-
-  it('answers 503 timeout when SELECT 1 outlives two seconds', async () => {
-    vi.useFakeTimers();
-    let release: (value: unknown) => void = () => undefined;
-    try {
-      mocks.transaction.mockReturnValue(
-        new Promise((resolve) => {
-          release = resolve;
-        }),
-      );
-      const pending = GET();
-      await vi.advanceTimersByTimeAsync(2000);
-      const response = await pending;
-      expect(response.status).toBe(503);
-      expect(await response.json()).toEqual({ status: 'unavailable', reason: 'timeout' });
-    } finally {
-      release([]);
-      await vi.advanceTimersByTimeAsync(1);
-      vi.useRealTimers();
-    }
-  });
-
-  it('answers 503 unknown for an uncoded failure', async () => {
-    mocks.transaction.mockRejectedValue(new Error('connection to 10.0.0.5 failed'));
-    const response = await GET();
-    expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ status: 'unavailable', reason: 'unknown' });
+    expect(text).not.toContain('127.0.0.1');
   });
 });

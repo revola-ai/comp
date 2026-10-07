@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, setSystemTime } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   checkDatabaseReadiness,
   createReadinessCheck,
-  READINESS_PROBE_MAX_AGE_MS,
   READINESS_TIMEOUT_MS,
   readinessReason,
+  readinessTimeoutError,
 } from './readiness';
 
 // The fixture was captured once (2026-10-06) from a real failed TLS handshake
@@ -255,31 +255,37 @@ describe('createReadinessCheck (single flight)', () => {
     expect(await check()).toEqual({ status: 'ok' });
   });
 
-  it('starts a fresh probe once the in-flight one is older than its maximum age', async () => {
+  it('never starts another probe while one is outstanding, however long it has been', async () => {
     const stalled = stalledProbe();
-    const check = createReadinessCheck({ probe: stalled.probe, maxAgeMs: 30 });
-    await check({ timeoutMs: 5 });
-    await check({ timeoutMs: 5 });
+    const check = createReadinessCheck({ probe: stalled.probe });
+    try {
+      for (let minutes = 0; minutes < 4; minutes += 1) {
+        // Move the clock a minute on each time: age never retires the probe.
+        setSystemTime(new Date(Date.UTC(2026, 9, 7, 12, minutes)));
+        expect(await check({ timeoutMs: 5 })).toEqual({ status: 'unavailable', reason: 'timeout' });
+      }
+    } finally {
+      setSystemTime();
+    }
     expect(stalled.calls()).toBe(1);
-    await new Promise((resolve) => setTimeout(resolve, 40));
-    await check({ timeoutMs: 5 });
-    expect(stalled.calls()).toBe(2);
   });
 
-  it('lets a stale probe that settles late leave the fresh one in flight', async () => {
-    const calls: Array<(value: unknown) => void> = [];
-    const probe = () => new Promise((resolve) => calls.push(resolve));
-    const check = createReadinessCheck({ probe, maxAgeMs: 10 });
-    await check({ timeoutMs: 2 });
-    await new Promise((resolve) => setTimeout(resolve, 15));
-    await check({ timeoutMs: 2 });
-    calls[0]?.([]);
-    await tick();
-    await check({ timeoutMs: 2 });
-    expect(calls).toHaveLength(2);
+  it('hands the probe the deadline of the check that starts it', async () => {
+    const deadlines: number[] = [];
+    const check = createReadinessCheck({
+      probe: async ({ timeoutMs }) => {
+        deadlines.push(timeoutMs);
+      },
+    });
+    await check({ timeoutMs: 1234 });
+    await check();
+    expect(deadlines).toEqual([1234, READINESS_TIMEOUT_MS]);
   });
 
-  it('defaults the maximum age to three readiness timeouts', () => {
-    expect(READINESS_PROBE_MAX_AGE_MS).toBe(3 * READINESS_TIMEOUT_MS);
+  it('answers timeout when the shared probe gives up at its own deadline', async () => {
+    const check = createReadinessCheck({
+      probe: () => Promise.reject(readinessTimeoutError()),
+    });
+    expect(await check({ timeoutMs: 100 })).toEqual({ status: 'unavailable', reason: 'timeout' });
   });
 });
