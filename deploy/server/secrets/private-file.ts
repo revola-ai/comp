@@ -7,7 +7,8 @@ import { join } from 'node:path';
 // work). The file is 0600 inside a private 0700 temporary directory, removed on every path:
 // when the work ends or throws, and when the operator interrupts (SIGINT), the session ends
 // (SIGHUP) or something stops the process (SIGTERM) while the file exists; `onInterrupt` runs
-// first (push-secrets stops the aws process reading the file). Only SIGKILL can leave it behind. Ported from the parked deploy/aws/private-file.ts (revola/aws-infra).
+// first (push-secrets stops the aws process reading the file). Only SIGKILL can leave it
+// behind. Ported from the parked deploy/aws/private-file.ts (revola/aws-infra).
 
 /** The signals that remove the directory, with the exit status a shell reports for each. */
 const EXIT_ON: Readonly<Record<'SIGINT' | 'SIGTERM' | 'SIGHUP', number>> = Object.freeze({
