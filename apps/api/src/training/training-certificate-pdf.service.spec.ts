@@ -1,6 +1,6 @@
 import { TrainingCertificatePdfService } from './training-certificate-pdf.service';
 
-// Mock fetch for logo download
+// A fetch that would fail: the certificate must not need the network.
 global.fetch = jest.fn().mockResolvedValue({
   ok: false,
 }) as unknown as typeof fetch;
@@ -48,11 +48,12 @@ describe('TrainingCertificatePdfService', () => {
       expect(pdfText).toContain('June');
       expect(pdfText).toContain('2026');
     });
+  });
 
-    it('handles logo fetch failure gracefully', async () => {
-      jest
-        .mocked(global.fetch)
-        .mockRejectedValueOnce(new Error('Network error'));
+  describe('logo', () => {
+    it('embeds the bundled logo without fetching anything from upstream', async () => {
+      const fetchMock = jest.mocked(global.fetch);
+      fetchMock.mockClear();
 
       const result = await service.generateTrainingCertificatePdf({
         userName: 'Logo User',
@@ -60,8 +61,8 @@ describe('TrainingCertificatePdfService', () => {
         completedAt: new Date('2026-01-01'),
       });
 
-      expect(result).toBeInstanceOf(Buffer);
-      expect(result.length).toBeGreaterThan(0);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(result.toString('latin1')).toContain('/Subtype /Image');
     });
   });
 });

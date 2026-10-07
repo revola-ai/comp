@@ -4,7 +4,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    include: ['emails/**/*.test.{ts,tsx}', 'lib/**/*.test.{ts,tsx}'],
+    include: [
+      'emails/**/*.test.{ts,tsx}',
+      'lib/**/*.test.{ts,tsx}',
+      'components/**/*.test.{ts,tsx}',
+    ],
     exclude: ['node_modules', 'dist'],
   },
 });
