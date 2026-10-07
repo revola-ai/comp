@@ -11,15 +11,13 @@ import { getUnsubscribedEmails } from '@trycompai/email/lib/check-unsubscribe';
 import { render } from '@react-email/render';
 import { isScheduledRunAllowed } from '../../lib/schedule-guard';
 import { sendBatchEmailViaApi } from '../../lib/send-email-via-api';
+import { portalPolicyUrl } from './app-links';
 import {
   computePendingPolicies,
   filterDigestMembersByCompliance,
   type ComplianceFilterDb,
   type DigestMember,
 } from './policy-acknowledgment-digest-helpers';
-
-const getPortalBase = () =>
-  (process.env.NEXT_PUBLIC_PORTAL_URL ?? 'https://portal.trycomp.ai').replace(/\/+$/, '');
 
 // Skip orgs that look abandoned — same threshold weekly-task-reminder uses so
 // we don't keep hitting dead addresses and burning domain reputation.
@@ -102,7 +100,6 @@ export const policyAcknowledgmentDigest = schedules.task({
       `Checking ${organizations.length} active orgs for pending acknowledgments (skipped orgs with no sessions in ${ORG_INACTIVITY_DAYS} days)`,
     );
 
-    const portalBase = getPortalBase();
     let orgsProcessed = 0;
     // Per-org drops from the unsubscribe filter. A user opted-out in 2 orgs
     // counts 2 — same semantic as the pre-rollup implementation.
@@ -141,7 +138,7 @@ export const policyAcknowledgmentDigest = schedules.task({
           policies: pendingPolicies.map((p) => ({
             id: p.id,
             name: p.name,
-            url: `${portalBase}/${org.id}/policy/${p.id}`,
+            url: portalPolicyUrl({ organizationId: org.id, policyId: p.id }),
           })),
         });
       }

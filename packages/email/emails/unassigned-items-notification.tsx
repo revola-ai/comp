@@ -12,6 +12,7 @@ import {
 import { Footer } from '../components/footer';
 import { Logo } from '../components/logo';
 import { UnsubscribeLink } from '../components/unsubscribe-link';
+import { publicBaseUrl } from '../lib/public-url';
 import { getUnsubscribeUrl } from '../lib/unsubscribe';
 
 interface UnassignedItem {
@@ -37,12 +38,10 @@ export const UnassignedItemsNotificationEmail = ({
   unassignedItems,
   email,
 }: Props) => {
-  // An app link: NEXT_PUBLIC_BETTER_AUTH_URL is the API host when self-hosted.
-  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL?.trim() || 'https://app.trycomp.ai').replace(
-    /\/+$/,
-    '',
-  );
-  const link = `${baseUrl}/${organizationId}`;
+  // An app link: NEXT_PUBLIC_BETTER_AUTH_URL is the API host when self-hosted. Unset
+  // leaves the links out rather than pointing at an upstream host.
+  const baseUrl = publicBaseUrl(['NEXT_PUBLIC_APP_URL']);
+  const link = baseUrl ? `${baseUrl}/${organizationId}` : undefined;
 
   const getItemTypeLabel = (type: UnassignedItem['type']) => {
     switch (type) {
@@ -113,9 +112,13 @@ export const UnassignedItemsNotificationEmail = ({
                 <ul className="list-disc pl-[12px]">
                   {items.map((item) => (
                     <li key={item.id} className="text-[14px] leading-[24px] text-[#121212]">
-                      <Link href={getItemUrl(item)} className="text-[#121212] underline">
-                        {item.name}
-                      </Link>
+                      {baseUrl ? (
+                        <Link href={getItemUrl(item)} className="text-[#121212] underline">
+                          {item.name}
+                        </Link>
+                      ) : (
+                        item.name
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -126,14 +129,16 @@ export const UnassignedItemsNotificationEmail = ({
               Please log in to assign these items to appropriate team members.
             </Text>
 
-            <Section className="mt-[32px] mb-[42px] text-center">
-              <a
-                href={link}
-                className="text-primary border border-solid border-[#121212] bg-transparent px-6 py-3 text-center text-[14px] font-medium text-[#121212] no-underline inline-block"
-              >
-                View Organization
-              </a>
-            </Section>
+            {link && (
+              <Section className="mt-[32px] mb-[42px] text-center">
+                <a
+                  href={link}
+                  className="text-primary border border-solid border-[#121212] bg-transparent px-6 py-3 text-center text-[14px] font-medium text-[#121212] no-underline inline-block"
+                >
+                  View Organization
+                </a>
+              </Section>
+            )}
 
             {email && <UnsubscribeLink email={email} unsubscribeUrl={getUnsubscribeUrl(email)} />}
 

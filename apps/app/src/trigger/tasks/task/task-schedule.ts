@@ -6,6 +6,7 @@ import { isUserUnsubscribed, TaskStatusNotificationEmail } from '@trycompai/emai
 import { sendEmailViaApi } from '../../lib/send-email-via-api';
 
 import { isScheduledRunAllowed } from '../../lib/schedule-guard';
+import { appTaskUrl } from './app-links';
 import { getTargetStatus } from './task-schedule-helpers';
 
 export const taskSchedule = schedules.task({
@@ -275,7 +276,10 @@ export const taskSchedule = schedules.task({
                 taskName: recipient.task.title,
                 taskStatus,
                 organizationName: recipient.task.organization.name,
-                taskUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.trycomp.ai'}/${recipient.task.organizationId}/tasks/${recipient.task.id}`,
+                taskUrl: appTaskUrl({
+                  organizationId: recipient.task.organizationId,
+                  taskId: recipient.task.id,
+                }),
               }),
               organizationId: recipient.task.organizationId,
               system: true,
@@ -307,7 +311,10 @@ export const taskSchedule = schedules.task({
             organizationName: recipient.task.organization.name,
             organizationId: recipient.task.organizationId,
             taskId: recipient.task.id,
-            taskUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.trycomp.ai'}/${recipient.task.organizationId}/tasks/${recipient.task.id}`,
+            taskUrl: appTaskUrl({
+              organizationId: recipient.task.organizationId,
+              taskId: recipient.task.id,
+            }),
           },
         })),
       });

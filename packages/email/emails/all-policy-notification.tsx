@@ -1,18 +1,18 @@
 import {
   Body,
-  Button,
   Container,
   Heading,
   Html,
-  Link,
   Preview,
   Section,
   Tailwind,
   Text,
 } from '@react-email/components';
+import { CallToAction } from '../components/call-to-action';
 import { Footer } from '../components/footer';
 import { Logo } from '../components/logo';
 import { UnsubscribeLink } from '../components/unsubscribe-link';
+import { publicBaseUrl } from '../lib/public-url';
 import { getUnsubscribeUrl } from '../lib/unsubscribe';
 
 interface Props {
@@ -28,7 +28,8 @@ export const AllPolicyNotificationEmail = ({
   organizationName,
   organizationId,
 }: Props) => {
-  const link = `${process.env.NEXT_PUBLIC_PORTAL_URL ?? 'https://portal.trycomp.ai'}/${organizationId}`;
+  const portalUrl = publicBaseUrl(['NEXT_PUBLIC_PORTAL_URL']);
+  const link = portalUrl ? `${portalUrl}/${organizationId}` : undefined;
   const subjectText = 'Please review and accept the policies';
 
   return (
@@ -58,21 +59,7 @@ export const AllPolicyNotificationEmail = ({
               and accept these policies.
             </Text>
 
-            <Section className="mt-[32px] mb-[42px] text-center">
-              <Button
-                className="text-primary border border-solid border-[#121212] bg-transparent px-6 py-3 text-center text-[14px] font-medium text-[#121212] no-underline"
-                href={link}
-              >
-                Review & Accept Policies
-              </Button>
-            </Section>
-
-            <Text className="text-[14px] leading-[24px] break-all text-[#707070]">
-              or copy and paste this URL into your browser{' '}
-              <Link href={link} className="text-[#707070] underline">
-                {link}
-              </Link>
-            </Text>
+            <CallToAction href={link} label="Review & Accept Policies" />
 
             <br />
             <Section>

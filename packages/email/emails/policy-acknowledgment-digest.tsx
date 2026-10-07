@@ -13,12 +13,14 @@ import {
 import { Footer } from '../components/footer';
 import { Logo } from '../components/logo';
 import { UnsubscribeLink } from '../components/unsubscribe-link';
+import { publicBaseUrl } from '../lib/public-url';
 import { getUnsubscribeUrl } from '../lib/unsubscribe';
 
 export interface PolicyAcknowledgmentDigestPolicy {
   id: string;
   name: string;
-  url: string;
+  /** Undefined when the portal URL is not configured: the name is then shown without a link. */
+  url?: string;
 }
 
 export interface PolicyAcknowledgmentDigestOrg {
@@ -59,10 +61,7 @@ export const PolicyAcknowledgmentDigestEmail = ({
   const [firstOrg] = orgsWithPolicies;
   if (!firstOrg) return null;
 
-  const portalBase = (process.env.NEXT_PUBLIC_PORTAL_URL ?? 'https://portal.trycomp.ai').replace(
-    /\/+$/,
-    '',
-  );
+  const portalBase = publicBaseUrl(['NEXT_PUBLIC_PORTAL_URL']);
   const subjectText = computePolicyAcknowledgmentDigestSubject(orgsWithPolicies);
   const isMultiOrg = orgsWithPolicies.length > 1;
 
@@ -99,7 +98,7 @@ export const PolicyAcknowledgmentDigestEmail = ({
             )}
 
             {orgsWithPolicies.map((org) => {
-              const orgPortalLink = `${portalBase}/${org.id}`;
+              const orgPortalLink = portalBase ? `${portalBase}/${org.id}` : undefined;
               return (
                 <Section key={org.id} className="mt-[16px] mb-[24px]">
                   {isMultiOrg && (
@@ -110,19 +109,25 @@ export const PolicyAcknowledgmentDigestEmail = ({
                   {org.policies.map((policy) => (
                     <Text key={policy.id} className="m-0 text-[14px] leading-[24px] text-[#121212]">
                       &bull;{' '}
-                      <Link href={policy.url} className="text-[#121212] underline">
-                        {policy.name}
-                      </Link>
+                      {policy.url ? (
+                        <Link href={policy.url} className="text-[#121212] underline">
+                          {policy.name}
+                        </Link>
+                      ) : (
+                        policy.name
+                      )}
                     </Text>
                   ))}
-                  <Section className="mt-[16px] mb-[16px] text-center">
-                    <Button
-                      className="border border-solid border-[#121212] bg-transparent px-6 py-3 text-center text-[14px] font-medium text-[#121212] no-underline"
-                      href={orgPortalLink}
-                    >
-                      {isMultiOrg ? `Review in ${org.name}` : 'Review in portal'}
-                    </Button>
-                  </Section>
+                  {orgPortalLink && (
+                    <Section className="mt-[16px] mb-[16px] text-center">
+                      <Button
+                        className="border border-solid border-[#121212] bg-transparent px-6 py-3 text-center text-[14px] font-medium text-[#121212] no-underline"
+                        href={orgPortalLink}
+                      >
+                        {isMultiOrg ? `Review in ${org.name}` : 'Review in portal'}
+                      </Button>
+                    </Section>
+                  )}
                 </Section>
               );
             })}
