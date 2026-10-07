@@ -12,6 +12,7 @@ import { db } from '@db';
 import { ApiKeyService } from './api-key.service';
 import { hasAppAccess } from './app-access';
 import { auth } from './auth.server';
+import { API_KEY_HEADER, SERVICE_TOKEN_HEADER } from './credential-headers';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { SKIP_ORG_CHECK_KEY } from './skip-org-check.decorator';
 import { resolveServiceByToken } from './service-token.config';
@@ -35,13 +36,13 @@ export class HybridAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
     // Try API Key authentication first (for external customers)
-    const apiKey = request.headers['x-api-key'] as string;
+    const apiKey = request.headers[API_KEY_HEADER] as string;
     if (apiKey) {
       return this.handleApiKeyAuth(request, apiKey);
     }
 
     // Try Service Token authentication (for internal services)
-    const serviceToken = request.headers['x-service-token'] as string;
+    const serviceToken = request.headers[SERVICE_TOKEN_HEADER] as string;
     if (serviceToken) {
       return this.handleServiceTokenAuth(request, serviceToken);
     }

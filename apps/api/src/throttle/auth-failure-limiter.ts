@@ -1,53 +1,55 @@
 import { Injectable } from '@nestjs/common';
 
-/** Rejected credentials (401 responses) one client IP may cause per window. */
+/** Machine-credential attempts one client IP may have unrefunded per window. */
 export const AUTH_FAILURE_LIMIT = 30;
 export const AUTH_FAILURE_WINDOW_MS = 60_000;
 
-type FailureWindow = { failures: number; endsAt: number };
+type AttemptWindow = { attempts: number; endsAt: number };
+
+export type AuthFailureReservation =
+  | { granted: true; refund: () => void }
+  | { granted: false; retryAfterMs: number };
 
 /**
- * Fixed-window count of authentication failures per key (a verified client IP
- * bucket). A key that reaches AUTH_FAILURE_LIMIT stays blocked until its
- * window ends. In memory, like the Nest throttler storage: correct for one task
- * per service; more tasks need a shared store.
+ * Fixed-window attempt count per key (a verified client IP bucket). Every
+ * attempt takes a slot when it arrives, so a burst is counted before any
+ * credential is checked; a request that turns out not to be a credential
+ * failure gives its slot back. A request that never finishes (client abort,
+ * crash) keeps its slot. In memory, like the Nest throttler storage: correct
+ * for one task per service; more tasks need a shared store.
  */
 @Injectable()
 export class AuthFailureLimiter {
-  private readonly windows = new Map<string, FailureWindow>();
+  private readonly windows = new Map<string, AttemptWindow>();
   private nextSweepAt = 0;
 
-  /** Milliseconds until the key may try again; 0 when it is not blocked. */
-  retryAfterMs({
+  reserve({
     key,
     now = Date.now(),
   }: {
     key: string;
     now?: number;
-  }): number {
-    const window = this.windows.get(key);
-    if (!window || window.endsAt <= now) return 0;
-    if (window.failures < AUTH_FAILURE_LIMIT) return 0;
-    return window.endsAt - now;
-  }
-
-  recordFailure({
-    key,
-    now = Date.now(),
-  }: {
-    key: string;
-    now?: number;
-  }): void {
+  }): AuthFailureReservation {
     this.sweepExpired(now);
-    const window = this.windows.get(key);
+    let window = this.windows.get(key);
     if (!window || window.endsAt <= now) {
-      this.windows.set(key, {
-        failures: 1,
-        endsAt: now + AUTH_FAILURE_WINDOW_MS,
-      });
-      return;
+      window = { attempts: 0, endsAt: now + AUTH_FAILURE_WINDOW_MS };
+      this.windows.set(key, window);
     }
-    window.failures += 1;
+    if (window.attempts >= AUTH_FAILURE_LIMIT) {
+      return { granted: false, retryAfterMs: window.endsAt - now };
+    }
+    window.attempts += 1;
+    const reserved = window;
+    let refunded = false;
+    return {
+      granted: true,
+      refund: () => {
+        if (refunded || this.windows.get(key) !== reserved) return;
+        refunded = true;
+        reserved.attempts = Math.max(0, reserved.attempts - 1);
+      },
+    };
   }
 
   /** Number of keys currently held in memory. */
@@ -56,7 +58,7 @@ export class AuthFailureLimiter {
   }
 
   // At most once per window, drop windows that have ended, so memory holds only
-  // the keys that failed recently.
+  // the keys that made attempts recently.
   private sweepExpired(now: number): void {
     if (now < this.nextSweepAt) return;
     this.nextSweepAt = now + AUTH_FAILURE_WINDOW_MS;
