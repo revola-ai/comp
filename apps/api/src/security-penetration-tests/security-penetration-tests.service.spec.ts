@@ -1,4 +1,9 @@
-import { HttpException, HttpStatus } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
 import { db } from '@db';
 import { validate } from 'class-validator';
 import { createHash } from 'node:crypto';
@@ -116,6 +121,8 @@ describe('SecurityPenetrationTestsService', () => {
 
   beforeEach(() => {
     process.env.MACED_API_KEY = 'mc_dev_test_maced_api_key';
+    process.env.SECURITY_PENETRATION_TESTS_WEBHOOK_URL =
+      'https://api.comp.revola.ai';
     mockPentestCreditsService.getStatus.mockResolvedValue({
       balance: 5,
       totalGranted: 5,
@@ -473,28 +480,24 @@ describe('SecurityPenetrationTestsService', () => {
     );
   });
 
-  it('sends no webhook URL, never an upstream default, when none is provided or configured', async () => {
+  it('refuses with a named 400, never an upstream default, when no webhook URL is provided or configured', async () => {
     process.env.SECURITY_PENETRATION_TESTS_WEBHOOK_URL = '';
+    const logError = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
 
-    fetchMock.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          id: 'run_default_webhook',
-          status: 'provisioning',
-          webhookToken: 'provider-issued-token',
-        }),
-        { status: 200 },
-      ),
+    await expect(
+      service.createReport('org_123', {
+        targetUrl: 'https://app.example.com',
+        repoUrl: 'https://github.com/org/repo',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(String(logError.mock.calls[0]?.[0])).toContain(
+      'SECURITY_PENETRATION_TESTS_WEBHOOK_URL',
     );
-
-    await service.createReport('org_123', {
-      targetUrl: 'https://app.example.com',
-      repoUrl: 'https://github.com/org/repo',
-    });
-    const requestBody = await getRequestBody();
-
-    expect(requestBody).not.toHaveProperty('webhookUrl');
-    expect(JSON.stringify(requestBody)).not.toContain('trycomp.ai');
+    logError.mockRestore();
   });
 
   it('creates Comp webhook callback runs without a provider handshake token', async () => {

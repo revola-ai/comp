@@ -257,8 +257,8 @@ export class SecurityPenetrationTestsService {
   private readonly defaultCompWebhookHosts = new Set(['localhost:3333']);
 
   /**
-   * SECURITY_PENETRATION_TESTS_WEBHOOK_URL, or undefined (no webhook is sent). Never
-   * an upstream default, which would have the provider post Revola findings there.
+   * SECURITY_PENETRATION_TESTS_WEBHOOK_URL, or undefined. Never an upstream default,
+   * which would have the provider post Revola findings there.
    */
   private get defaultWebhookBase(): string | undefined {
     return (
@@ -420,7 +420,7 @@ export class SecurityPenetrationTestsService {
         ? { pipelineTesting: payload.pipelineTesting }
         : {}),
       ...(payload.testMode !== undefined ? { testMode: payload.testMode } : {}),
-      ...(resolvedWebhookUrl ? { webhookUrl: resolvedWebhookUrl } : {}),
+      webhookUrl: resolvedWebhookUrl,
       ...(payload.scanDepth ? { scanDepth: payload.scanDepth } : {}),
       ...(payload.evidenceLevel
         ? { evidenceLevel: payload.evidenceLevel }
@@ -553,7 +553,7 @@ export class SecurityPenetrationTestsService {
       error: null,
       failedReason: null,
       temporalUiUrl: null,
-      webhookUrl: resolvedWebhookUrl ?? null,
+      webhookUrl: resolvedWebhookUrl,
       notificationEmail: null,
       ...(payload.scanDepth ? { scanDepth: payload.scanDepth } : {}),
       ...(payload.evidenceLevel
@@ -1395,10 +1395,20 @@ export class SecurityPenetrationTestsService {
     return path.endsWith(this.canonicalWebhookPath);
   }
 
-  private resolveWebhookUrl(providedUrl?: string): string | undefined {
+  /**
+   * The provider's callback URL. Refunds and auto-retry run only from that webhook,
+   * so a run without one is refused (before any billing reservation) rather than
+   * created and never refunded or retried.
+   */
+  private resolveWebhookUrl(providedUrl?: string): string {
     const baseUrl = providedUrl?.trim() || this.defaultWebhookBase;
     if (!baseUrl) {
-      return undefined;
+      this.logger.error(
+        'SECURITY_PENETRATION_TESTS_WEBHOOK_URL is not set: refusing to create a penetration test without a webhook',
+      );
+      throw new BadRequestException(
+        'Penetration testing is not configured. Contact support.',
+      );
     }
 
     let webhookUrl: URL;
