@@ -76,12 +76,7 @@ function isCustomerVisibleEvent(event: PentestEvent): boolean {
 }
 
 export type PentestReportStatus =
-  | 'provisioning'
-  | 'cloning'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled';
+  'provisioning' | 'cloning' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 // Alias the SDK progress type so callers inside this module don't import from
 // the SDK directly.
@@ -126,13 +121,6 @@ interface PentestFailedWebhookPayload {
   runId: string;
   error: string;
   failedAt: string;
-}
-
-type WebhookEventType = 'status' | 'completed' | 'failed';
-
-interface WebhookRequestMetadata {
-  webhookToken?: string;
-  eventId?: string;
 }
 
 type CreatePentestBodyWithScanProfile = CreatePentestBody & {
@@ -266,17 +254,15 @@ export class SecurityPenetrationTestsService {
 
   private readonly canonicalWebhookPath =
     '/v1/security-penetration-tests/webhook';
-  private readonly defaultWebhookBaseUrl = 'https://api.trycomp.ai';
-  private readonly defaultCompWebhookHosts = new Set([
-    'api.trycomp.ai',
-    'api.staging.trycomp.ai',
-    'localhost:3333',
-  ]);
+  private readonly defaultCompWebhookHosts = new Set(['localhost:3333']);
 
-  private get defaultWebhookBase() {
+  /**
+   * SECURITY_PENETRATION_TESTS_WEBHOOK_URL, or undefined (no webhook is sent). Never
+   * an upstream default, which would have the provider post Revola findings there.
+   */
+  private get defaultWebhookBase(): string | undefined {
     return (
-      process.env.SECURITY_PENETRATION_TESTS_WEBHOOK_URL?.trim() ||
-      this.defaultWebhookBaseUrl
+      process.env.SECURITY_PENETRATION_TESTS_WEBHOOK_URL?.trim() || undefined
     );
   }
 
@@ -397,7 +383,7 @@ export class SecurityPenetrationTestsService {
     } catch (error) {
       if (
         error instanceof HttpException &&
-        error.getStatus() === HttpStatus.PAYMENT_REQUIRED
+        error.getStatus() === Number(HttpStatus.PAYMENT_REQUIRED)
       ) {
         // Record the blocked attempt so support / compliance can answer
         // "did the user try to scan without an allowance?". Best-

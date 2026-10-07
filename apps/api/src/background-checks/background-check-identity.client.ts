@@ -23,8 +23,17 @@ export class BackgroundCheckIdentityClient {
       );
     }
 
-    const baseUrl = this.baseUrl();
     const callbackUrl = this.callbackUrl();
+    if (!callbackUrl) {
+      // No upstream default: Identity would post results about Revola employees there.
+      this.logger.error(
+        'BACKGROUND_WH_ENDPOINT is not set: refusing to create a background check without a callback URL',
+      );
+      throw new BadRequestException(
+        'Background check service is not configured. Contact support.',
+      );
+    }
+    const baseUrl = this.baseUrl();
 
     const response = await this.fetchIdentity(
       `${baseUrl}/v1/background-checks`,
@@ -91,11 +100,10 @@ export class BackgroundCheckIdentityClient {
     return baseUrl.replace(/\/+$/, '');
   }
 
-  private callbackUrl(): string {
+  /** This API's Identity webhook (BACKGROUND_WH_ENDPOINT), or undefined when unset. */
+  private callbackUrl(): string | undefined {
     const endpoint = process.env.BACKGROUND_WH_ENDPOINT?.trim();
-    return (
-      endpoint || 'https://api.trycomp.ai/v1/background-checks/webhook'
-    ).replace(/\/+$/, '');
+    return endpoint ? endpoint.replace(/\/+$/, '') : undefined;
   }
 
   private async fetchIdentity(

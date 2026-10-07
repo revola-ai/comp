@@ -473,7 +473,7 @@ describe('SecurityPenetrationTestsService', () => {
     );
   });
 
-  it('uses production webhook default when webhook URL is not provided or configured', async () => {
+  it('sends no webhook URL, never an upstream default, when none is provided or configured', async () => {
     process.env.SECURITY_PENETRATION_TESTS_WEBHOOK_URL = '';
 
     fetchMock.mockResolvedValueOnce(
@@ -493,9 +493,8 @@ describe('SecurityPenetrationTestsService', () => {
     });
     const requestBody = await getRequestBody();
 
-    expect(requestBody.webhookUrl).toBe(
-      'https://api.trycomp.ai/v1/security-penetration-tests/webhook',
-    );
+    expect(requestBody).not.toHaveProperty('webhookUrl');
+    expect(JSON.stringify(requestBody)).not.toContain('trycomp.ai');
   });
 
   it('creates Comp webhook callback runs without a provider handshake token', async () => {

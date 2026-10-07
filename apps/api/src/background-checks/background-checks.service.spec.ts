@@ -60,7 +60,8 @@ jest.mock('@db', () => {
   };
 });
 
-const mockedDb = db as jest.Mocked<typeof db>;
+// Every db method is a jest.fn() (see the @db mock above); typed as properties, not methods.
+const mockedDb = db as unknown as Record<string, Record<string, jest.Mock>>;
 
 function mockAsync<T>(fn: unknown): jest.MockedFunction<() => Promise<T>> {
   return fn as jest.MockedFunction<() => Promise<T>>;
@@ -83,7 +84,8 @@ describe('background checks', () => {
       BACKGROUND_CHECK_API_KEY: 'bc_test',
       BACKGROUND_CHECK_API_BASE_URL: 'https://glad-sturgeon-729.convex.site/',
       BACKGROUND_CHECK_WEBHOOK_SECRET: 'whsec_test',
-      BACKGROUND_WH_ENDPOINT: '',
+      BACKGROUND_WH_ENDPOINT:
+        'https://api.comp.revola.ai/v1/background-checks/webhook',
       STRIPE_BACKGROUND_CHECK_PRICE_ID: 'price_bg',
       NEXT_PUBLIC_APP_URL: 'https://app.trycomp.ai',
     };
@@ -126,7 +128,7 @@ describe('background checks', () => {
       }),
     );
     const request = fetchSpy.mock.calls[0]?.[1];
-    const body = JSON.parse(String(request?.body)) as {
+    const body = JSON.parse(request?.body as string) as {
       candidate: { name: string; email: string };
       metadata: { compOrganizationId: string; compMemberId: string };
       callbackUrl: string;
@@ -142,7 +144,7 @@ describe('background checks', () => {
       compMemberId: 'mem_1',
     });
     expect(body.callbackUrl).toBe(
-      'https://api.trycomp.ai/v1/background-checks/webhook',
+      'https://api.comp.revola.ai/v1/background-checks/webhook',
     );
     expect(body.requesterNotes).toBeUndefined();
   });
@@ -172,7 +174,7 @@ describe('background checks', () => {
     });
 
     const request = fetchSpy.mock.calls[0]?.[1];
-    const body = JSON.parse(String(request?.body)) as { callbackUrl: string };
+    const body = JSON.parse(request?.body as string) as { callbackUrl: string };
     expect(body.callbackUrl).toBe(
       'https://delbert-unhopeful-misti.ngrok-free.dev/v1/background-checks/webhook',
     );
@@ -445,11 +447,10 @@ describe('background checks', () => {
     process.env.NEXT_PUBLIC_APP_URL = '';
     process.env.APP_URL = '';
     process.env.BETTER_AUTH_URL = 'http://localhost:3000';
-    const billingService = {
-      createSetupSession: jest.fn().mockResolvedValue({
-        url: 'https://checkout.stripe.com/c/session_1',
-      }),
-    } as unknown as BillingService;
+    const createSetupSession = jest.fn().mockResolvedValue({
+      url: 'https://checkout.stripe.com/c/session_1',
+    });
+    const billingService = { createSetupSession } as unknown as BillingService;
     const service = new BackgroundCheckBillingService(billingService);
 
     await expect(
@@ -462,7 +463,7 @@ describe('background checks', () => {
       }),
     ).resolves.toEqual({ url: 'https://checkout.stripe.com/c/session_1' });
 
-    expect(billingService.createSetupSession).toHaveBeenCalledWith({
+    expect(createSetupSession).toHaveBeenCalledWith({
       organizationId: 'org_1',
       successUrl:
         'http://localhost:3000/org_1/people/mem_1?background_check_billing=success',
@@ -558,13 +559,11 @@ describe('background checks', () => {
       >);
 
       const identityClient = {
-        createBackgroundCheck: jest
-          .fn()
-          .mockResolvedValue({
-            id: 'check_new',
-            status: 'invited',
-            candidateUrl: 'https://c/x',
-          }),
+        createBackgroundCheck: jest.fn().mockResolvedValue({
+          id: 'check_new',
+          status: 'invited',
+          candidateUrl: 'https://c/x',
+        }),
       };
       const paymentService = { charge: jest.fn(), refund: jest.fn() };
       const service = new BackgroundChecksService(
@@ -744,30 +743,29 @@ describe('background checks', () => {
   });
 
   it('includes background check and penetration test usage in billing status', async () => {
-    const billingService = {
-      getStatus: jest.fn().mockResolvedValue({
-        hasBilling: true,
-        hasPaymentMethod: true,
-        setupAt: new Date('2026-04-29T12:00:00.000Z'),
-        usage: { backgroundChecks: 4, penetrationTests: 2 },
-        subscriptions: [],
-        invoices: [
-          {
-            id: 'in_1',
-            number: 'INV-001',
-            createdAt: '2026-04-30T00:00:00.000Z',
-            dueDate: null,
-            amountPaid: 4900,
-            amountDue: 4900,
-            currency: 'usd',
-            status: 'paid',
-            type: 'One Time',
-            hostedInvoiceUrl: 'https://invoice.stripe.com/i/in_1',
-            invoicePdfUrl: 'https://invoice.stripe.com/i/in_1.pdf',
-          },
-        ],
-      }),
-    } as unknown as BillingService;
+    const getStatus = jest.fn().mockResolvedValue({
+      hasBilling: true,
+      hasPaymentMethod: true,
+      setupAt: new Date('2026-04-29T12:00:00.000Z'),
+      usage: { backgroundChecks: 4, penetrationTests: 2 },
+      subscriptions: [],
+      invoices: [
+        {
+          id: 'in_1',
+          number: 'INV-001',
+          createdAt: '2026-04-30T00:00:00.000Z',
+          dueDate: null,
+          amountPaid: 4900,
+          amountDue: 4900,
+          currency: 'usd',
+          status: 'paid',
+          type: 'One Time',
+          hostedInvoiceUrl: 'https://invoice.stripe.com/i/in_1',
+          invoicePdfUrl: 'https://invoice.stripe.com/i/in_1.pdf',
+        },
+      ],
+    });
+    const billingService = { getStatus } as unknown as BillingService;
     const service = new BackgroundCheckBillingService(billingService);
 
     await expect(service.getStatus('org_1')).resolves.toMatchObject({
@@ -787,6 +785,6 @@ describe('background checks', () => {
         },
       ],
     });
-    expect(billingService.getStatus).toHaveBeenCalledWith('org_1');
+    expect(getStatus).toHaveBeenCalledWith('org_1');
   });
 });

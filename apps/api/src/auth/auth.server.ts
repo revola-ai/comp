@@ -8,6 +8,7 @@ import {
 import { triggerEmail } from '../email/trigger-email';
 import { InviteEmail } from '../email/templates/invite-member';
 import { appLink } from '../utils/public-url';
+import { mcpLoginPage as getMcpLoginPage } from './mcp-login-page';
 import { db } from '@db';
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
@@ -189,10 +190,7 @@ const gramMcpClient =
     : null;
 
 // Where better-auth sends the user to authenticate during the OAuth flow.
-// Must point at the app's sign-in page. Override per environment via env.
-const mcpLoginPage =
-  process.env.MCP_OAUTH_LOGIN_PAGE ||
-  `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.trycomp.ai'}/auth`;
+const mcpLoginPage = getMcpLoginPage();
 
 // =============================================================================
 // Security Validation
