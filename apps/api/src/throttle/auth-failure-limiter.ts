@@ -11,12 +11,12 @@ export type AuthFailureReservation =
   | { granted: false; retryAfterMs: number };
 
 /**
- * Fixed-window attempt count per key (a verified client IP bucket). Every
- * attempt takes a slot when it arrives, so a burst is counted before any
- * credential is checked; a request that turns out not to be a credential
- * failure gives its slot back. A request that never finishes (client abort,
- * crash) keeps its slot. In memory, like the Nest throttler storage: correct
- * for one task per service; more tasks need a shared store.
+ * Fixed-window attempt count per key (a verified client IP bucket). An
+ * attempt takes a slot before its credential is checked, so a burst is counted
+ * before any lookup; HybridAuthGuard gives the slot back only when it accepts
+ * the credential. A request that never finishes (client abort, crash) keeps
+ * its slot. In memory, like the Nest throttler storage: correct for one task
+ * per service; more tasks need a shared store.
  */
 @Injectable()
 export class AuthFailureLimiter {

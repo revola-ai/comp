@@ -8,8 +8,8 @@ export const CREDENTIAL_STORE_RETRY_AFTER_SECONDS = 5;
 
 /**
  * 503 with a named reason and no details of the underlying failure. Its own
- * class so the response gets Retry-After (CredentialStoreUnavailableFilter) and
- * the pre-authentication limiter gives the slot back.
+ * class so the response gets Retry-After (CredentialStoreUnavailableFilter).
+ * The API-key attempt it ended keeps its slot (api-key-auth.ts).
  */
 export class CredentialStoreUnavailableException extends ServiceUnavailableException {
   constructor() {

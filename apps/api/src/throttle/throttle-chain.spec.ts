@@ -3,12 +3,14 @@ import { Controller, Get, UseGuards } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Throttle } from '@nestjs/throttler';
 import { readFileSync } from 'node:fs';
+import { Agent } from 'node:http';
 import { resolve } from 'node:path';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { ApiKeyService } from '../auth/api-key.service';
 import { HybridAuthGuard } from '../auth/hybrid-auth.guard';
 import { Public } from '../auth/public.decorator';
+import { AuthFailureLimiter } from './auth-failure-limiter';
 
 // The real HybridAuthGuard runs; only its session resolver and database are mocked.
 const mockGetSession = jest.fn();
@@ -38,6 +40,11 @@ jest.mock('@trycompai/auth', () => ({
 }));
 
 import { ThrottleModule } from './throttle.module';
+
+// A private, non-keep-alive agent: Node's global agent keeps sockets alive
+// across the test files of a jest worker, so a request could otherwise ride a
+// socket still served by an earlier file's app that had the same port.
+const agent = new Agent({ keepAlive: false });
 
 const ORIGIN = 'A'.repeat(64);
 const INTERNAL = 'internal-token-for-tests';
@@ -114,14 +121,17 @@ describe('throttling chain (global public limiter + identity interceptor after H
       controllers: [ProbeController],
       providers: [
         HybridAuthGuard,
+        AuthFailureLimiter,
         { provide: ApiKeyService, useValue: apiKeyService },
       ],
     }).compile();
     app = moduleRef.createNestApplication();
-    await app.init();
+    // Listen once: unbound, supertest listens and closes per request.
+    await app.listen(0);
   });
 
   afterAll(async () => {
+    agent.destroy();
     await app.close();
     jest.restoreAllMocks();
     process.env = savedEnv;
@@ -139,7 +149,9 @@ describe('throttling chain (global public limiter + identity interceptor after H
   });
 
   const get = (path: string, headers: Record<string, string> = {}) => {
-    const call = request(app.getHttpServer() as App).get(path);
+    const call = request(app.getHttpServer() as App)
+      .get(path)
+      .agent(agent);
     for (const [name, value] of Object.entries(headers)) call.set(name, value);
     return call.then((response) => response.status);
   };
@@ -238,9 +250,9 @@ describe('throttling chain (global public limiter + identity interceptor after H
   });
 
   it('applies the global default of 100 requests per minute', async () => {
-    const response = await request(app.getHttpServer() as App).get(
-      '/probe/default-limit',
-    );
+    const response = await request(app.getHttpServer() as App)
+      .get('/probe/default-limit')
+      .agent(agent);
     expect(response.headers['x-ratelimit-limit']).toBe('100');
   });
 

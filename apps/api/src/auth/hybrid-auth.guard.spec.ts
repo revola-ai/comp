@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { AuthFailureLimiter } from '../throttle/auth-failure-limiter';
 import { HybridAuthGuard } from './hybrid-auth.guard';
 import { ApiKeyService } from './api-key.service';
 import { SKIP_ORG_CHECK_KEY } from './skip-org-check.decorator';
@@ -90,6 +91,7 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HybridAuthGuard,
+        AuthFailureLimiter,
         {
           provide: ApiKeyService,
           useValue: { extractApiKey: jest.fn(), validateApiKey: jest.fn() },
@@ -118,7 +120,12 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
       role: 'user',
     });
     mockMemberFindMany.mockResolvedValue([
-      { id: 'mem_1', role: 'owner,admin', department: 'it', organizationId: 'org_1' },
+      {
+        id: 'mem_1',
+        role: 'owner,admin',
+        department: 'it',
+        organizationId: 'org_1',
+      },
     ]);
 
     const { context, request } = createContext({
@@ -142,7 +149,12 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
       role: 'user',
     });
     mockMemberFindMany.mockResolvedValue([
-      { id: 'mem_2', role: 'auditor', department: 'none', organizationId: 'org_1' },
+      {
+        id: 'mem_2',
+        role: 'auditor',
+        department: 'none',
+        organizationId: 'org_1',
+      },
     ]);
 
     const { context, request } = createContext({
@@ -181,7 +193,9 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
     });
 
     // 403 (authenticated, but no org) — not a 401 that would trigger re-auth.
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      ForbiddenException,
+    );
   });
 
   it('blocks an org-less user even on org-agnostic (skipOrgCheck) endpoints', async () => {
@@ -202,7 +216,9 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
       authorization: 'Bearer mcp_access_token',
     });
 
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      ForbiddenException,
+    );
   });
 
   it('multi-org with no saved choice → asks them to pick (no silent tenant)', async () => {
@@ -213,8 +229,18 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
       role: 'user',
     });
     mockMemberFindMany.mockResolvedValue([
-      { id: 'mem_a', role: 'admin', department: 'none', organizationId: 'org_a' },
-      { id: 'mem_b', role: 'owner', department: 'none', organizationId: 'org_b' },
+      {
+        id: 'mem_a',
+        role: 'admin',
+        department: 'none',
+        organizationId: 'org_a',
+      },
+      {
+        id: 'mem_b',
+        role: 'owner',
+        department: 'none',
+        organizationId: 'org_b',
+      },
     ]);
     mockMcpBindingFindUnique.mockResolvedValue(null);
 
@@ -223,7 +249,9 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
     });
 
     // 403 (token is valid — user just needs to pick an org), not a 401.
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      ForbiddenException,
+    );
     // No tenant must have been bound.
     expect(request.organizationId).toBe('');
   });
@@ -236,7 +264,12 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
       role: 'user',
     });
     mockMemberFindMany.mockResolvedValue([
-      { id: 'mem_a', role: 'admin', department: 'none', organizationId: 'org_a' },
+      {
+        id: 'mem_a',
+        role: 'admin',
+        department: 'none',
+        organizationId: 'org_a',
+      },
       { id: 'mem_b', role: 'owner', department: 'it', organizationId: 'org_b' },
     ]);
     mockMcpBindingFindUnique.mockResolvedValue({ organizationId: 'org_b' });
@@ -259,8 +292,18 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
       role: 'user',
     });
     mockMemberFindMany.mockResolvedValue([
-      { id: 'mem_a', role: 'admin', department: 'none', organizationId: 'org_a' },
-      { id: 'mem_b', role: 'owner', department: 'none', organizationId: 'org_b' },
+      {
+        id: 'mem_a',
+        role: 'admin',
+        department: 'none',
+        organizationId: 'org_a',
+      },
+      {
+        id: 'mem_b',
+        role: 'owner',
+        department: 'none',
+        organizationId: 'org_b',
+      },
     ]);
     // Bound to an org they were removed from.
     mockMcpBindingFindUnique.mockResolvedValue({ organizationId: 'org_gone' });
@@ -270,7 +313,9 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
     });
 
     // 403 (token is valid — user just needs to pick an org), not a 401.
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      ForbiddenException,
+    );
   });
 
   it('marks platform admins from the user role', async () => {
@@ -281,7 +326,12 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
       role: 'admin',
     });
     mockMemberFindMany.mockResolvedValue([
-      { id: 'mem_4', role: 'owner', department: 'none', organizationId: 'org_1' },
+      {
+        id: 'mem_4',
+        role: 'owner',
+        department: 'none',
+        organizationId: 'org_1',
+      },
     ]);
 
     const { context, request } = createContext({
@@ -302,7 +352,12 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
       role: 'admin',
     });
     mockMemberFindMany.mockResolvedValue([
-      { id: 'mem_pa', role: 'employee', department: 'none', organizationId: 'org_1' },
+      {
+        id: 'mem_pa',
+        role: 'employee',
+        department: 'none',
+        organizationId: 'org_1',
+      },
     ]);
 
     const { context, request } = createContext({
@@ -322,14 +377,21 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
       role: 'user',
     });
     mockMemberFindMany.mockResolvedValue([
-      { id: 'mem_e', role: 'employee', department: 'none', organizationId: 'org_1' },
+      {
+        id: 'mem_e',
+        role: 'employee',
+        department: 'none',
+        organizationId: 'org_1',
+      },
     ]);
 
     const { context, request } = createContext({
       authorization: 'Bearer mcp_access_token',
     });
 
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      ForbiddenException,
+    );
     expect(request.organizationId).toBe('');
   });
 
@@ -341,7 +403,12 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
       role: 'user',
     });
     mockMemberFindMany.mockResolvedValue([
-      { id: 'mem_c', role: 'Compliance Lead', department: 'none', organizationId: 'org_1' },
+      {
+        id: 'mem_c',
+        role: 'Compliance Lead',
+        department: 'none',
+        organizationId: 'org_1',
+      },
     ]);
     // Custom role resolved from organization_role with app access granted.
     mockOrgRoleFindMany.mockResolvedValue([
@@ -365,7 +432,12 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
       role: 'user',
     });
     mockMemberFindMany.mockResolvedValue([
-      { id: 'mem_d', role: 'Read Only Portal', department: 'none', organizationId: 'org_1' },
+      {
+        id: 'mem_d',
+        role: 'Read Only Portal',
+        department: 'none',
+        organizationId: 'org_1',
+      },
     ]);
     mockOrgRoleFindMany.mockResolvedValue([
       { permissions: JSON.stringify({ policy: ['read'], portal: ['read'] }) },
@@ -375,7 +447,9 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
       authorization: 'Bearer mcp_access_token',
     });
 
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      ForbiddenException,
+    );
   });
 });
 
@@ -406,6 +480,7 @@ describe('HybridAuthGuard — service token x-user-id acting member', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HybridAuthGuard,
+        AuthFailureLimiter,
         {
           provide: ApiKeyService,
           useValue: { extractApiKey: jest.fn(), validateApiKey: jest.fn() },

@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER } from '@nestjs/core';
 import { AuthModule as BetterAuthModule } from '@thallesp/nestjs-better-auth';
+import { AuthFailureLimiter } from '../throttle/auth-failure-limiter';
 import { auth } from './auth.server';
 import { ActingUserResolver } from './acting-user.service';
-import { ApiKeyGuard } from './api-key.guard';
 import { ApiKeyService } from './api-key.service';
 import { AuthController } from './auth.controller';
 import { CredentialStoreUnavailableFilter } from './credential-store-unavailable.filter';
@@ -28,8 +28,9 @@ import { PermissionGuard } from './permission.guard';
   ],
   controllers: [AuthController],
   providers: [
+    // One instance for the whole app: HybridAuthGuard's per-IP attempt buckets.
+    AuthFailureLimiter,
     ApiKeyService,
-    ApiKeyGuard,
     HybridAuthGuard,
     PermissionGuard,
     ActingUserResolver,
@@ -37,8 +38,8 @@ import { PermissionGuard } from './permission.guard';
     { provide: APP_FILTER, useClass: CredentialStoreUnavailableFilter },
   ],
   exports: [
+    AuthFailureLimiter,
     ApiKeyService,
-    ApiKeyGuard,
     HybridAuthGuard,
     PermissionGuard,
     ActingUserResolver,

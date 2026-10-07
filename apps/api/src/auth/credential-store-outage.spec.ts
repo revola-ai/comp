@@ -6,9 +6,8 @@ import {
 import { Reflector } from '@nestjs/core';
 
 // A database outage while checking a credential is the server's failure, not
-// the caller's: it answers 503 with a named reason (and the pre-auth limiter
-// refunds the slot), never 401, which would count against the caller's IP
-// and log browser sessions out.
+// the caller's: it answers 503 with a named reason, never 401, which would
+// log browser sessions out and tell clients their credential is wrong.
 const mockGetSession = jest.fn();
 jest.mock('./auth.server', () => ({
   auth: {
@@ -45,6 +44,7 @@ jest.mock('./service-token.config', () => ({
 
 import { ApiKeyService } from './api-key.service';
 import { CREDENTIAL_STORE_UNAVAILABLE } from './credential-store-error';
+import { AuthFailureLimiter } from '../throttle/auth-failure-limiter';
 import { HybridAuthGuard } from './hybrid-auth.guard';
 
 function prismaOutage(): Error {
@@ -87,7 +87,11 @@ describe('credential validation during a database outage', () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     const reflector = new Reflector();
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
-    guard = new HybridAuthGuard(new ApiKeyService(), reflector);
+    guard = new HybridAuthGuard(
+      new ApiKeyService(),
+      reflector,
+      new AuthFailureLimiter(),
+    );
   });
 
   it('ApiKeyService.validateApiKey throws 503 instead of answering "invalid key"', async () => {

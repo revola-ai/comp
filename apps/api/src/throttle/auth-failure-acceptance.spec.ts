@@ -2,14 +2,16 @@ import type { INestApplication } from '@nestjs/common';
 import { Controller, ForbiddenException, Get, UseGuards } from '@nestjs/common';
 import { APP_FILTER } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
+import { Agent } from 'node:http';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { ApiKeyService } from '../auth/api-key.service';
 import { HybridAuthGuard } from '../auth/hybrid-auth.guard';
 
-// When the limiter gives a slot back: as soon as HybridAuthGuard accepts the
-// credential (not when the handler finishes), and when the credential store is
-// down. A valid service token never takes a slot at all.
+// When HybridAuthGuard gives an API key's slot back: as soon as it accepts the
+// key (not when the handler finishes). A failed lookup keeps the slot, whether
+// the key was wrong or the credential store was down. A valid service token
+// never takes a slot at all.
 jest.mock('../auth/auth.server', () => ({
   auth: {
     api: {
@@ -27,7 +29,7 @@ jest.mock('@trycompai/auth', () => ({
 
 import { CredentialStoreUnavailableFilter } from '../auth/credential-store-unavailable.filter';
 import { credentialStoreUnavailable } from '../auth/credential-store-error';
-import { AUTH_FAILURE_LIMIT } from './auth-failure-limiter';
+import { AUTH_FAILURE_LIMIT, AuthFailureLimiter } from './auth-failure-limiter';
 import { ThrottleModule } from './throttle.module';
 
 const ORIGIN = 'C'.repeat(64);
@@ -75,6 +77,11 @@ const resolveByKey = (key: string) =>
       : null,
   );
 
+// A private, non-keep-alive agent: Node's global agent keeps sockets alive
+// across the test files of a jest worker, so a request could otherwise ride a
+// socket still served by an earlier file's app that had the same port.
+const agent = new Agent({ keepAlive: false });
+
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 async function until(condition: () => boolean): Promise<void> {
@@ -82,7 +89,7 @@ async function until(condition: () => boolean): Promise<void> {
   if (!condition()) throw new Error('condition not reached');
 }
 
-describe('pre-authentication limiter: refunds at acceptance, service tokens first', () => {
+describe('credential attempt limit: refunds at acceptance, service tokens first', () => {
   let app: INestApplication;
   const savedEnv = { ...process.env };
 
@@ -96,6 +103,7 @@ describe('pre-authentication limiter: refunds at acceptance, service tokens firs
       controllers: [ProbeController],
       providers: [
         HybridAuthGuard,
+        AuthFailureLimiter,
         { provide: APP_FILTER, useClass: CredentialStoreUnavailableFilter },
         {
           provide: ApiKeyService,
@@ -104,10 +112,13 @@ describe('pre-authentication limiter: refunds at acceptance, service tokens firs
       ],
     }).compile();
     app = moduleRef.createNestApplication({ logger: false });
-    await app.init();
+    // Listen once: unbound, supertest listens and closes per request, so a
+    // concurrent burst could reach a port that was closed and bound again.
+    await app.listen(0);
   });
 
   afterAll(async () => {
+    agent.destroy();
     await app.close();
     jest.restoreAllMocks();
     process.env = savedEnv;
@@ -125,6 +136,7 @@ describe('pre-authentication limiter: refunds at acceptance, service tokens firs
   ) => {
     const pending = request(app.getHttpServer() as App)
       .get(path)
+      .agent(agent)
       .set('X-Comp-Origin-Auth', ORIGIN)
       .set('CF-Connecting-IP', client);
     for (const [name, value] of Object.entries(extra)) pending.set(name, value);
@@ -213,9 +225,9 @@ describe('pre-authentication limiter: refunds at acceptance, service tokens firs
     ).toBe(429);
   });
 
-  it('answers 503 with Retry-After and refunds the slot when the credential store is down', async () => {
+  it('keeps the slot of a request that ends in a credential-store 503', async () => {
     validateApiKey.mockRejectedValue(credentialStoreUnavailable());
-    for (let i = 0; i <= N; i += 1) {
+    for (let i = 0; i < N; i += 1) {
       const response = await call(
         '/probe/private',
         '192.0.2.85',
@@ -224,9 +236,23 @@ describe('pre-authentication limiter: refunds at acceptance, service tokens firs
       expect(response.status).toBe(503);
       expect(response.headers['retry-after']).toMatch(/^\d+$/);
     }
+    validateApiKey.mockReset();
     validateApiKey.mockImplementation(resolveByKey);
-    expect(await status('/probe/private', '192.0.2.85', key(VALID_KEY))).toBe(
-      200,
+    const refused = await call('/probe/private', '192.0.2.85', key(VALID_KEY));
+    expect(refused.status).toBe(429);
+    expect(refused.headers['retry-after']).toMatch(/^\d+$/);
+    expect(validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it('keeps the slot of a request whose lookup fails for another reason', async () => {
+    validateApiKey.mockRejectedValue(new Error('bug'));
+    for (let i = 0; i < N; i += 1) {
+      expect(await status('/probe/private', '192.0.2.86', key(`x-${i}`))).toBe(
+        500,
+      );
+    }
+    expect(await status('/probe/private', '192.0.2.86', key(VALID_KEY))).toBe(
+      429,
     );
   });
 });

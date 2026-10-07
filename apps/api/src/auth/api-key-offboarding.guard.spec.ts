@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { AuthFailureLimiter } from '../throttle/auth-failure-limiter';
 import { HybridAuthGuard } from './hybrid-auth.guard';
 import { ApiKeyService } from './api-key.service';
 
@@ -69,7 +70,11 @@ describe('HybridAuthGuard with a key whose creator left the organization', () =>
     mockApiKeyUpdate.mockResolvedValue({});
     const reflector = new Reflector();
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
-    guard = new HybridAuthGuard(new ApiKeyService(), reflector);
+    guard = new HybridAuthGuard(
+      new ApiKeyService(),
+      reflector,
+      new AuthFailureLimiter(),
+    );
   });
 
   it.each(['GET', 'POST', 'PATCH', 'DELETE'])(

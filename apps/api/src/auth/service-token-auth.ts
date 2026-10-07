@@ -1,6 +1,5 @@
 import { Logger, UnauthorizedException } from '@nestjs/common';
 import { db } from '@db';
-import { releaseCredentialSlot } from './credential-slot';
 import { asCredentialStoreError } from './credential-store-error';
 import { resolveServiceByToken } from './service-token.config';
 import type { AuthenticatedRequest } from './types';
@@ -12,16 +11,25 @@ const logger = new Logger('HybridAuthGuard');
  * configured service token and `x-organization-id` an existing organization.
  * An optional `x-user-id` names an active member to act as. A database outage
  * during either lookup answers 503 (credential_store_unavailable).
+ *
+ * The token is checked in memory, so a valid one never touches the caller's
+ * IP bucket: junk API keys from a shared egress IP (Trigger.dev cloud, a NAT)
+ * cannot lock an internal service out. A wrong token takes an attempt it never
+ * gives back (`takeAttempt`), so guesses are counted and end in 429; production
+ * also refuses to boot with a token short enough to guess (edge-secrets.ts).
  */
 export async function authenticateServiceToken({
   request,
   token,
+  takeAttempt,
 }: {
   request: AuthenticatedRequest;
   token: string;
+  takeAttempt: () => () => void;
 }): Promise<boolean> {
   const service = resolveServiceByToken(token);
   if (!service) {
+    takeAttempt();
     throw new UnauthorizedException('Invalid service token');
   }
 
@@ -51,7 +59,6 @@ export async function authenticateServiceToken({
   request.serviceName = service.definition.name;
   request.isPlatformAdmin = false;
   request.userRoles = null;
-  releaseCredentialSlot(request);
 
   // Service tokens can pass x-user-id to act on behalf of a user
   // Validate that the user exists and belongs to the organization

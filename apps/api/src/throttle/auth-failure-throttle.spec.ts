@@ -1,12 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { request as httpRequest } from 'node:http';
+import { Agent, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { ApiKeyService } from '../auth/api-key.service';
 import { HybridAuthGuard } from '../auth/hybrid-auth.guard';
+import { Public } from '../auth/public.decorator';
 
 // The real HybridAuthGuard runs; its session resolver and database are mocked.
 jest.mock('../auth/auth.server', () => ({
@@ -22,7 +23,7 @@ jest.mock('@trycompai/auth', () => ({
   BUILT_IN_ROLE_PERMISSIONS: { admin: { app: ['read'] } },
 }));
 
-import { AUTH_FAILURE_LIMIT } from './auth-failure-limiter';
+import { AUTH_FAILURE_LIMIT, AuthFailureLimiter } from './auth-failure-limiter';
 import { ThrottleModule } from './throttle.module';
 
 const ORIGIN = 'B'.repeat(64);
@@ -30,10 +31,25 @@ const VALID_KEY = 'valid-key';
 const N = AUTH_FAILURE_LIMIT;
 
 @Controller({ path: 'probe' })
+@UseGuards(HybridAuthGuard)
 class ProbeController {
-  @UseGuards(HybridAuthGuard)
   @Get('private')
   guarded() {
+    return { ok: true };
+  }
+
+  @Public()
+  @Get('public')
+  open() {
+    return { ok: true };
+  }
+}
+
+// Like the health, webhook and download controllers: no HybridAuthGuard.
+@Controller({ path: 'plain' })
+class PlainController {
+  @Get()
+  plain() {
     return { ok: true };
   }
 }
@@ -50,6 +66,11 @@ const validateApiKey = jest.fn();
 const resolveByKey = (key: string) =>
   Promise.resolve(key === VALID_KEY ? VALID_RESULT : null);
 
+// A private, non-keep-alive agent: Node's global agent keeps sockets alive
+// across the test files of a jest worker, so a request could otherwise ride a
+// socket still served by an earlier file's app that had the same port.
+const agent = new Agent({ keepAlive: false });
+
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 async function until(condition: () => boolean): Promise<void> {
@@ -57,7 +78,7 @@ async function until(condition: () => boolean): Promise<void> {
   if (!condition()) throw new Error('condition not reached');
 }
 
-describe('pre-authentication limiter (machine credentials by verified client IP)', () => {
+describe('credential attempt limit (HybridAuthGuard, by verified client IP)', () => {
   let app: INestApplication;
   let port = 0;
   const savedEnv = { ...process.env };
@@ -68,9 +89,10 @@ describe('pre-authentication limiter (machine credentials by verified client IP)
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     const moduleRef = await Test.createTestingModule({
       imports: [ThrottleModule],
-      controllers: [ProbeController],
+      controllers: [ProbeController, PlainController],
       providers: [
         HybridAuthGuard,
+        AuthFailureLimiter,
         {
           provide: ApiKeyService,
           useValue: { extractApiKey: (value: string) => value, validateApiKey },
@@ -83,6 +105,7 @@ describe('pre-authentication limiter (machine credentials by verified client IP)
   });
 
   afterAll(async () => {
+    agent.destroy();
     await app.close();
     jest.restoreAllMocks();
     process.env = savedEnv;
@@ -99,22 +122,50 @@ describe('pre-authentication limiter (machine credentials by verified client IP)
     ...extra,
   });
 
-  const get = (headers: Record<string, string>) => {
-    const call = request(app.getHttpServer() as App).get('/probe/private');
+  const send = (headers: Record<string, string>, path = '/probe/private') => {
+    const call = request(app.getHttpServer() as App)
+      .get(path)
+      .agent(agent);
     for (const [name, value] of Object.entries(headers)) call.set(name, value);
-    return call.then((response) => response.status);
+    return call;
   };
+  const get = (headers: Record<string, string>, path = '/probe/private') =>
+    send(headers, path).then((response) => response.status);
 
-  const withKey = (client: string, key: string) =>
-    get(headersFor(client, { 'X-API-Key': key }));
+  const withKey = (client: string, key: string, path = '/probe/private') =>
+    get(headersFor(client, { 'X-API-Key': key }), path);
 
-  it('answers 429 once one verified IP has sent the limit of rejected API keys', async () => {
+  it('lets exactly the limit of rejected API keys reach validation, then 429 without a lookup', async () => {
     const statuses: number[] = [];
-    for (let i = 0; i <= N; i += 1) {
+    for (let i = 0; i < N; i += 1) {
       statuses.push(await withKey('192.0.2.10', `junk-${i}`));
     }
-    expect(statuses.slice(0, N)).toEqual(Array(N).fill(401));
-    expect(statuses[N]).toBe(429);
+    expect(statuses).toEqual(Array(N).fill(401));
+    expect(validateApiKey).toHaveBeenCalledTimes(N);
+    const refused = await send(
+      headersFor('192.0.2.10', { 'X-API-Key': 'junk-last' }),
+    );
+    expect(refused.status).toBe(429);
+    expect(refused.headers['retry-after']).toMatch(/^\d+$/);
+    expect(validateApiKey).toHaveBeenCalledTimes(N);
+  });
+
+  it('never takes a slot for a valid key on a @Public route', async () => {
+    for (let i = 0; i <= N + 5; i += 1) {
+      expect(await withKey('192.0.2.12', VALID_KEY, '/probe/public')).toBe(200);
+    }
+    expect(validateApiKey).not.toHaveBeenCalled();
+    for (let i = 0; i < N; i += 1) {
+      expect(await withKey('192.0.2.12', `junk-${i}`)).toBe(401);
+    }
+  });
+
+  it('never takes a slot on a route without HybridAuthGuard', async () => {
+    for (let i = 0; i <= N + 5; i += 1) {
+      expect(await withKey('192.0.2.13', `junk-${i}`, '/plain')).toBe(200);
+    }
+    expect(validateApiKey).not.toHaveBeenCalled();
+    expect(await withKey('192.0.2.13', VALID_KEY)).toBe(200);
   });
 
   it('refuses the blocked IP before any key lookup, even for a valid key', async () => {
@@ -156,6 +207,7 @@ describe('pre-authentication limiter (machine credentials by verified client IP)
     validateApiKey.mockImplementation(() => held);
     for (let i = 0; i < N; i += 1) {
       const aborted = httpRequest({
+        agent,
         port,
         path: '/probe/private',
         headers: headersFor('192.0.2.30', { 'X-API-Key': `abort-${i}` }),
