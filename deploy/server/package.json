@@ -1,0 +1,11 @@
+{
+  "name": "@trycompai/deploy-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "lint": "eslint -c ../aws/eslint.config.mjs push-secrets.ts secrets",
+    "test": "bun test"
+  }
+}

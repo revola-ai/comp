@@ -1,0 +1,114 @@
+import type { ProductionTarget } from '../../../packages/db/src/production-target.ts';
+import { isSourceFile, PRODUCTION_ONLY_FILE, type SecretKeySpec, type SourceFile } from './keys.ts';
+import { valueProblems } from './values.ts';
+
+// Resolves each key of comp/production/config from its source file, checks that every other
+// place holding the same value agrees, and runs the value checks. Ported from the parked
+// sync-secrets-plan.ts (revola/aws-infra). Messages name keys and files, never values.
+
+export type SourceValues = Partial<Record<SourceFile, Readonly<Record<string, string>>>>;
+
+type Location = Readonly<{ file: SourceFile; name: string }>;
+
+/** Other places the same value lives, which must agree with the source. */
+function companions({
+  spec,
+  name,
+  sources,
+}: {
+  spec: SecretKeySpec;
+  name: string;
+  sources: SourceValues;
+}): Location[] {
+  const files = Object.keys(sources).filter(isSourceFile);
+  const sameName = spec.fileSpecific
+    ? []
+    : files
+        .filter((file) => file !== spec.file && !spec.differsIn?.includes(file))
+        .map((file) => ({ file, name }));
+  return [...sameName, ...(spec.aliases ?? [])];
+}
+
+/** The production-only file may hold only the keys read from it (a typo is caught here). */
+function productionFileProblems({
+  secretKeys,
+  sources,
+}: {
+  secretKeys: Readonly<Record<string, SecretKeySpec>>;
+  sources: SourceValues;
+}): string[] {
+  const readFromIt = new Set(
+    Object.entries(secretKeys)
+      .filter(([, spec]) => spec.file === PRODUCTION_ONLY_FILE)
+      .map(([key, spec]) => spec.name ?? key),
+  );
+  const unread = Object.keys(sources[PRODUCTION_ONLY_FILE] ?? {})
+    .filter((name) => !readFromIt.has(name))
+    .sort();
+  if (unread.length === 0) return [];
+  return [
+    `${PRODUCTION_ONLY_FILE} holds ${unread.join(', ')}, which push-secrets does not read from it; remove them`,
+  ];
+}
+
+function resolveKey({
+  key,
+  spec,
+  sources,
+  target,
+}: {
+  key: string;
+  spec: SecretKeySpec;
+  sources: SourceValues;
+  target: ProductionTarget;
+}): { value?: string; problems: string[]; notes: string[] } {
+  const file = sources[spec.file];
+  const primary = spec.name ?? key;
+  const fallback = spec.fallbackName;
+  const usesFallback = fallback !== undefined && !file?.[primary] && Boolean(file?.[fallback]);
+  const name = usesFallback ? fallback : primary;
+  const notes = usesFallback ? [`${key}: ${spec.file} has no ${primary}; using its ${name}`] : [];
+  const value = file?.[name];
+  if (value === undefined || value === '') {
+    const shown = name === key ? key : `${key} (${name})`;
+    return { problems: [`${shown} not found in ${spec.file}; add it there`], notes };
+  }
+  const disagreeing = companions({ spec, name, sources }).filter((place) => {
+    const other = sources[place.file]?.[place.name];
+    return other !== undefined && other !== '' && other !== value;
+  });
+  const problems = disagreeing.map((place) => {
+    const suffix = place.name === name ? '' : ` (${place.name})`;
+    return `${key} disagrees between ${spec.file} and ${place.file}${suffix}`;
+  });
+  problems.push(...valueProblems({ key, value, target }));
+  return problems.length === 0 ? { value, problems, notes } : { problems, notes };
+}
+
+export function resolveDesired({
+  secretKeys,
+  sources,
+  target,
+}: {
+  secretKeys: Readonly<Record<string, SecretKeySpec>>;
+  sources: SourceValues;
+  target: ProductionTarget;
+}): { values: Record<string, string>; problems: string[]; notes: string[] } {
+  const values: Record<string, string> = {};
+  const problems: string[] = [];
+  const notes: string[] = [];
+  for (const [key, spec] of Object.entries(secretKeys)) {
+    const resolved = resolveKey({ key, spec, sources, target });
+    problems.push(...resolved.problems);
+    notes.push(...resolved.notes);
+    if (resolved.value !== undefined) values[key] = resolved.value;
+  }
+  const { TRIGGER_SECRET_KEY_API: apiKey, TRIGGER_SECRET_KEY_APP: appKey } = values;
+  if (apiKey !== undefined && apiKey === appKey) {
+    problems.push(
+      'TRIGGER_SECRET_KEY_API and TRIGGER_SECRET_KEY_APP are the same key; each Trigger.dev project has its own prod key',
+    );
+  }
+  problems.push(...productionFileProblems({ secretKeys, sources }));
+  return { values, problems, notes };
+}

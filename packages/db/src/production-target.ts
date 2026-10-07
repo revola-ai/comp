@@ -122,7 +122,7 @@ function projectRefsIn({ users, hosts }: ConnectionCandidates): string[] {
 }
 
 /** 'unverifiable' when pg could not parse the URL, so the guard fails closed. */
-function productionVerdict({
+export function productionVerdict({
   databaseUrl,
   env,
   target,
