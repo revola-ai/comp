@@ -11,7 +11,10 @@ This file describes the stack and its configuration; the operator runbook is add
 | `env/<service>.keys` | Names of the secret keys each container gets from `comp/production/config` (never values) |
 | `env/<service>.public.env` | Committed non-secret values each container gets (URLs, pool sizes, cookie domain) |
 | `render-env.sh` | Writes `/opt/comp/env/<service>.env` from the secret and the public files |
+| `provision.sh`, `lib/provision-*.sh` | Creates the AWS resources of the server, one confirmed command at a time (see Provisioning) |
+| `user-data.sh` | First-boot setup of the instance: Docker, the compose and buildx plugins, updates, swap, the unhealthy-container timer, the checkout |
 | `tests/*.test.sh` | Bash tests with a stubbed `aws`; run each with `bash deploy/server/tests/<name>.test.sh` |
+| `tests/fake_aws.py` | The stateful fake `aws` the provision tests put on `PATH` |
 
 ## The stack
 
@@ -36,6 +39,7 @@ The `NEXT_PUBLIC_*` build arguments of `app` and `portal` equal `deploy/aws/publ
 
 Healthchecks are liveness probes that never touch the database, so a database outage does not mark a container unhealthy.
 Docker restarts a container that exits (`restart: unless-stopped`), not one that turns unhealthy; health is what the release script waits for.
+For that gap the server runs `comp-restart-unhealthy.timer` (installed by `user-data.sh`): every minute it restarts each `comp` container whose healthcheck reports `unhealthy`, leaving one-off `compose run` containers alone, and logs each restart to journald (`journalctl -u comp-restart-unhealthy`).
 
 The four containers together are limited to 5.25 GiB (swap included), which leaves about 10 GiB of the 16 GiB host for an image build (the Next.js builds use a 6 GiB heap) and the system.
 Every container drops all capabilities and runs with `no-new-privileges`.
@@ -53,7 +57,7 @@ Change the address in `compose.yaml` and `env/api.public.env` together; `tests/c
 ### Logs
 
 Each container logs to the CloudWatch group `/comp/<service>` in `us-east-2` through the `awslogs` driver, with the instance profile's credentials.
-The driver never creates groups, so the four groups must exist before the first `up`.
+The driver never creates groups, so the four groups must exist before the first `up`; `provision.sh` creates them with 30-day retention.
 It runs in `non-blocking` mode with a 4 MB buffer: a CloudWatch outage drops log lines instead of stalling requests.
 
 ### The cloudflared image
@@ -131,12 +135,60 @@ Change a pool size here and in `env/*.public.env` together (`tests/render-env.te
 
 Two inputs are assumptions until confirmed: the pool size of 40 (the real value depends on the Supabase compute size) and the laptop limits, which hold only where `scripts/local-run.sh` and the apps' `dev` scripts set `DATABASE_POOL_MAX=1` and `--max-concurrent-runs 1`; without them a laptop process uses the driver's default pool of 10.
 
+## Provisioning
+
+`provision.sh` runs once from a laptop with AWS credentials for account `455986776194` and creates everything the server needs in AWS:
+
+```bash
+deploy/server/provision.sh --alert-email <address>   # asks for the address when it is not given
+```
+
+| Resource | Details |
+|---|---|
+| IAM role and instance profile `comp-server` | `AmazonSSMManagedInstanceCore` (Session Manager); `secretsmanager:GetSecretValue` on `comp/production/*`; `logs:CreateLogStream` and `logs:PutLogEvents` on the four `/comp/*` groups only |
+| Security group `comp-server` | In `vpc-06b67bec700b38a10`, with no inbound rule (the default outbound rule stays) |
+| Log groups `/comp/api`, `/comp/app`, `/comp/portal`, `/comp/cloudflared` | 30-day retention |
+| Instance `comp-server` | `t4g.xlarge`, the latest Amazon Linux 2023 arm64 AMI (SSM parameter), private subnet `subnet-08095a4ada58a9eef`, no public IP, no key pair, IMDSv2 required with hop limit 1, 60 GB encrypted gp3, termination protection, `user-data.sh` |
+| Route 53 health checks | `https://api.comp.revola.ai/v1/health` and `https://app.comp.revola.ai/` (the Access redirect is a 3xx, which counts as healthy), every 30 seconds |
+| SNS topic `comp-alerts` and alarms `comp-api-health`, `comp-app-health` | In `us-east-1`, where Route 53 publishes health-check metrics; an alarm fires after two failing minutes and mails again on recovery |
+
+Everything is tagged `Name` and `Project=comp`.
+The script refuses other accounts, and refuses to run when `AWS_REGION` or `AWS_DEFAULT_REGION` names a region other than `us-east-2`; every call passes its region explicitly.
+It looks each resource up first and leaves an existing one alone, so a second run changes nothing (an inline role policy that differs from the expected one is offered as an update).
+Each create prints the exact command and runs only when you type `yes`; anything else skips it and whatever depends on it, and the run ends non-zero with the list of what was not done.
+It also stops on an existing `comp-server` security group with an inbound rule, more than one instance named `comp-server`, or an instance profile holding another role; it never adds or removes a rule.
+
+The alert address is used in the AWS calls only and never written to a file.
+SNS sends it a confirmation email, and the alarms reach nobody until the link in it is clicked; the script says so until it is.
+Until the first release brings the tunnel up, both health checks fail and the alarms fire, which is expected.
+
+The instance hop limit of 1 keeps containers on the bridge network away from the instance credentials; the Docker daemon (the `awslogs` driver) and `render-env.sh` run on the host and keep them.
+There is no SSH: open a shell with `aws ssm start-session --target <instance-id> --region us-east-2` (the script prints the command).
+
+### First boot
+
+cloud-init runs `user-data.sh` once, as root (`sudo cloud-init status --long` reports the result, `/var/log/cloud-init-output.log` has the output):
+
+- Docker, git, python3 and dnf-automatic from the Amazon Linux repository.
+- The compose plugin (`v5.5.1`) and buildx (`v0.37.2`) from their GitHub releases into `/usr/local/lib/docker/cli-plugins`, each checked against a pinned sha256; a mismatch stops the run.
+  To bump one, change its version and checksum together, taking the checksum from the release's `checksums.txt`.
+- dnf-automatic applies security updates daily; `/etc/dnf/vars/releasever` is `latest`, because Amazon Linux 2023 otherwise stays on the AMI's release and finds no updates.
+  Kernel updates take effect only after a reboot.
+- An 8 GiB swap file, `/swapfile`, for image builds (the containers themselves never swap).
+- `comp-restart-unhealthy.timer` (see The stack).
+- A clone of `https://github.com/revola-ai/comp` in `/opt/comp/src`.
+- Last, a check for Docker Engine 25 or newer (healthcheck `start_interval`) and Compose 2.30 or newer (`format: raw`); on success it writes the versions to `/opt/comp/provisioned`.
+
 ## Tests
 
 ```bash
 bash deploy/server/tests/render-env.test.sh   # key sets, modes, refusals, no value in output
 bash deploy/server/tests/render-env-refusals.test.sh   # malformed secret or env files refused by name
 bash deploy/server/tests/compose.test.sh      # docker compose config validates; stack shape
+bash deploy/server/tests/provision.test.sh    # declined, confirmed and second runs; exact commands
+bash deploy/server/tests/provision-failures.test.sh   # refusals, partial and drifted accounts, aws errors
+bash deploy/server/tests/user-data.test.sh    # size limit, checksums, version gates, updates, restarter
 ```
 
-All stub `aws` with a fake secret; `compose.test.sh` needs Docker and Bun (it compares build arguments with `deploy/aws/public-env.ts`) and starts no container.
+The render-env tests stub `aws` with a fake secret; the provision tests use the stateful fake `tests/fake_aws.py`; `user-data.test.sh` sources the script and stubs `curl`, `docker` and the system tools, so nothing is installed or fetched.
+`compose.test.sh` needs Docker and Bun (it compares build arguments with `deploy/aws/public-env.ts`) and starts no container; the provision and user-data tests need `shellcheck` and `python3`.

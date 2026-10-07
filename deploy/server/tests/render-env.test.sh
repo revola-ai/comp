@@ -42,10 +42,10 @@ public_holds_no_secret_key() { # no secret key name is given a value in a public
 }
 check "keys files hold names only" committed_names_only
 check "public env files set no secret key" public_holds_no_secret_key
-entry_scripts_executable() { # every committed entry script is 100755 (tests/lib.sh is sourced)
+entry_scripts_executable() { # every committed entry script is 100755 (tests/lib.sh, lib/ are sourced)
   local mode path found=0
   while read -r mode _ _ path; do
-    [[ "$path" == deploy/server/tests/lib.sh ]] && continue
+    [[ "$path" == deploy/server/tests/lib.sh || "$path" == deploy/server/lib/* ]] && continue
     found=1
     [[ "$mode" == 100755 ]] || { echo "  not executable in git: $path"; return 1; }
   done < <(cd "$ROOT" && git ls-files -s -- 'deploy/server/*.sh')

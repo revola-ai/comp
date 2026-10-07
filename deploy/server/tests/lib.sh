@@ -125,3 +125,46 @@ names_of() { # names_of <env-file>: the sorted variable names
 files_in() { python3 -c 'import os, sys; print(" ".join(sorted(os.listdir(sys.argv[1]))))' "$1"; }
 
 mode_of() { python3 -c 'import os, sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777)[2:])' "$1"; }
+
+# ---------------------------------------------------------------- provision.sh
+# A stateful fake `aws` (tests/fake_aws.py) and a `sleep` that only records its argument.
+# Region variables from the operator's shell are cleared so they cannot change a result.
+install_fake_aws() {
+  mkdir -p "$TMP/bin"
+  printf '#!/usr/bin/env bash\nexec python3 %q "$@"\n' "$SERVER_DIR/tests/fake_aws.py" >"$TMP/bin/aws"
+  # shellcheck disable=SC2016 # expanded by the stub when it runs
+  printf '#!/usr/bin/env bash\necho "$*" >>"$FAKE_AWS_LOG.sleeps"\n' >"$TMP/bin/sleep"
+  chmod 755 "$TMP/bin/aws" "$TMP/bin/sleep"
+  export PATH="$TMP/bin:$PATH" FAKE_AWS_LOG="$TMP/aws.log" FAKE_AWS_STATE="$TMP/aws-state.json"
+  unset AWS_REGION AWS_DEFAULT_REGION
+}
+
+# shellcheck disable=SC2034 # used by the provision tests that source this file
+TEST_EMAIL="alerts-test@example.com"
+
+lines_of() { # lines_of <word> <count>: <count> lines of <word>, for typed answers on stdin
+  local i
+  for ((i = 0; i < $2; i++)); do printf '%s\n' "$1"; done
+}
+
+# provision <stdin> <output-file> [args...]: runs provision.sh with <stdin> typed in, from an
+# empty working directory; stdout and stderr go to <output-file>; the aws log starts empty.
+provision() {
+  local input="$1" output="$2"
+  shift 2
+  : >"$FAKE_AWS_LOG"
+  mkdir -p "$TMP/cwd"
+  (cd "$TMP/cwd" && printf '%s' "$input" | bash "$SERVER_DIR/provision.sh" "$@") >"$output" 2>&1
+}
+
+ops_of() { # ops_of <aws-log>: "service operation" of each call, one per line
+  awk '{ print $2, $3 }' "$1"
+}
+
+MUTATING='^aws [a-z0-9]+ (create-|put-|attach-|add-|run-|subscribe|change-tags|authorize-|revoke-|delete-|modify-|tag-|update-)'
+mutations_in() { grep -E "$MUTATING" "$1"; } # mutations_in <aws-log>: the calls that change AWS
+
+fake_state() { # fake_state <python expression over `s`>: reads the fake's saved state
+  python3 -c 'import json, sys; s = json.load(open(sys.argv[1])); print(eval(sys.argv[2]))' \
+    "$FAKE_AWS_STATE" "$1"
+}

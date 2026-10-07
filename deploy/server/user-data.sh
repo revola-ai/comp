@@ -1,0 +1,188 @@
+#!/bin/bash
+# First-boot setup of the comp tunnel server (Amazon Linux 2023, arm64). deploy/server/provision.sh
+# passes this file to run-instances; cloud-init runs it once, as root, and its output lands in
+# /var/log/cloud-init-output.log (`sudo cloud-init status --long` shows whether it failed).
+#
+# It installs Docker from the AL2023 repository, the compose and buildx plugins from their
+# GitHub releases (pinned versions, pinned sha256; a mismatch stops the run), git, python3 and
+# dnf-automatic (security updates applied daily); adds an 8 GiB swap file; installs a timer that
+# restarts unhealthy comp containers every minute; clones revola-ai/comp into /opt/comp/src; and
+# last checks Docker Engine >= 25 and Compose >= 2.30 (deploy/server/compose.yaml needs both).
+# On success it writes /opt/comp/provisioned. EC2 caps user data at 16 KB.
+#
+# Sourcing the file (deploy/server/tests/user-data.test.sh does) defines everything and runs
+# nothing.
+
+# Checksums from each release's checksums.txt, cross-checked with the per-asset digest GitHub
+# reports (2026-10-07). To bump: change the version and the checksum together.
+COMPOSE_VERSION=v5.5.1
+COMPOSE_SHA256=732e3a84c1a0f67256ce80bc2598a24546b10ca05f9faa97efceb1171ece2ef7
+COMPOSE_URL="https://github.com/docker/compose/releases/download/$COMPOSE_VERSION/docker-compose-linux-aarch64"
+BUILDX_VERSION=v0.37.2
+BUILDX_SHA256=efa38cb7aa7db2dbb9ad049b00b0a9737f66f033626177b5a4e845184ad7ab29
+BUILDX_URL="https://github.com/docker/buildx/releases/download/$BUILDX_VERSION/buildx-$BUILDX_VERSION.linux-arm64"
+# Searched before the distribution's plugin directories, so these win over any packaged copy.
+PLUGIN_DIR=/usr/local/lib/docker/cli-plugins
+
+MIN_ENGINE=25.0.0  # healthcheck start_interval
+MIN_COMPOSE=2.30.0 # env_file format: raw
+
+REPO_URL=https://github.com/revola-ai/comp
+SRC_DIR=/opt/comp/src
+SWAP_FILE=/swapfile
+SWAP_MIB=8192
+
+fail() {
+  echo "user-data: FAILED: $*" >&2
+  exit 1
+}
+
+# version_at_least <actual> <minimum>: true when the leading dotted number of <actual> (a "v"
+# prefix and any suffix such as "-1.amzn2023" ignored) is at least <minimum>.
+version_at_least() {
+  local actual="${1#v}" i
+  local -a have want
+  [[ "$actual" =~ ^[0-9]+(\.[0-9]+)* ]] || return 1
+  IFS=. read -ra have <<<"${BASH_REMATCH[0]}"
+  IFS=. read -ra want <<<"$2"
+  for i in 0 1 2; do
+    if ((10#${have[i]:-0} != 10#${want[i]:-0})); then
+      ((10#${have[i]:-0} > 10#${want[i]:-0}))
+      return
+    fi
+  done
+}
+
+require_version() { # require_version <what> <actual> <minimum>
+  version_at_least "$2" "$3" || fail "$1 ${2:-(unreadable)} is older than $3"
+}
+
+# install_plugin <url> <sha256> <destination>: downloads next to the destination, checks the
+# checksum and only then moves it into place, so a bad download never replaces a good binary.
+install_plugin() {
+  local url="$1" expected="$2" dest="$3" tmp actual
+  mkdir -p "$(dirname "$dest")"
+  tmp="$(mktemp "$(dirname "$dest")/.download.XXXXXX")"
+  if ! curl -fsSL --retry 5 --retry-delay 2 -o "$tmp" "$url"; then
+    rm -f "$tmp"
+    fail "could not download $url"
+  fi
+  actual="$(sha256sum "$tmp" | cut -d' ' -f1)"
+  if [[ "$actual" != "$expected" ]]; then
+    rm -f "$tmp"
+    fail "checksum mismatch for $url: expected $expected, got $actual"
+  fi
+  chmod 755 "$tmp"
+  mv -f "$tmp" "$dest"
+}
+
+require_docker_versions() {
+  local buildx
+  require_version "Docker Engine" "$(docker version --format '{{.Server.Version}}' 2>/dev/null)" "$MIN_ENGINE"
+  require_version "Docker Compose" "$(docker compose version --short 2>/dev/null)" "$MIN_COMPOSE"
+  buildx="$(docker buildx version 2>/dev/null)"
+  [[ "$buildx" == *" $BUILDX_VERSION "* ]] || fail "docker buildx is not $BUILDX_VERSION (got: ${buildx:-nothing})"
+}
+
+# configure_updates <automatic.conf> <releasever file>: dnf-automatic applies security updates.
+# AL2023 pins dnf to the AMI's release, so releasever "latest" is what lets it find new ones.
+configure_updates() {
+  local conf="$1" releasever="$2"
+  [[ -f "$conf" ]] || fail "$conf is missing (is dnf-automatic installed?)"
+  sed -E -e 's/^upgrade_type[[:space:]]*=.*/upgrade_type = security/' \
+    -e 's/^apply_updates[[:space:]]*=.*/apply_updates = yes/' "$conf" >"$conf.new"
+  mv -f "$conf.new" "$conf"
+  if ! grep -qx 'upgrade_type = security' "$conf" || ! grep -qx 'apply_updates = yes' "$conf"; then
+    fail "could not configure $conf (expected upgrade_type and apply_updates lines)"
+  fi
+  mkdir -p "$(dirname "$releasever")"
+  echo latest >"$releasever"
+}
+
+# install_restarter <sbin dir> <unit dir>: Docker restarts a container that exits
+# (restart: unless-stopped) but not one whose healthcheck fails; this timer does.
+install_restarter() {
+  local script="$1/comp-restart-unhealthy"
+  mkdir -p "$1" "$2"
+  cat >"$script" <<'SCRIPT'
+#!/bin/bash
+# Restarts every comp container whose healthcheck reports unhealthy (one-off `compose run`
+# containers such as a migration are left alone). Runs every minute from
+# comp-restart-unhealthy.timer; its output is in `journalctl -u comp-restart-unhealthy`.
+set -uo pipefail
+names="$(docker ps --filter label=com.docker.compose.project=comp \
+  --filter label=com.docker.compose.oneoff=False --filter health=unhealthy \
+  --format '{{.Names}}')" || { echo "docker ps failed" >&2; exit 1; }
+status=0
+while read -r name; do
+  [[ -n "$name" ]] || continue
+  echo "restarting unhealthy container $name"
+  docker restart "$name" >/dev/null || { echo "could not restart $name" >&2; status=1; }
+done <<<"$names"
+exit "$status"
+SCRIPT
+  chmod 755 "$script"
+  cat >"$2/comp-restart-unhealthy.service" <<UNIT
+[Unit]
+Description=Restart comp containers whose healthcheck reports unhealthy
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=$script
+UNIT
+  cat >"$2/comp-restart-unhealthy.timer" <<'UNIT'
+[Unit]
+Description=Check comp container health every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
+UNIT
+}
+
+make_swap() {
+  if [[ ! -f "$SWAP_FILE" ]]; then
+    dd if=/dev/zero of="$SWAP_FILE" bs=1M count="$SWAP_MIB" status=none
+    chmod 600 "$SWAP_FILE"
+    mkswap "$SWAP_FILE" >/dev/null
+  fi
+  [[ "$(swapon --show=NAME --noheadings)" == *"$SWAP_FILE"* ]] || swapon "$SWAP_FILE"
+  grep -q "^$SWAP_FILE " /etc/fstab || echo "$SWAP_FILE none swap defaults 0 0" >>/etc/fstab
+}
+
+main() {
+  [[ "$(uname -m)" == aarch64 ]] || fail "expected an arm64 (aarch64) instance, got $(uname -m)"
+  echo "user-data: installing packages"
+  dnf install -y docker git python3 dnf-automatic
+  install_plugin "$COMPOSE_URL" "$COMPOSE_SHA256" "$PLUGIN_DIR/docker-compose"
+  install_plugin "$BUILDX_URL" "$BUILDX_SHA256" "$PLUGIN_DIR/docker-buildx"
+  systemctl enable --now docker
+
+  echo "user-data: security updates, swap, unhealthy-container timer"
+  configure_updates /etc/dnf/automatic.conf /etc/dnf/vars/releasever
+  systemctl enable --now dnf-automatic.timer
+  make_swap
+  install_restarter /usr/local/sbin /etc/systemd/system
+  systemctl daemon-reload
+  systemctl enable --now comp-restart-unhealthy.timer
+
+  echo "user-data: cloning $REPO_URL into $SRC_DIR"
+  mkdir -p "$(dirname "$SRC_DIR")"
+  [[ -d "$SRC_DIR/.git" ]] || git clone --quiet "$REPO_URL" "$SRC_DIR"
+
+  require_docker_versions
+  docker version --format 'docker {{.Server.Version}}' >/opt/comp/provisioned
+  docker compose version >>/opt/comp/provisioned
+  echo "user-data: done"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  set -euo pipefail
+  main "$@"
+fi
