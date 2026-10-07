@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-"""A stateful stand-in for the aws CLI, used by deploy/server/tests/provision*.test.sh and
-release*.test.sh.
-
-It answers only the calls deploy/server/provision.sh, release.sh and render-env.sh make, keeps
-what was "created" in the
-JSON file $FAKE_AWS_STATE (so a second run sees the first run's resources) and appends every
-argv, shell-quoted, to $FAKE_AWS_LOG. It ignores --query: each operation answers with the text
-provision.sh asks for, and the tests pin every call's exact argv, so the two stay in step.
+"""A stateful stand-in for the aws CLI, for the provision, release and interrupt tests in
+deploy/server/tests. It answers only the calls provision.sh, release.sh and render-env.sh make,
+keeps what was "created" in the JSON file $FAKE_AWS_STATE (a second run sees the first run's
+resources) and appends every argv, shell-quoted, to $FAKE_AWS_LOG. It ignores --query: each
+operation answers with the text the caller asks for; the tests pin every call's exact argv.
 
 Knobs (environment):
   FAKE_AWS_ACCOUNT             the account get-caller-identity reports (default 455986776194)
@@ -21,14 +18,12 @@ Knobs (environment):
   FAKE_SSM_PENDING_POLLS       get-command-invocation answers InProgress this many times first
   FAKE_SSM_END                 "<n>:<Status>:<StatusDetails>:<ResponseCode>": command n (from 0)
                                ends that way instead, with no output (timed out, cancelled...)
-  FAKE_SSM_CANCEL              what cancel-command does: "ok" (default; the command ends
-                               Cancelled with no output) or "late" (it had ended already)
-  FAKE_AWS_INTERRUPT           "<SIG>@<trigger>,...": each trigger once, the fake sends SIG (INT,
-                               TERM or HUP) to its process group (the laptop's release.sh, as a
-                               Ctrl-C or a closed terminal would) and dies of it without answering.
-                               A trigger is "<service> <operation>" (send-command runs the
-                               command first, so it reached the server) or a command id
-                               ("fake-command-0": while release.sh waits for it)
+  FAKE_SSM_CANCEL              cancel-command: "ok" (default; it ends Cancelled, no output) or
+                               "late" (it had ended already)
+  FAKE_AWS_INTERRUPT           "<SIG>@<trigger>,...": once per trigger, sends SIG (INT, TERM, HUP)
+                               to the process group (release.sh, as a Ctrl-C would) and dies of it
+                               unanswered; a trigger is "<service> <operation>" (send-command
+                               runs the command first) or a polled command id ("fake-command-0")
 Nothing here talks to AWS.
 """
 import json
@@ -112,13 +107,11 @@ def interrupt(trigger: str) -> None:
     """Delivers the signal FAKE_AWS_INTERRUPT names for <trigger>, once per trigger."""
     for item in filter(None, os.environ.get('FAKE_AWS_INTERRUPT', '').split(',')):
         name, _, wanted = item.partition('@')
-        done = state.setdefault('interrupted', [])
-        if wanted != trigger or item in done:
+        if wanted != trigger or item in state.setdefault('interrupted', []):
             continue
-        done.append(item)
+        state['interrupted'].append(item)
         save()
-        number = getattr(signal, f'SIG{name}')
-        signal.signal(number, signal.SIG_DFL)
+        signal.signal(number := getattr(signal, f'SIG{name}'), signal.SIG_DFL)
         os.killpg(os.getpgrp(), number)
         time.sleep(5)  # the signal ends this process first
         sys.exit(1)
