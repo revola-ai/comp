@@ -91,6 +91,58 @@ describe('assertEdgeSecrets', () => {
     expect(`${first}${second}`).not.toContain(FORWARDED);
   });
 
+  describe('service tokens (validated in memory, so they must not be guessable)', () => {
+    const SHORT = 's'.repeat(20);
+    const STRONG = 't'.repeat(32);
+
+    it.each([
+      'SERVICE_TOKEN_TRIGGER',
+      'SERVICE_TOKEN_PORTAL',
+      'SERVICE_TOKEN_TRUST',
+      'SERVICE_TOKEN_TRIGGER_PREVIOUS',
+      'SERVICE_TOKEN_PORTAL_PREVIOUS',
+      'SERVICE_TOKEN_TRUST_PREVIOUS',
+    ])('refuses a 20-character %s, naming the variable', (name) => {
+      const message = messageOf(() =>
+        assertEdgeSecrets({ env: { ...production, [name]: SHORT } }),
+      );
+      expect(message).toContain(name);
+      expect(message).toContain('32');
+      expect(message).not.toContain(SHORT);
+    });
+
+    it('refuses a whitespace-only token', () => {
+      const message = messageOf(() =>
+        assertEdgeSecrets({
+          env: { ...production, SERVICE_TOKEN_TRIGGER: ' '.repeat(40) },
+        }),
+      );
+      expect(message).toContain('SERVICE_TOKEN_TRIGGER');
+    });
+
+    it('accepts tokens of at least 32 characters and unset ones', () => {
+      const env = {
+        ...production,
+        SERVICE_TOKEN_TRIGGER: STRONG,
+        SERVICE_TOKEN_TRIGGER_PREVIOUS: `${STRONG}-previous`,
+        SERVICE_TOKEN_PORTAL: '',
+      };
+      expect(() => assertEdgeSecrets({ env })).not.toThrow();
+    });
+
+    it('leaves other deployments alone', () => {
+      const short = { SERVICE_TOKEN_TRIGGER: SHORT };
+      expect(() =>
+        assertEdgeSecrets({
+          env: { ...production, ...short, NODE_ENV: 'development' },
+        }),
+      ).not.toThrow();
+      expect(() =>
+        assertEdgeSecrets({ env: { NODE_ENV: 'production', ...short } }),
+      ).not.toThrow();
+    });
+  });
+
   it('runs at boot next to the cookie-domain validation', () => {
     const source = readFileSync(resolve(__dirname, 'auth.server.ts'), 'utf8');
     const cookie = source.indexOf('getCookieDomain({ env: process.env })');
