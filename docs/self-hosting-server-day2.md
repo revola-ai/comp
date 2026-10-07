@@ -105,11 +105,11 @@ It lists what it keeps (the serving tag, the 3 most recent other ok tags, the de
 ### Rotating a service token
 
 `INTERNAL_API_TOKEN`, `COMP_FORWARDED_IP_TOKEN`, `SERVICE_TOKEN_TRIGGER` and `SERVICE_TOKEN_PORTAL` live only in `deploy/server/.env.production.local`; the laptops have their own values, so a rotation touches no laptop.
-**Kyle runs**, in the main checkout, with `name` set to the token to rotate (it replaces that one line and prints nothing):
+**Kyle runs**, in the main checkout, with `name` set to the token to rotate (it rewrites the file without that line, adds the new one, prints nothing and leaves the file 0600):
 
 ```bash
 (umask 077 && name=SERVICE_TOKEN_PORTAL && f=deploy/server/.env.production.local &&
-  { grep -v "^$name=" "$f"; printf '%s=%s\n' "$name" "$(openssl rand -hex 32)"; } >"$f.new" && mv -f "$f.new" "$f")
+  { grep -v "^$name=" "$f"; printf '%s=%s\n' "$name" "$(openssl rand -hex 32)"; } >"$f.new" && mv -f "$f.new" "$f" && chmod 600 "$f")
 ```
 
 Then push it (steps 2 and 3 above) and, for `SERVICE_TOKEN_TRIGGER`, copy the new value with an editor into both Trigger.dev projects' Production env vars.

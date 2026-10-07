@@ -87,13 +87,14 @@ On the laptop that runs the scripts:
 ### Production service tokens
 
 `INTERNAL_API_TOKEN`, `COMP_FORWARDED_IP_TOKEN`, `SERVICE_TOKEN_TRIGGER` and `SERVICE_TOKEN_PORTAL` have production-only values, never the laptops' ones: the API accepts the forwarded client address from any caller holding `COMP_FORWARDED_IP_TOKEN`, so a laptop's value must not work on the public API.
-**Kyle runs**, in the main checkout, once (it adds only the names that are missing, and prints nothing):
+**Kyle runs**, in the main checkout, once (it adds only the names that are missing, prints nothing, first ends a last line saved without a line break, and leaves the file 0600):
 
 ```bash
 (umask 077 && mkdir -p deploy/server && f=deploy/server/.env.production.local && touch "$f" &&
+  if [ -s "$f" ] && [ -n "$(tail -c 1 "$f")" ]; then echo >>"$f"; fi &&
   for name in INTERNAL_API_TOKEN COMP_FORWARDED_IP_TOKEN SERVICE_TOKEN_TRIGGER SERVICE_TOKEN_PORTAL; do
     grep -q "^$name=" "$f" || printf '%s=%s\n' "$name" "$(openssl rand -hex 32)" >>"$f"
-  done)
+  done && chmod 600 "$f")
 ```
 
 Then copy `SERVICE_TOKEN_TRIGGER` from that file, with an editor, into both projects' Production env vars (table below): the API refuses task calls whose token differs.
