@@ -1,6 +1,7 @@
 import { app, ipcMain } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { getAllRemediationInfo, runRemediation } from '../remediations';
+import { AUTO_UPDATE_URL } from '../shared/constants';
 import type { CheckResult, DeviceCheckType } from '../shared/types';
 import { IPC_CHANNELS } from '../shared/types';
 import { performLogin, performLogout } from './auth';
@@ -255,8 +256,7 @@ function isNewerVersion(remote: string, local: string): boolean {
  */
 async function checkForManualUpdate(): Promise<void> {
   try {
-    const updateUrl =
-      process.env.AUTO_UPDATE_URL || 'https://portal.trycomp.ai/api/device-agent/updates';
+    const updateUrl = process.env.AUTO_UPDATE_URL || AUTO_UPDATE_URL;
     const ymlUrl = `${updateUrl}/latest-linux.yml`;
 
     log(`Manual update check: fetching ${ymlUrl}`);

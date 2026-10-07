@@ -1,6 +1,7 @@
+const { requiredBuildUrl } = require('./src/build/build-urls.cjs');
+
 // Use a space-free product name for Linux to avoid path issues
-const isLinuxBuild =
-  process.argv.includes('--linux') || process.env.BUILD_TARGET === 'linux';
+const isLinuxBuild = process.argv.includes('--linux') || process.env.BUILD_TARGET === 'linux';
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
@@ -85,6 +86,7 @@ module.exports = {
   },
   publish: {
     provider: 'generic',
-    url: process.env.AUTO_UPDATE_URL || 'https://portal.trycomp.ai/api/device-agent/updates',
+    // No upstream default: packaging fails without AUTO_UPDATE_URL.
+    url: requiredBuildUrl({ name: 'AUTO_UPDATE_URL', env: process.env }),
   },
 };

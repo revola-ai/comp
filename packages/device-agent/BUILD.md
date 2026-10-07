@@ -67,8 +67,14 @@ bun run typecheck
 Build the app (compile TypeScript, bundle with Vite) without packaging:
 
 ```bash
+PORTAL_URL=https://portal.example.com \
+API_URL=https://api.example.com \
+AUTO_UPDATE_URL=https://portal.example.com/api/device-agent/updates \
 bun run build
 ```
+
+`PORTAL_URL`, `API_URL` and `AUTO_UPDATE_URL` are required: a build or package without them fails, because there is no default deployment to fall back to.
+`bun run dev` uses the local stack (`http://localhost:3002` and `http://localhost:3333`) unless they are set.
 
 ## Packaging Installers
 
