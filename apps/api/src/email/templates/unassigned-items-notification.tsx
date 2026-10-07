@@ -13,6 +13,7 @@ import {
 import { getUnsubscribeUrl } from '@trycompai/email';
 import { Footer } from '../components/footer';
 import { Logo } from '../components/logo';
+import { appBaseUrl } from '../../utils/public-url';
 
 interface UnassignedItem {
   type: 'task' | 'policy' | 'risk' | 'vendor';
@@ -58,11 +59,8 @@ export const UnassignedItemsNotificationEmail = ({
   unassignedItems,
   email,
 }: Props) => {
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.BETTER_AUTH_URL ??
-    'https://app.trycomp.ai';
-  const link = `${baseUrl}/${organizationId}`;
+  const baseUrl = appBaseUrl();
+  const link = baseUrl ? `${baseUrl}/${organizationId}` : undefined;
   const unsubscribeUrl = email ? getUnsubscribeUrl(email) : undefined;
 
   const groupedItems = unassignedItems.reduce(
@@ -127,12 +125,16 @@ export const UnassignedItemsNotificationEmail = ({
                       key={item.id}
                       className="text-[14px] leading-[24px] text-[#121212]"
                     >
-                      <Link
-                        href={getItemUrl(baseUrl, organizationId, item)}
-                        className="text-[#121212] underline"
-                      >
-                        {item.name}
-                      </Link>
+                      {baseUrl ? (
+                        <Link
+                          href={getItemUrl(baseUrl, organizationId, item)}
+                          className="text-[#121212] underline"
+                        >
+                          {item.name}
+                        </Link>
+                      ) : (
+                        item.name
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -143,14 +145,16 @@ export const UnassignedItemsNotificationEmail = ({
               Please log in to assign these items to appropriate team members.
             </Text>
 
-            <Section className="mt-[32px] mb-[42px] text-center">
-              <a
-                href={link}
-                className="text-primary border border-solid border-[#121212] bg-transparent px-6 py-3 text-center text-[14px] font-medium text-[#121212] no-underline inline-block"
-              >
-                View Organization
-              </a>
-            </Section>
+            {link && (
+              <Section className="mt-[32px] mb-[42px] text-center">
+                <a
+                  href={link}
+                  className="text-primary border border-solid border-[#121212] bg-transparent px-6 py-3 text-center text-[14px] font-medium text-[#121212] no-underline inline-block"
+                >
+                  View Organization
+                </a>
+              </Section>
+            )}
 
             {unsubscribeUrl && (
               <Section>

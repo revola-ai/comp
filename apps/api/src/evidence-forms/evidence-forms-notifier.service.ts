@@ -3,19 +3,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { isUserUnsubscribed } from '@trycompai/email';
 import { triggerEmail } from '../email/trigger-email';
 import { EvidenceAccessRequestSubmittedEmail } from '../email/templates/evidence-access-request-submitted';
+import { appLink } from '../utils/public-url';
 
 interface Recipient {
   userId: string;
   email: string;
   name: string;
-}
-
-function getAppUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.BETTER_AUTH_URL ??
-    'https://app.trycomp.ai'
-  );
 }
 
 function stringField(data: Record<string, unknown>, key: string): string {
@@ -58,7 +51,9 @@ export class EvidenceFormsNotifierService {
       select: { name: true },
     });
     const organizationName = organization?.name ?? 'your organization';
-    const reviewUrl = `${getAppUrl()}/${organizationId}/documents/access-request/submissions/${submissionId}`;
+    const reviewUrl = appLink({
+      path: `/${organizationId}/documents/access-request/submissions/${submissionId}`,
+    });
 
     await Promise.allSettled(
       recipients.map((recipient) =>
@@ -79,7 +74,7 @@ export class EvidenceFormsNotifierService {
     recipient: Recipient;
     organizationName: string;
     submitterName: string;
-    reviewUrl: string;
+    reviewUrl?: string;
     accountsNeeded: string;
     permissionsNeeded: string;
     reasonForRequest: string;

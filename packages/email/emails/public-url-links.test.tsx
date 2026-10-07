@@ -1,6 +1,7 @@
 import { render } from '@react-email/render';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AllPolicyNotificationEmail } from './all-policy-notification';
+import { InvitePortalEmail } from './invite-portal';
 import { PolicyAcknowledgmentDigestEmail } from './policy-acknowledgment-digest';
 import { PolicyNotificationEmail } from './policy-notification';
 import { TaskReminderEmail } from './reminders/task-reminder';
@@ -27,6 +28,11 @@ const cases = [
         organizationId="org_1"
       />
     ),
+  },
+  {
+    name: 'invite-portal',
+    host: undefined,
+    el: () => <InvitePortalEmail email={EMAIL} organizationName="Revola" />,
   },
   {
     name: 'policy-notification',

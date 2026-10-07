@@ -12,6 +12,7 @@ import {
   Tailwind,
   Text,
 } from '@react-email/components';
+import { CallToAction } from '../components/call-to-action';
 import { Footer } from '../components/footer';
 import { Logo } from '../components/logo';
 import { getUnsubscribeUrl } from '@trycompai/email';
@@ -22,7 +23,8 @@ interface Props {
   taskTitle: string;
   submittedByName: string;
   organizationName: string;
-  taskUrl: string;
+  /** Undefined when the app URL is not configured: the email then has no button. */
+  taskUrl?: string;
 }
 
 export const EvidenceReviewRequestedEmail = ({
@@ -80,21 +82,7 @@ export const EvidenceReviewRequestedEmail = ({
               Please review the evidence and approve or reject it.
             </Text>
 
-            <Section className="mt-[32px] mb-[32px] text-center">
-              <Button
-                className="rounded-[3px] bg-[#121212] px-[20px] py-[12px] text-center text-[14px] font-semibold text-white no-underline"
-                href={taskUrl}
-              >
-                Review Evidence
-              </Button>
-            </Section>
-
-            <Text className="text-[14px] leading-[24px] text-[#121212]">
-              or copy and paste this URL into your browser:{' '}
-              <a href={taskUrl} className="text-[#121212] underline">
-                {taskUrl}
-              </a>
-            </Text>
+            <CallToAction href={taskUrl} label="Review Evidence" />
 
             {unsubscribeUrl && (
               <Section className="mt-[30px] mb-[20px]">

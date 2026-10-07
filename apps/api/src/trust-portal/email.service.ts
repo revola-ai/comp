@@ -138,7 +138,7 @@ export class TrustEmailService {
     toName: string;
     organizationName: string;
     domain: string;
-    settingsUrl: string;
+    settingsUrl: string | undefined;
   }): Promise<void> {
     const { toEmail, toName, organizationName, domain, settingsUrl } = params;
 

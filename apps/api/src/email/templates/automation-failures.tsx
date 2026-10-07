@@ -12,6 +12,7 @@ import {
   Tailwind,
   Text,
 } from '@react-email/components';
+import { CallToAction } from '../components/call-to-action';
 import { Footer } from '../components/footer';
 import { Logo } from '../components/logo';
 import { getUnsubscribeUrl } from '@trycompai/email';
@@ -24,7 +25,8 @@ interface Props {
   totalCount: number;
   taskStatusChanged: boolean;
   organizationName: string;
-  taskUrl: string;
+  /** Undefined when the app URL is not configured: the email then has no button. */
+  taskUrl?: string;
 }
 
 export const AutomationFailuresEmail = ({
@@ -86,21 +88,7 @@ export const AutomationFailuresEmail = ({
               </Text>
             )}
 
-            <Section className="mt-[32px] mb-[32px] text-center">
-              <Button
-                className="rounded-[3px] bg-[#121212] px-[20px] py-[12px] text-center text-[14px] font-semibold text-white no-underline"
-                href={taskUrl}
-              >
-                View Task
-              </Button>
-            </Section>
-
-            <Text className="text-[14px] leading-[24px] text-[#121212]">
-              or copy and paste this URL into your browser:{' '}
-              <a href={taskUrl} className="text-[#121212] underline">
-                {taskUrl}
-              </a>
-            </Text>
+            <CallToAction href={taskUrl} label="View Task" />
 
             {unsubscribeUrl && (
               <Section className="mt-[30px] mb-[20px]">

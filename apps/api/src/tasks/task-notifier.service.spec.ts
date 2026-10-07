@@ -25,8 +25,9 @@ jest.mock('../email/trigger-email', () => ({
   triggerEmail: (...args: unknown[]) => triggerEmailMock(...args),
 }));
 
+const taskStatusChangedEmailMock = jest.fn<null, [unknown]>(() => null);
 jest.mock('../email/templates/task-status-changed', () => ({
-  TaskStatusChangedEmail: () => null,
+  TaskStatusChangedEmail: (props: unknown) => taskStatusChangedEmailMock(props),
 }));
 jest.mock('../email/templates/task-bulk-status-changed', () => ({
   TaskBulkStatusChangedEmail: () => null,
@@ -58,7 +59,11 @@ interface UserFixture {
   email: string;
 }
 
-function makeUser(id: string, email: string, name: string | null = null): UserFixture {
+function makeUser(
+  id: string,
+  email: string,
+  name: string | null = null,
+): UserFixture {
   return { id, name, email };
 }
 
@@ -79,7 +84,11 @@ describe('TaskNotifierService', () => {
   describe('notifyStatusChange', () => {
     it('sends email only to the task assignee when the task has an assignee', async () => {
       const actor = makeUser('usr_actor', 'actor@acme.com', 'Actor');
-      const assignee = makeUser('usr_assignee', 'assignee@acme.com', 'Assignee');
+      const assignee = makeUser(
+        'usr_assignee',
+        'assignee@acme.com',
+        'Assignee',
+      );
 
       mockDb.organization.findUnique.mockResolvedValue({ name: 'Acme' });
       mockDb.user.findUnique.mockResolvedValue({
@@ -94,14 +103,68 @@ describe('TaskNotifierService', () => {
         organizationId: 'org_1',
         taskId: 'tsk_1',
         taskTitle: '2FA',
-        oldStatus: 'done' as never,
-        newStatus: 'todo' as never,
+        oldStatus: 'done',
+        newStatus: 'todo',
         changedByUserId: actor.id,
       });
 
       expect(triggerEmailMock).toHaveBeenCalledTimes(1);
       expect(recipientEmails()).toEqual(['assignee@acme.com']);
       expect(mockDb.member.findMany).not.toHaveBeenCalled();
+    });
+
+    it('links the task on this deployment and leaves the link out without the app URL', async () => {
+      const saved = {
+        NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+        BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
+      };
+      const warn = jest
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined);
+      const assignee = makeUser(
+        'usr_assignee',
+        'assignee@acme.com',
+        'Assignee',
+      );
+      mockDb.organization.findUnique.mockResolvedValue({ name: 'Acme' });
+      mockDb.user.findUnique.mockResolvedValue({
+        name: 'Actor',
+        email: 'actor@acme.com',
+      });
+      mockDb.task.findUnique.mockResolvedValue({
+        assignee: { user: assignee },
+      });
+      const notify = () =>
+        service.notifyStatusChange({
+          organizationId: 'org_1',
+          taskId: 'tsk_1',
+          taskTitle: '2FA',
+          oldStatus: 'done',
+          newStatus: 'todo',
+          changedByUserId: 'usr_actor',
+        });
+
+      process.env.NEXT_PUBLIC_APP_URL = 'https://app.comp.revola.ai';
+      await notify();
+      delete process.env.NEXT_PUBLIC_APP_URL;
+      delete process.env.BETTER_AUTH_URL;
+      await notify();
+      warn.mockRestore();
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+
+      const [withUrl, withoutUrl] = taskStatusChangedEmailMock.mock.calls.map(
+        ([props]) => props as { taskUrl?: string },
+      );
+      expect(withUrl?.taskUrl).toBe(
+        'https://app.comp.revola.ai/org_1/tasks/tsk_1',
+      );
+      expect(withoutUrl?.taskUrl).toBeUndefined();
+      expect(JSON.stringify(novu.trigger.mock.calls)).not.toContain(
+        'trycomp.ai',
+      );
     });
 
     it('does not send email when the actor is the assignee', async () => {
@@ -120,8 +183,8 @@ describe('TaskNotifierService', () => {
         organizationId: 'org_1',
         taskId: 'tsk_1',
         taskTitle: '2FA',
-        oldStatus: 'done' as never,
-        newStatus: 'todo' as never,
+        oldStatus: 'done',
+        newStatus: 'todo',
         changedByUserId: actor.id,
       });
 
@@ -152,8 +215,8 @@ describe('TaskNotifierService', () => {
         organizationId: 'org_1',
         taskId: 'tsk_1',
         taskTitle: '2FA',
-        oldStatus: 'done' as never,
-        newStatus: 'todo' as never,
+        oldStatus: 'done',
+        newStatus: 'todo',
         changedByUserId: actor.id,
       });
 
@@ -181,8 +244,8 @@ describe('TaskNotifierService', () => {
         organizationId: 'org_1',
         taskId: 'tsk_1',
         taskTitle: '2FA',
-        oldStatus: 'done' as never,
-        newStatus: 'todo' as never,
+        oldStatus: 'done',
+        newStatus: 'todo',
         changedByUserId: actor.id,
       });
 
@@ -191,7 +254,11 @@ describe('TaskNotifierService', () => {
 
     it('honors isUserUnsubscribed for the assignee', async () => {
       const actor = makeUser('usr_actor', 'actor@acme.com', 'Actor');
-      const assignee = makeUser('usr_assignee', 'assignee@acme.com', 'Assignee');
+      const assignee = makeUser(
+        'usr_assignee',
+        'assignee@acme.com',
+        'Assignee',
+      );
 
       mockDb.organization.findUnique.mockResolvedValue({ name: 'Acme' });
       mockDb.user.findUnique.mockResolvedValue({
@@ -207,8 +274,8 @@ describe('TaskNotifierService', () => {
         organizationId: 'org_1',
         taskId: 'tsk_1',
         taskTitle: '2FA',
-        oldStatus: 'done' as never,
-        newStatus: 'todo' as never,
+        oldStatus: 'done',
+        newStatus: 'todo',
         changedByUserId: actor.id,
       });
 
@@ -236,7 +303,7 @@ describe('TaskNotifierService', () => {
       await service.notifyBulkStatusChange({
         organizationId: 'org_1',
         taskIds: ['tsk_1', 'tsk_2', 'tsk_3'],
-        newStatus: 'done' as never,
+        newStatus: 'done',
         changedByUserId: actor.id,
       });
 
@@ -276,7 +343,7 @@ describe('TaskNotifierService', () => {
       await service.notifyBulkStatusChange({
         organizationId: 'org_1',
         taskIds: ['tsk_1', 'tsk_2'],
-        newStatus: 'done' as never,
+        newStatus: 'done',
         changedByUserId: actor.id,
       });
 
@@ -305,7 +372,7 @@ describe('TaskNotifierService', () => {
       await service.notifyBulkStatusChange({
         organizationId: 'org_1',
         taskIds: ['tsk_1', 'tsk_2'],
-        newStatus: 'done' as never,
+        newStatus: 'done',
         changedByUserId: actor.id,
       });
 

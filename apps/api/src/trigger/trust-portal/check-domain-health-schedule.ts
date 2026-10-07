@@ -3,21 +3,17 @@ import { logger, schedules } from '@trigger.dev/sdk';
 import { parseRoles } from '../../people/utils/role-authorization';
 import { TrustEmailService } from '../../trust-portal/email.service';
 import { isScheduledRunAllowed } from '../lib/schedule-guard';
+import { publicBaseUrl } from '../../utils/public-url';
 
 const emailService = new TrustEmailService();
 
 const NOTIFIABLE_ROLES = ['owner', 'admin'];
 
-const APP_BASE_URL =
-  process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.trycomp.ai';
-
 /**
  * Checks domain config via the Vercel API. Returns null when Vercel is not
  * configured on this server (dev/self-host) — callers should skip the check.
  */
-async function isDomainMisconfigured(
-  domain: string,
-): Promise<boolean | null> {
+async function isDomainMisconfigured(domain: string): Promise<boolean | null> {
   const teamId = process.env.VERCEL_TEAM_ID;
   const vercelToken = process.env.VERCEL_AUTH_TOKEN;
 
@@ -92,8 +88,7 @@ export const checkDomainHealthSchedule = schedules.task({
     logger.info(`Found ${trusts.length} trusts with verified custom domains`);
 
     const vercelConfigured =
-      !!process.env.VERCEL_TEAM_ID &&
-      !!process.env.VERCEL_AUTH_TOKEN;
+      !!process.env.VERCEL_TEAM_ID && !!process.env.VERCEL_AUTH_TOKEN;
 
     if (!vercelConfigured) {
       logger.info(
@@ -128,19 +123,24 @@ export const checkDomainHealthSchedule = schedules.task({
 
         const adminOrOwnerMembers = trust.organization.members.filter(
           (m) =>
-            parseRoles(m.role).some((role) => NOTIFIABLE_ROLES.includes(role)) &&
-            m.user?.email,
+            parseRoles(m.role).some((role) =>
+              NOTIFIABLE_ROLES.includes(role),
+            ) && m.user?.email,
         );
 
-        const settingsUrl = `${APP_BASE_URL}/${trust.organizationId}/trust/portal-settings`;
+        // Read per run, never an upstream default: unset leaves the button out.
+        const appUrl = publicBaseUrl(['NEXT_PUBLIC_APP_URL']);
+        const settingsUrl = appUrl
+          ? `${appUrl}/${trust.organizationId}/trust/portal-settings`
+          : undefined;
 
         const emailResults = await Promise.allSettled(
           adminOrOwnerMembers
             .filter((m) => m.user?.email)
             .map((member) =>
               emailService.sendDomainMisconfiguredEmail({
-                toEmail: member.user!.email!,
-                toName: member.user!.name?.trim() || member.user!.email!,
+                toEmail: member.user.email,
+                toName: member.user.name?.trim() || member.user.email,
                 organizationName: trust.organization.name,
                 domain,
                 settingsUrl,

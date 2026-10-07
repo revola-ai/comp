@@ -12,13 +12,14 @@ import {
   Tailwind,
   Text,
 } from '@react-email/components';
+import { CallToAction } from '../components/call-to-action';
 import { Footer } from '../components/footer';
 import { Logo } from '../components/logo';
 import { getUnsubscribeUrl } from '@trycompai/email';
 
 interface FailedTaskItem {
   title: string;
-  url: string;
+  url?: string;
   failedCount: number;
   totalCount: number;
 }
@@ -27,7 +28,8 @@ interface Props {
   toName: string;
   toEmail: string;
   organizationName: string;
-  tasksUrl: string;
+  /** Undefined when the app URL is not configured: the email then has no button. */
+  tasksUrl?: string;
   tasks: FailedTaskItem[];
 }
 
@@ -92,9 +94,13 @@ export const AutomationBulkFailuresEmail = ({
                   className="my-[4px] text-[14px] leading-[24px] text-[#121212]"
                 >
                   {'• '}
-                  <Link href={task.url} className="text-[#121212] underline">
-                    {task.title}
-                  </Link>{' '}
+                  {task.url ? (
+                    <Link href={task.url} className="text-[#121212] underline">
+                      {task.title}
+                    </Link>
+                  ) : (
+                    task.title
+                  )}{' '}
                   ({task.failedCount}/{task.totalCount} failed)
                 </Text>
               ))}
@@ -105,21 +111,7 @@ export const AutomationBulkFailuresEmail = ({
               )}
             </Section>
 
-            <Section className="mt-[32px] mb-[32px] text-center">
-              <Button
-                className="rounded-[3px] bg-[#121212] px-[20px] py-[12px] text-center text-[14px] font-semibold text-white no-underline"
-                href={tasksUrl}
-              >
-                View Tasks
-              </Button>
-            </Section>
-
-            <Text className="text-[14px] leading-[24px] text-[#121212]">
-              or copy and paste this URL into your browser:{' '}
-              <a href={tasksUrl} className="text-[#121212] underline">
-                {tasksUrl}
-              </a>
-            </Text>
+            <CallToAction href={tasksUrl} label="View Tasks" />
 
             {unsubscribeUrl && (
               <Section className="mt-[30px] mb-[20px]">

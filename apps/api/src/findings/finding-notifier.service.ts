@@ -4,6 +4,7 @@ import { isUserUnsubscribed } from '@trycompai/email';
 import { toExternalEvidenceFormType } from '@trycompai/company';
 import { triggerEmail } from '../email/trigger-email';
 import { FindingNotificationEmail } from '../email/templates/finding-notification';
+import { appLink } from '../utils/public-url';
 import { NovuService } from '../notifications/novu.service';
 
 const FINDING_WORKFLOW_ID = 'finding-notification';
@@ -11,10 +12,7 @@ const EMAIL_CONTENT_MAX_LENGTH = 200;
 const NOVU_CONTENT_MAX_LENGTH = 100;
 
 type FindingAction =
-  | 'created'
-  | 'ready_for_review'
-  | 'needs_revision'
-  | 'closed';
+  'created' | 'ready_for_review' | 'needs_revision' | 'closed';
 
 interface Recipient {
   userId: string;
@@ -46,7 +44,10 @@ export interface FindingForNotification {
   policy?: { id: string; name: string } | null;
   vendor?: { id: string; name: string } | null;
   risk?: { id: string; title: string } | null;
-  member?: { id: string; user: { id: string; name: string | null; email: string } } | null;
+  member?: {
+    id: string;
+    user: { id: string; name: string | null; email: string };
+  } | null;
   device?: { id: string; name: string; hostname: string } | null;
 }
 
@@ -87,14 +88,6 @@ function truncate(s: string, n: number) {
   return s.length <= n ? s : `${s.substring(0, n)}...`;
 }
 
-function getAppUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.BETTER_AUTH_URL ??
-    'https://app.trycomp.ai'
-  );
-}
-
 /**
  * Convert a DB evidence form-type value (e.g. `board_meeting`) to its external
  * form (`board-meeting`). Callers pass the raw DB column value through as a
@@ -132,16 +125,23 @@ function findingNoun(f: FindingForNotification): string {
   if (f.riskId) return 'risk';
   if (f.memberId) return 'person';
   if (f.deviceId) return 'device';
-  if (f.evidenceSubmissionId || f.evidenceFormType) return 'document submission';
+  if (f.evidenceSubmissionId || f.evidenceFormType)
+    return 'document submission';
   return 'area';
 }
 
-/** Deep-link the recipient into the Findings page with the finding sheet pre-opened. */
+/**
+ * Deep-link the recipient into the Findings page with the finding sheet pre-opened,
+ * or undefined when the app URL is not configured.
+ */
 function buildFindingDeepLink(
   organizationId: string,
   findingId: string,
-): string {
-  return `${getAppUrl()}/${organizationId}/overview/findings?open=${findingId}`;
+): string | undefined {
+  return appLink({
+    path: `/${organizationId}/overview/findings`,
+    searchParams: { open: findingId },
+  });
 }
 
 @Injectable()
@@ -233,8 +233,16 @@ export class FindingNotifierService {
   // --------------------------------------------------------------------------
 
   private async sendNotifications(params: SendParams): Promise<void> {
-    const { organizationId, finding, action, recipients, subject, heading, message, newStatus } =
-      params;
+    const {
+      organizationId,
+      finding,
+      action,
+      recipients,
+      subject,
+      heading,
+      message,
+      newStatus,
+    } = params;
 
     const organization = await db.organization.findUnique({
       where: { id: organizationId },
@@ -283,7 +291,7 @@ export class FindingNotifierService {
     heading: string;
     message: string;
     newStatus?: string;
-    findingUrl: string;
+    findingUrl?: string;
   }): Promise<void> {
     const { recipient, organizationId, subject, action } = params;
 
@@ -296,7 +304,9 @@ export class FindingNotifierService {
       );
 
       if (isUnsubscribed) {
-        this.logger.log(`Skipping notification: ${recipient.email} unsubscribed`);
+        this.logger.log(
+          `Skipping notification: ${recipient.email} unsubscribed`,
+        );
         return;
       }
 
@@ -363,7 +373,11 @@ export class FindingNotifierService {
     const { organizationId, actorUserId, finding } = args;
 
     if (finding.taskId) {
-      return this.getTaskRecipients(organizationId, finding.taskId, actorUserId);
+      return this.getTaskRecipients(
+        organizationId,
+        finding.taskId,
+        actorUserId,
+      );
     }
     if (finding.memberId && finding.member) {
       return this.includeAdmins(
@@ -523,11 +537,15 @@ export class FindingNotifierService {
     excludeUserId: string,
   ): Promise<Recipient[]> {
     try {
-      const admins = await this.getOwnersAndAdmins(organizationId, excludeUserId);
+      const admins = await this.getOwnersAndAdmins(
+        organizationId,
+        excludeUserId,
+      );
       const added = new Set(admins.map((r) => r.userId));
       const recipients: Recipient[] = [];
 
-      let submitter: { id: string; email: string; name: string | null } | null = null;
+      let submitter: { id: string; email: string; name: string | null } | null =
+        null;
       if (submitterUserId) {
         submitter = await db.user.findUnique({
           where: { id: submitterUserId },
@@ -587,7 +605,9 @@ export class FindingNotifierService {
   }
 
   private dedupe(
-    members: { user: { id: string; email: string | null; name: string | null } }[],
+    members: {
+      user: { id: string; email: string | null; name: string | null };
+    }[],
     excludeUserId: string,
   ): Recipient[] {
     const seen = new Set<string>();

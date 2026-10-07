@@ -116,7 +116,8 @@ jest.mock('@trycompai/email', () => ({
 import { db } from '@db';
 import { triggerEmail } from '../email/trigger-email';
 
-const mockDb = db as jest.Mocked<typeof db>;
+// Every db method is a jest.fn() (see the @db mock above); typed as properties, not methods.
+const mockDb = db as unknown as Record<string, Record<string, jest.Mock>>;
 const mockTriggerEmail = triggerEmail as jest.Mock;
 
 describe('PeopleInviteService', () => {
@@ -169,15 +170,17 @@ describe('PeopleInviteService', () => {
     });
 
     it('allows an API key with full member CRUD scopes to assign admin (resolves an owner as inviter)', async () => {
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue(null);
+      mockDb.user.findFirst.mockResolvedValue(null);
       // Owner fallback lookup for inviterId (API keys have no caller user)
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue({
+      mockDb.member.findFirst.mockResolvedValue({
         userId: 'owner_user',
       });
-      (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+      mockDb.organization.findUnique.mockResolvedValue({
         name: 'Test Org',
       });
-      (mockDb.invitation.create as jest.Mock).mockResolvedValue({ id: 'inv_1' });
+      mockDb.invitation.create.mockResolvedValue({
+        id: 'inv_1',
+      });
 
       const results = await service.inviteMembers({
         ...baseParams,
@@ -220,14 +223,16 @@ describe('PeopleInviteService', () => {
     });
 
     it('allows a legacy API key (empty scopes = full access) to assign admin', async () => {
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue(null);
+      mockDb.member.findFirst.mockResolvedValue({
         userId: 'owner_user',
       });
-      (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+      mockDb.organization.findUnique.mockResolvedValue({
         name: 'Test Org',
       });
-      (mockDb.invitation.create as jest.Mock).mockResolvedValue({ id: 'inv_2' });
+      mockDb.invitation.create.mockResolvedValue({
+        id: 'inv_2',
+      });
 
       const results = await service.inviteMembers({
         ...baseParams,
@@ -242,16 +247,21 @@ describe('PeopleInviteService', () => {
     });
 
     it('fails clearly when an API key invite has no owner/admin to attribute as inviter', async () => {
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue(null);
+      mockDb.user.findFirst.mockResolvedValue(null);
       // No owner or admin found
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue(null);
+      mockDb.member.findFirst.mockResolvedValue(null);
 
       const results = await service.inviteMembers({
         ...baseParams,
         callerUserId: '',
         callerRole: '',
         isApiKey: true,
-        apiKeyScopes: ['member:create', 'member:read', 'member:update', 'member:delete'],
+        apiKeyScopes: [
+          'member:create',
+          'member:read',
+          'member:update',
+          'member:delete',
+        ],
         invites: [{ email: 'admin@example.com', roles: ['admin'] }],
       });
 
@@ -260,21 +270,21 @@ describe('PeopleInviteService', () => {
     });
 
     it('should allow auditors to invite restricted roles', async () => {
-      (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+      mockDb.organization.findUnique.mockResolvedValue({
         name: 'Test Org',
       });
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.user.create as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue(null);
+      mockDb.user.create.mockResolvedValue({
         id: 'usr_emp',
         email: 'emp@example.com',
       });
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.member.create as jest.Mock).mockResolvedValue({
+      mockDb.member.findFirst.mockResolvedValue(null);
+      mockDb.member.create.mockResolvedValue({
         id: 'mem_emp',
       });
-      (
-        mockDb.employeeTrainingVideoCompletion.createMany as jest.Mock
-      ).mockResolvedValue({ count: 5 });
+      mockDb.employeeTrainingVideoCompletion.createMany.mockResolvedValue({
+        count: 5,
+      });
 
       const results = await service.inviteMembers({
         ...baseParams,
@@ -286,21 +296,19 @@ describe('PeopleInviteService', () => {
     });
 
     it('should add employee without invitation for employee/contractor roles', async () => {
-      (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+      mockDb.organization.findUnique.mockResolvedValue({
         name: 'Test Org',
       });
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.user.create as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue(null);
+      mockDb.user.create.mockResolvedValue({
         id: 'user_new',
         email: 'emp@example.com',
       });
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.member.create as jest.Mock).mockResolvedValue({
+      mockDb.member.findFirst.mockResolvedValue(null);
+      mockDb.member.create.mockResolvedValue({
         id: 'member_new',
       });
-      (
-        mockDb.employeeTrainingVideoCompletion.createMany as jest.Mock
-      ).mockResolvedValue({
+      mockDb.employeeTrainingVideoCompletion.createMany.mockResolvedValue({
         count: 5,
       });
 
@@ -326,21 +334,19 @@ describe('PeopleInviteService', () => {
     });
 
     it('creates invited employees with a verified email so trusted SSO providers can link', async () => {
-      (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+      mockDb.organization.findUnique.mockResolvedValue({
         name: 'Test Org',
       });
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.user.create as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue(null);
+      mockDb.user.create.mockResolvedValue({
         id: 'user_new',
         email: 'emp@example.com',
       });
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.member.create as jest.Mock).mockResolvedValue({
+      mockDb.member.findFirst.mockResolvedValue(null);
+      mockDb.member.create.mockResolvedValue({
         id: 'member_new',
       });
-      (
-        mockDb.employeeTrainingVideoCompletion.createMany as jest.Mock
-      ).mockResolvedValue({
+      mockDb.employeeTrainingVideoCompletion.createMany.mockResolvedValue({
         count: 5,
       });
 
@@ -359,23 +365,23 @@ describe('PeopleInviteService', () => {
     });
 
     it('upgrades a legacy unverified user to verified when re-invited as an employee', async () => {
-      (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+      mockDb.organization.findUnique.mockResolvedValue({
         name: 'Test Org',
       });
       // Legacy row: created before employees were created verified, and no
       // longer a member anywhere, so the one-time member backfill missed it.
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue({
         id: 'user_legacy',
         email: 'emp@example.com',
         emailVerified: false,
       });
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.member.create as jest.Mock).mockResolvedValue({
+      mockDb.member.findFirst.mockResolvedValue(null);
+      mockDb.member.create.mockResolvedValue({
         id: 'member_new',
       });
-      (
-        mockDb.employeeTrainingVideoCompletion.createMany as jest.Mock
-      ).mockResolvedValue({ count: 5 });
+      mockDb.employeeTrainingVideoCompletion.createMany.mockResolvedValue({
+        count: 5,
+      });
 
       const results = await service.inviteMembers({
         ...baseParams,
@@ -390,21 +396,21 @@ describe('PeopleInviteService', () => {
     });
 
     it('does not touch an already-verified user when re-invited', async () => {
-      (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+      mockDb.organization.findUnique.mockResolvedValue({
         name: 'Test Org',
       });
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue({
         id: 'user_verified',
         email: 'emp@example.com',
         emailVerified: true,
       });
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.member.create as jest.Mock).mockResolvedValue({
+      mockDb.member.findFirst.mockResolvedValue(null);
+      mockDb.member.create.mockResolvedValue({
         id: 'member_new',
       });
-      (
-        mockDb.employeeTrainingVideoCompletion.createMany as jest.Mock
-      ).mockResolvedValue({ count: 5 });
+      mockDb.employeeTrainingVideoCompletion.createMany.mockResolvedValue({
+        count: 5,
+      });
 
       const results = await service.inviteMembers({
         ...baseParams,
@@ -416,16 +422,16 @@ describe('PeopleInviteService', () => {
     });
 
     it('upgrades a legacy unverified user to verified when invited to an admin role', async () => {
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue({
         id: 'user_legacy',
         email: 'admin@example.com',
         emailVerified: false,
       });
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+      mockDb.member.findFirst.mockResolvedValue(null);
+      mockDb.organization.findUnique.mockResolvedValue({
         name: 'Test Org',
       });
-      (mockDb.invitation.create as jest.Mock).mockResolvedValue({
+      mockDb.invitation.create.mockResolvedValue({
         id: 'inv_new',
       });
 
@@ -445,18 +451,18 @@ describe('PeopleInviteService', () => {
     });
 
     it('should reactivate deactivated members', async () => {
-      (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+      mockDb.organization.findUnique.mockResolvedValue({
         name: 'Test Org',
       });
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue({
         id: 'user_existing',
         email: 'emp@example.com',
       });
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue({
+      mockDb.member.findFirst.mockResolvedValue({
         id: 'member_existing',
         deactivated: true,
       });
-      (mockDb.member.update as jest.Mock).mockResolvedValue({
+      mockDb.member.update.mockResolvedValue({
         id: 'member_existing',
       });
 
@@ -481,17 +487,17 @@ describe('PeopleInviteService', () => {
     // adding admin to an existing employee never granted app access and the
     // user hit "Access Denied" after accepting.
     it('upgrades an existing active member in place when promoted (no invitation, no email)', async () => {
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue({
         id: 'user_existing',
         email: 'zub@example.com',
       });
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue({
+      mockDb.member.findFirst.mockResolvedValue({
         id: 'member_existing',
         role: 'employee',
         deactivated: false,
         isActive: true,
       });
-      (mockDb.member.update as jest.Mock).mockResolvedValue({
+      mockDb.member.update.mockResolvedValue({
         id: 'member_existing',
       });
 
@@ -514,11 +520,11 @@ describe('PeopleInviteService', () => {
     });
 
     it('does not rewrite an active member who already holds the invited roles', async () => {
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue({
         id: 'user_existing',
         email: 'a@example.com',
       });
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue({
+      mockDb.member.findFirst.mockResolvedValue({
         id: 'member_existing',
         role: 'admin,employee',
         deactivated: false,
@@ -536,20 +542,20 @@ describe('PeopleInviteService', () => {
     });
 
     it('unions roles for an active member re-added via the employee path', async () => {
-      (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+      mockDb.organization.findUnique.mockResolvedValue({
         name: 'Test Org',
       });
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue({
         id: 'user_existing',
         email: 'c@example.com',
       });
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue({
+      mockDb.member.findFirst.mockResolvedValue({
         id: 'member_existing',
         role: 'contractor',
         deactivated: false,
         isActive: true,
       });
-      (mockDb.member.update as jest.Mock).mockResolvedValue({
+      mockDb.member.update.mockResolvedValue({
         id: 'member_existing',
       });
 
@@ -568,21 +574,19 @@ describe('PeopleInviteService', () => {
     });
 
     it('should handle multiple invites', async () => {
-      (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+      mockDb.organization.findUnique.mockResolvedValue({
         name: 'Test Org',
       });
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.user.create as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue(null);
+      mockDb.user.create.mockResolvedValue({
         id: 'user_new',
         email: 'test@example.com',
       });
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.member.create as jest.Mock).mockResolvedValue({
+      mockDb.member.findFirst.mockResolvedValue(null);
+      mockDb.member.create.mockResolvedValue({
         id: 'member_new',
       });
-      (
-        mockDb.employeeTrainingVideoCompletion.createMany as jest.Mock
-      ).mockResolvedValue({
+      mockDb.employeeTrainingVideoCompletion.createMany.mockResolvedValue({
         count: 5,
       });
 
@@ -599,21 +603,19 @@ describe('PeopleInviteService', () => {
     });
 
     it('should continue processing when one invite fails', async () => {
-      (mockDb.organization.findUnique as jest.Mock)
+      mockDb.organization.findUnique
         .mockResolvedValueOnce(null) // First org lookup fails
         .mockResolvedValueOnce({ name: 'Test Org' }); // Second succeeds
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.user.create as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue(null);
+      mockDb.user.create.mockResolvedValue({
         id: 'user_new',
         email: 'test@example.com',
       });
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.member.create as jest.Mock).mockResolvedValue({
+      mockDb.member.findFirst.mockResolvedValue(null);
+      mockDb.member.create.mockResolvedValue({
         id: 'member_new',
       });
-      (
-        mockDb.employeeTrainingVideoCompletion.createMany as jest.Mock
-      ).mockResolvedValue({
+      mockDb.employeeTrainingVideoCompletion.createMany.mockResolvedValue({
         count: 5,
       });
 
@@ -631,21 +633,19 @@ describe('PeopleInviteService', () => {
     });
 
     it('should handle email send failure gracefully', async () => {
-      (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+      mockDb.organization.findUnique.mockResolvedValue({
         name: 'Test Org',
       });
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.user.create as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue(null);
+      mockDb.user.create.mockResolvedValue({
         id: 'user_new',
         email: 'emp@example.com',
       });
-      (mockDb.member.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.member.create as jest.Mock).mockResolvedValue({
+      mockDb.member.findFirst.mockResolvedValue(null);
+      mockDb.member.create.mockResolvedValue({
         id: 'member_new',
       });
-      (
-        mockDb.employeeTrainingVideoCompletion.createMany as jest.Mock
-      ).mockResolvedValue({
+      mockDb.employeeTrainingVideoCompletion.createMany.mockResolvedValue({
         count: 5,
       });
       mockTriggerEmail.mockRejectedValueOnce(new Error('Email service down'));
@@ -653,7 +653,11 @@ describe('PeopleInviteService', () => {
       const results = await service.inviteMembers({
         ...baseParams,
         invites: [
-          { email: 'emp@example.com', roles: ['employee'], sendPortalEmail: true },
+          {
+            email: 'emp@example.com',
+            roles: ['employee'],
+            sendPortalEmail: true,
+          },
         ],
       });
 
@@ -664,11 +668,11 @@ describe('PeopleInviteService', () => {
     });
 
     it('should create invitation for admin role invites', async () => {
-      (mockDb.user.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+      mockDb.user.findFirst.mockResolvedValue(null);
+      mockDb.organization.findUnique.mockResolvedValue({
         name: 'Test Org',
       });
-      (mockDb.invitation.create as jest.Mock).mockResolvedValue({
+      mockDb.invitation.create.mockResolvedValue({
         id: 'inv_new',
       });
 
@@ -690,12 +694,30 @@ describe('PeopleInviteService', () => {
     });
 
     describe('email flow by role combination', () => {
+      const savedUrls = {
+        NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+        NEXT_PUBLIC_PORTAL_URL: process.env.NEXT_PUBLIC_PORTAL_URL,
+        BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
+      };
+
+      beforeEach(() => {
+        process.env.NEXT_PUBLIC_APP_URL = 'https://app.comp.revola.ai';
+        process.env.NEXT_PUBLIC_PORTAL_URL = 'https://portal.comp.revola.ai';
+      });
+
+      afterEach(() => {
+        for (const [key, value] of Object.entries(savedUrls)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      });
+
       function setupNewUserInvite() {
-        (mockDb.user.findFirst as jest.Mock).mockResolvedValue(null);
-        (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+        mockDb.user.findFirst.mockResolvedValue(null);
+        mockDb.organization.findUnique.mockResolvedValue({
           name: 'Test Org',
         });
-        (mockDb.invitation.create as jest.Mock).mockResolvedValue({
+        mockDb.invitation.create.mockResolvedValue({
           id: 'inv_new',
         });
       }
@@ -725,22 +747,74 @@ describe('PeopleInviteService', () => {
         expect(mockInvitePortalEmail).not.toHaveBeenCalled();
       });
 
+      it('links to this deployment and never to upstream hosts', async () => {
+        setupNewUserInvite();
+        await service.inviteMembers({
+          ...baseParams,
+          invites: [
+            {
+              email: 'both@example.com',
+              roles: ['admin', 'employee'],
+              sendPortalEmail: true,
+            },
+          ],
+        });
+        expect(mockInviteEmail).toHaveBeenCalledWith(
+          expect.objectContaining({
+            inviteLink: 'https://app.comp.revola.ai/invite/inv_new',
+            portalLink: 'https://portal.comp.revola.ai/org_123',
+          }),
+        );
+      });
+
+      it('leaves the links out, never pointing upstream, without the public URLs', async () => {
+        delete process.env.NEXT_PUBLIC_APP_URL;
+        delete process.env.NEXT_PUBLIC_PORTAL_URL;
+        delete process.env.BETTER_AUTH_URL;
+        const warn = jest
+          .spyOn(console, 'warn')
+          .mockImplementation(() => undefined);
+        setupNewUserInvite();
+        const results = await service.inviteMembers({
+          ...baseParams,
+          invites: [
+            {
+              email: 'both@example.com',
+              roles: ['admin', 'employee'],
+              sendPortalEmail: true,
+            },
+          ],
+        });
+        warn.mockRestore();
+        expect(results[0].success).toBe(true);
+        expect(mockTriggerEmail).toHaveBeenCalledTimes(1);
+        const props = mockInviteEmail.mock.calls[0]?.[0] as Record<
+          string,
+          unknown
+        >;
+        expect(props.inviteLink).toBeUndefined();
+        expect(props.portalLink).toBeUndefined();
+        expect(JSON.stringify(mockInviteEmail.mock.calls)).not.toContain(
+          'trycomp.ai',
+        );
+      });
+
       it('employee only with portal checked: sends portal-only email', async () => {
-        (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+        mockDb.organization.findUnique.mockResolvedValue({
           name: 'Test Org',
         });
-        (mockDb.user.findFirst as jest.Mock).mockResolvedValue(null);
-        (mockDb.user.create as jest.Mock).mockResolvedValue({
+        mockDb.user.findFirst.mockResolvedValue(null);
+        mockDb.user.create.mockResolvedValue({
           id: 'usr_emp',
           email: 'emp@example.com',
         });
-        (mockDb.member.findFirst as jest.Mock).mockResolvedValue(null);
-        (mockDb.member.create as jest.Mock).mockResolvedValue({
+        mockDb.member.findFirst.mockResolvedValue(null);
+        mockDb.member.create.mockResolvedValue({
           id: 'mem_emp',
         });
-        (
-          mockDb.employeeTrainingVideoCompletion.createMany as jest.Mock
-        ).mockResolvedValue({ count: 5 });
+        mockDb.employeeTrainingVideoCompletion.createMany.mockResolvedValue({
+          count: 5,
+        });
 
         const results = await service.inviteMembers({
           ...baseParams,
@@ -768,19 +842,21 @@ describe('PeopleInviteService', () => {
       // employee via "+ Add User" must add the member WITHOUT emailing them.
       // Previously the else-branch still sent an InviteEmail with a portal link.
       it('employee only with portal UNchecked: adds member silently, sends no email', async () => {
-        (mockDb.organization.findUnique as jest.Mock).mockResolvedValue({
+        mockDb.organization.findUnique.mockResolvedValue({
           name: 'Test Org',
         });
-        (mockDb.user.findFirst as jest.Mock).mockResolvedValue(null);
-        (mockDb.user.create as jest.Mock).mockResolvedValue({
+        mockDb.user.findFirst.mockResolvedValue(null);
+        mockDb.user.create.mockResolvedValue({
           id: 'usr_emp',
           email: 'emp@example.com',
         });
-        (mockDb.member.findFirst as jest.Mock).mockResolvedValue(null);
-        (mockDb.member.create as jest.Mock).mockResolvedValue({ id: 'mem_emp' });
-        (
-          mockDb.employeeTrainingVideoCompletion.createMany as jest.Mock
-        ).mockResolvedValue({ count: 5 });
+        mockDb.member.findFirst.mockResolvedValue(null);
+        mockDb.member.create.mockResolvedValue({
+          id: 'mem_emp',
+        });
+        mockDb.employeeTrainingVideoCompletion.createMany.mockResolvedValue({
+          count: 5,
+        });
 
         const results = await service.inviteMembers({
           ...baseParams,

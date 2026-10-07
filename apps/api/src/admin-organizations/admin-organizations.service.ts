@@ -7,6 +7,7 @@ import {
 import { AuditLogEntityType, db } from '@db';
 import { triggerEmail } from '../email/trigger-email';
 import { InviteEmail } from '../email/templates/invite-member';
+import { appLink } from '../utils/public-url';
 import { UpdateAdminOrganizationDto } from './dto/update-admin-organization.dto';
 import { MAX_AUDIT_LOG_OFFSET } from '../audit/audit-log.pagination';
 
@@ -189,8 +190,7 @@ export class AdminOrganizationsService {
       const lastActivity = [lastSession, lastAuditLog]
         .filter(Boolean)
         .sort((a, b) => (b as Date).getTime() - (a as Date).getTime())[0] as
-        | Date
-        | undefined;
+        Date | undefined;
 
       const isActive = lastActivity ? lastActivity >= cutoff : false;
 
@@ -356,11 +356,7 @@ export class AdminOrganizationsService {
     });
 
     try {
-      const appUrl =
-        process.env.NEXT_PUBLIC_APP_URL ??
-        process.env.BETTER_AUTH_URL ??
-        'https://app.trycomp.ai';
-      const inviteLink = `${appUrl}/invite/${invitation.id}`;
+      const inviteLink = appLink({ path: `/invite/${invitation.id}` });
 
       await triggerEmail({
         to: normalizedEmail,

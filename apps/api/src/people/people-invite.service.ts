@@ -1,10 +1,7 @@
-import {
-  Injectable,
-  Logger,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { db } from '@db';
 import { triggerEmail } from '../email/trigger-email';
+import { appBaseUrl, portalBaseUrl } from '../utils/public-url';
 import { InviteEmail } from '../email/templates/invite-member';
 import { InvitePortalEmail } from '@trycompai/email';
 import {
@@ -78,7 +75,11 @@ export class PeopleInviteService {
           callerMemberActions,
         );
         if (roleError) {
-          results.push({ email: invite.email, success: false, error: roleError });
+          results.push({
+            email: invite.email,
+            success: false,
+            error: roleError,
+          });
           continue;
         }
 
@@ -89,8 +90,7 @@ export class PeopleInviteService {
           invite.roles,
           organizationId,
         );
-        const shouldSendPortalEmail =
-          !!invite.sendPortalEmail && hasCompliance;
+        const shouldSendPortalEmail = !!invite.sendPortalEmail && hasCompliance;
         const shouldSendAppEmail = await this.rolesHaveAppAccess(
           invite.roles,
           organizationId,
@@ -475,8 +475,8 @@ export class PeopleInviteService {
     organizationName: string;
     sendPortalEmail?: boolean;
     sendAppEmail?: boolean;
-    portalLink: string;
-    appLink: string;
+    portalLink: string | undefined;
+    appLink: string | undefined;
   }): Promise<void> {
     const {
       email,
@@ -527,9 +527,7 @@ export class PeopleInviteService {
       if (BUILT_IN_ROLE_PERMISSIONS[role]?.app) return true;
     }
 
-    const customRoleNames = roles.filter(
-      (r) => !BUILT_IN_ROLE_PERMISSIONS[r],
-    );
+    const customRoleNames = roles.filter((r) => !BUILT_IN_ROLE_PERMISSIONS[r]);
     if (customRoleNames.length === 0) return false;
 
     const customRoles = await db.organizationRole.findMany({
@@ -540,8 +538,8 @@ export class PeopleInviteService {
       select: { permissions: true },
     });
 
-    return customRoles.some((role) =>
-      parseRolePermissions(role.permissions)?.app,
+    return customRoles.some(
+      (role) => parseRolePermissions(role.permissions)?.app,
     );
   }
 
@@ -564,8 +562,8 @@ export class PeopleInviteService {
       select: { obligations: true },
     });
 
-    return customRoles.some((role) =>
-      parseRoleObligations(role.obligations).compliance,
+    return customRoles.some(
+      (role) => parseRoleObligations(role.obligations).compliance,
     );
   }
 
@@ -584,7 +582,8 @@ export class PeopleInviteService {
     if (hasWriteAccess) return null;
 
     const disallowed = targetRoles.filter(
-      (r) => !isRestrictedRole(r) && Object.hasOwn(BUILT_IN_ROLE_PERMISSIONS, r),
+      (r) =>
+        !isRestrictedRole(r) && Object.hasOwn(BUILT_IN_ROLE_PERMISSIONS, r),
     );
     if (disallowed.length > 0) {
       return `You cannot assign privileged roles: ${disallowed.join(', ')}.`;
@@ -676,17 +675,15 @@ export class PeopleInviteService {
     return actions;
   }
 
-  private buildPortalUrl(organizationId: string): string {
-    const portalUrl =
-      process.env.NEXT_PUBLIC_PORTAL_URL ?? 'https://portal.trycomp.ai';
-    return `${portalUrl}/${organizationId}`;
+  /** Undefined when NEXT_PUBLIC_PORTAL_URL is unset: the email then has no portal link. */
+  private buildPortalUrl(organizationId: string): string | undefined {
+    const portalUrl = portalBaseUrl();
+    return portalUrl ? `${portalUrl}/${organizationId}` : undefined;
   }
 
-  private buildInviteLink(invitationId: string): string {
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL ??
-      process.env.BETTER_AUTH_URL ??
-      'https://app.trycomp.ai';
-    return `${appUrl}/invite/${invitationId}`;
+  /** Undefined when the app URL is unset: the email then has no invite button. */
+  private buildInviteLink(invitationId: string): string | undefined {
+    const appUrl = appBaseUrl();
+    return appUrl ? `${appUrl}/invite/${invitationId}` : undefined;
   }
 }

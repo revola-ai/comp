@@ -3,6 +3,7 @@ import { logger, queue, task } from '@trigger.dev/sdk';
 import { isUserUnsubscribed } from '@trycompai/email';
 import { triggerEmail } from '../../email/trigger-email';
 import { AutomationBulkFailuresEmail } from '../../email/templates/automation-bulk-failures';
+import { appBaseUrl } from '../../utils/public-url';
 import {
   runTaskIntegrationChecks,
   type TaskCheckRunResult,
@@ -154,11 +155,9 @@ export async function sendBundledFailureEmails(params: {
   // by then, the retry would report no transitions and the email would be lost
   // forever. Mirrors the old per-task email's outer try/catch guard.
   try {
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.BETTER_AUTH_URL ||
-      'https://app.trycomp.ai';
-    const tasksUrl = `${appUrl}/${organizationId}/tasks`;
+    // Without the app URL the email lists the tasks without links (never upstream's).
+    const appUrl = appBaseUrl();
+    const tasksUrl = appUrl ? `${appUrl}/${organizationId}/tasks` : undefined;
 
     const recipients = await resolveRecipients({
       organizationId,
@@ -167,7 +166,7 @@ export async function sendBundledFailureEmails(params: {
 
     const taskItems = failedTasks.map((t) => ({
       title: t.taskTitle,
-      url: `${appUrl}/${organizationId}/tasks/${t.taskId}`,
+      url: appUrl ? `${appUrl}/${organizationId}/tasks/${t.taskId}` : undefined,
       failedCount: t.failedCount,
       totalCount: t.totalCount,
     }));

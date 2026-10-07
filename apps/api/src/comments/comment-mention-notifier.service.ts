@@ -5,45 +5,14 @@ import { isUserUnsubscribed } from '@trycompai/email';
 import { triggerEmail } from '../email/trigger-email';
 import { CommentMentionedEmail } from '../email/templates/comment-mentioned';
 import { NovuService } from '../notifications/novu.service';
-// Reuse the extract mentions utility
-function extractMentionedUserIds(content: string | null): string[] {
-  if (!content) return [];
-
-  try {
-    const parsed = typeof content === 'string' ? JSON.parse(content) : content;
-    if (!parsed || typeof parsed !== 'object') return [];
-
-    const mentionedUserIds: string[] = [];
-    function traverse(node: any) {
-      if (!node || typeof node !== 'object') return;
-      if (node.type === 'mention' && node.attrs?.id) {
-        mentionedUserIds.push(node.attrs.id);
-      }
-      if (Array.isArray(node.content)) {
-        node.content.forEach(traverse);
-      }
-    }
-    traverse(parsed);
-    return [...new Set(mentionedUserIds)];
-  } catch {
-    return [];
-  }
-}
+import { appLink } from '../utils/public-url';
 import { CommentEntityType } from '@db';
 
-function getAppBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.BETTER_AUTH_URL ??
-    'https://app.trycomp.ai'
-  );
-}
-
+/** Origins a client-supplied context URL may point at: this deployment only. */
 function getAllowedOrigins(): string[] {
   const candidates = [
     process.env.NEXT_PUBLIC_APP_URL,
     process.env.BETTER_AUTH_URL,
-    'https://app.trycomp.ai',
   ].filter(Boolean) as string[];
 
   const origins = new Set<string>();
@@ -87,10 +56,10 @@ async function buildFallbackCommentContext(params: {
 }): Promise<{
   entityName: string;
   entityRoutePath: string;
-  commentUrl: string;
+  /** Undefined when the app URL is not configured: the email then has no link. */
+  commentUrl: string | undefined;
 } | null> {
   const { organizationId, entityType, entityId } = params;
-  const appUrl = getAppBaseUrl();
 
   if (entityType === CommentEntityType.task) {
     // CommentEntityType.task can be:
@@ -105,16 +74,14 @@ async function buildFallbackCommentContext(params: {
     if (taskItem) {
       const parentRoutePath =
         taskItem.entityType === 'vendor' ? 'vendors' : 'risk';
-      const url = new URL(
-        `${appUrl}/${organizationId}/${parentRoutePath}/${taskItem.entityId}`,
-      );
-      url.searchParams.set('taskItemId', entityId);
-      url.hash = 'task-items';
-
       return {
         entityName: taskItem.title || 'Task',
         entityRoutePath: parentRoutePath,
-        commentUrl: url.toString(),
+        commentUrl: appLink({
+          path: `/${organizationId}/${parentRoutePath}/${taskItem.entityId}`,
+          searchParams: { taskItemId: entityId },
+          hash: 'task-items',
+        }),
       };
     }
 
@@ -128,12 +95,10 @@ async function buildFallbackCommentContext(params: {
       return null;
     }
 
-    const url = new URL(`${appUrl}/${organizationId}/tasks/${entityId}`);
-
     return {
       entityName: task.title || 'Task',
       entityRoutePath: 'tasks',
-      commentUrl: url.toString(),
+      commentUrl: appLink({ path: `/${organizationId}/tasks/${entityId}` }),
     };
   }
 
@@ -147,12 +112,10 @@ async function buildFallbackCommentContext(params: {
       return null;
     }
 
-    const url = new URL(`${appUrl}/${organizationId}/vendors/${entityId}`);
-
     return {
       entityName: vendor.name || 'Vendor',
       entityRoutePath: 'vendors',
-      commentUrl: url.toString(),
+      commentUrl: appLink({ path: `/${organizationId}/vendors/${entityId}` }),
     };
   }
 
@@ -166,12 +129,10 @@ async function buildFallbackCommentContext(params: {
       return null;
     }
 
-    const url = new URL(`${appUrl}/${organizationId}/risk/${entityId}`);
-
     return {
       entityName: risk.title || 'Risk',
       entityRoutePath: 'risk',
-      commentUrl: url.toString(),
+      commentUrl: appLink({ path: `/${organizationId}/risk/${entityId}` }),
     };
   }
 
@@ -185,14 +146,14 @@ async function buildFallbackCommentContext(params: {
       return null;
     }
 
-    const url = new URL(`${appUrl}/${organizationId}/overview/findings`);
-    url.searchParams.set('open', entityId);
-
     const snippet = finding.content?.trim().split('\n')[0]?.slice(0, 80);
     return {
       entityName: snippet || 'Finding',
       entityRoutePath: 'overview/findings',
-      commentUrl: url.toString(),
+      commentUrl: appLink({
+        path: `/${organizationId}/overview/findings`,
+        searchParams: { open: entityId },
+      }),
     };
   }
 
@@ -206,12 +167,10 @@ async function buildFallbackCommentContext(params: {
     return null;
   }
 
-  const url = new URL(`${appUrl}/${organizationId}/policies/${entityId}`);
-
   return {
     entityName: policy.name || 'Policy',
     entityRoutePath: 'policies',
-    commentUrl: url.toString(),
+    commentUrl: appLink({ path: `/${organizationId}/policies/${entityId}` }),
   };
 }
 

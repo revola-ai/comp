@@ -12,6 +12,7 @@ import {
   Tailwind,
   Text,
 } from '@react-email/components';
+import { CallToAction } from '../components/call-to-action';
 import { Footer } from '../components/footer';
 import { Logo } from '../components/logo';
 import { getUnsubscribeUrl } from '@trycompai/email';
@@ -25,7 +26,8 @@ interface Props {
   entityRoutePath: string;
   entityId: string;
   organizationId: string;
-  commentUrl: string;
+  /** Undefined when the app URL is not configured: the email then has no button. */
+  commentUrl?: string;
 }
 
 export const CommentMentionedEmail = ({
@@ -111,21 +113,7 @@ export const CommentMentionedEmail = ({
               </Text>
             </Section>
 
-            <Section className="mt-[32px] mb-[32px] text-center">
-              <Button
-                className="rounded-[3px] bg-[#121212] px-[20px] py-[12px] text-center text-[14px] font-semibold text-white no-underline"
-                href={commentUrl}
-              >
-                View Comment
-              </Button>
-            </Section>
-
-            <Text className="text-[14px] leading-[24px] text-[#121212]">
-              or copy and paste this URL into your browser:{' '}
-              <a href={commentUrl} className="text-[#121212] underline">
-                {commentUrl}
-              </a>
-            </Text>
+            <CallToAction href={commentUrl} label="View Comment" />
 
             {unsubscribeUrl && (
               <Section className="mt-[30px] mb-[20px]">

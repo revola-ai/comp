@@ -10,6 +10,7 @@ import {
   Tailwind,
   Text,
 } from '@react-email/components';
+import { CallToAction } from '../components/call-to-action';
 import { Footer } from '../components/footer';
 import { Logo } from '../components/logo';
 
@@ -17,7 +18,8 @@ interface Props {
   toName: string;
   organizationName: string;
   domain: string;
-  settingsUrl: string;
+  /** Undefined when the app URL is not configured: the email then has no button. */
+  settingsUrl?: string;
 }
 
 export const TrustDomainMisconfiguredEmail = ({
@@ -62,11 +64,11 @@ export const TrustDomainMisconfiguredEmail = ({
             </Text>
 
             <Text className="text-[14px] leading-[24px] text-[#121212]">
-              We detected that the custom domain{' '}
-              <strong>{domain}</strong> configured for{' '}
-              <strong>{organizationName}</strong>'s Trust Portal is no longer
-              resolving correctly. Visitors using this domain may be unable to
-              access your Trust Portal until the DNS configuration is fixed.
+              We detected that the custom domain <strong>{domain}</strong>{' '}
+              configured for <strong>{organizationName}</strong>'s Trust Portal
+              is no longer resolving correctly. Visitors using this domain may
+              be unable to access your Trust Portal until the DNS configuration
+              is fixed.
             </Text>
 
             <Section
@@ -83,14 +85,11 @@ export const TrustDomainMisconfiguredEmail = ({
               </Text>
             </Section>
 
-            <Section className="mt-[32px] mb-[32px] text-center">
-              <Button
-                className="rounded-[3px] bg-[#121212] px-[20px] py-[12px] text-center text-[14px] font-semibold text-white no-underline"
-                href={settingsUrl}
-              >
-                Review Domain Settings
-              </Button>
-            </Section>
+            <CallToAction
+              href={settingsUrl}
+              label="Review Domain Settings"
+              showUrl={false}
+            />
 
             <Text className="text-[14px] leading-[24px] text-[#121212]">
               If you need help, please contact our support team.

@@ -7,6 +7,7 @@ import {
 } from '@trycompai/email';
 import { triggerEmail } from '../email/trigger-email';
 import { InviteEmail } from '../email/templates/invite-member';
+import { appLink } from '../utils/public-url';
 import { db } from '@db';
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
@@ -445,11 +446,7 @@ export const auth = betterAuth({
         if (process.env.NODE_ENV === 'development') {
           console.log('[Auth] Sending invitation to:', data.email);
         }
-        const appUrl =
-          process.env.NEXT_PUBLIC_APP_URL ??
-          process.env.BETTER_AUTH_URL ??
-          'https://app.trycomp.ai';
-        const inviteLink = `${appUrl}/invite/${data.invitation.id}`;
+        const inviteLink = appLink({ path: `/invite/${data.invitation.id}` });
         await triggerEmail({
           to: data.email,
           subject: `You've been invited to join ${data.organization.name} on Comp AI`,

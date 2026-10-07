@@ -12,6 +12,7 @@ import {
   Tailwind,
   Text,
 } from '@react-email/components';
+import { CallToAction } from '../components/call-to-action';
 import { Footer } from '../components/footer';
 import { Logo } from '../components/logo';
 import { getUnsubscribeUrl } from '@trycompai/email';
@@ -26,7 +27,8 @@ interface Props {
   findingType: string;
   findingContent: string;
   newStatus?: string;
-  findingUrl: string;
+  /** Undefined when the app URL is not configured: the email then has no button. */
+  findingUrl?: string;
 }
 
 export const FindingNotificationEmail = ({
@@ -108,21 +110,7 @@ export const FindingNotificationEmail = ({
               </Text>
             </Section>
 
-            <Section className="mt-[32px] mb-[32px] text-center">
-              <Button
-                className="rounded-[3px] bg-[#121212] px-[20px] py-[12px] text-center text-[14px] font-semibold text-white no-underline"
-                href={findingUrl}
-              >
-                View Finding
-              </Button>
-            </Section>
-
-            <Text className="text-[14px] leading-[24px] text-[#121212]">
-              or copy and paste this URL into your browser:{' '}
-              <a href={findingUrl} className="text-[#121212] underline">
-                {findingUrl}
-              </a>
-            </Text>
+            <CallToAction href={findingUrl} label="View Finding" />
 
             {unsubscribeUrl && (
               <Section className="mt-[30px] mb-[20px]">
