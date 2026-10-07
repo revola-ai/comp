@@ -4,7 +4,9 @@ import {
   hasValidForwardedAuth,
   hasValidOriginAuth,
   headerValue,
+  isTrustedEdgePeer,
   type SecretEnv,
+  unwrapIpv4Mapped,
 } from './verified-headers';
 
 /**
@@ -21,8 +23,6 @@ export type TrackableRequest = {
   serviceName?: string;
 };
 
-const IPV4_MAPPED = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i;
-
 function validIp(value: string | undefined): string | undefined {
   const candidate = value?.trim();
   return candidate && isIP(candidate) ? candidate : undefined;
@@ -34,9 +34,12 @@ function validIp(value: string | undefined): string | undefined {
  * - a valid forwarded-auth token (Service Connect from the app or portal):
  *   the first X-Forwarded-For entry, which the caller sanitized to one client
  *   IP (the Envoy sidecar may append its own hop after it);
- * - a valid origin header (Cloudflare): CF-Connecting-IP;
- * - otherwise the socket address. There is no `trust proxy`, so a forged
- *   X-Forwarded-For never reaches `req.ip`.
+ * - a valid origin header (Cloudflare in front of an ALB), or a socket peer
+ *   listed in TRUSTED_EDGE_PROXY_IPS (the Cloudflare Tunnel connector):
+ *   CF-Connecting-IP;
+ * - otherwise the socket peer address (`req.ip` only when the socket has
+ *   none). There is no `trust proxy`, so a forged X-Forwarded-For never
+ *   reaches `req.ip`; the trust check and this fallback use the same peer.
  */
 export function verifiedClientIp({
   req,
@@ -51,13 +54,16 @@ export function verifiedClientIp({
     const first = validIp(forwarded?.split(',')[0]);
     if (first) return first;
   }
-  if (hasValidOriginAuth({ headers, env })) {
+  const peer = validIp(req.socket?.remoteAddress) ?? validIp(req.ip);
+  const viaCloudflare =
+    hasValidOriginAuth({ headers, env }) || isTrustedEdgePeer({ peer, env });
+  if (viaCloudflare) {
     const connecting = validIp(
       headerValue({ headers, name: 'cf-connecting-ip' }),
     );
     if (connecting) return connecting;
   }
-  return validIp(req.ip) ?? validIp(req.socket?.remoteAddress);
+  return peer;
 }
 
 function expandIpv6(address: string): string[] {
@@ -75,11 +81,10 @@ function expandIpv6(address: string): string[] {
  * IPv6 by /64, since one host usually controls a whole /64.
  */
 export function ipBucket(address: string): string {
-  const mapped = IPV4_MAPPED.exec(address);
-  if (mapped) return mapped[1];
-  if (isIP(address) !== 6 || address.includes('.'))
-    return address.toLowerCase();
-  const prefix = expandIpv6(address.toLowerCase()).slice(0, 4).join(':');
+  const unwrapped = unwrapIpv4Mapped(address);
+  if (isIP(unwrapped) !== 6 || unwrapped.includes('.'))
+    return unwrapped.toLowerCase();
+  const prefix = expandIpv6(unwrapped.toLowerCase()).slice(0, 4).join(':');
   return `${prefix}::/64`;
 }
 

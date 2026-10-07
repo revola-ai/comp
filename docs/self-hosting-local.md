@@ -84,6 +84,15 @@ Portal (`cd apps/portal && bun run dev`, :3002) and framework-editor (`cd apps/f
 MinIO console: http://localhost:9001 (`minioadmin` / `minioadmin`).
 Redis is required (not optional as the upstream env example says): `/setup` sessions, safe-action wrappers, device-agent tokens and rate limits all use `@upstash/redis`, which needs the REST facade on :8079.
 
+## Using hosted Comp
+
+Comp runs hosted on the tunnel server (`docs/self-hosting-server.md`): the app at `https://app.comp.revola.ai`, the employee portal at `https://portal.comp.revola.ai` and the API at `https://api.comp.revola.ai`.
+Open the app and sign in with your `@revola.ai` Google account, first at Cloudflare Access and then in Comp; one session then covers the app, the portal and the API.
+Everyday compliance work happens there, with nothing running on your laptop.
+The laptop stack described in this file stays for development: change the code, run it here, and ship it with a release.
+A laptop in team mode (Shared state below) uses the same database, Storage and Redis as hosted Comp, so what a local run does shows up in the hosted app for everyone.
+Hosted Trigger.dev prod runs the schedules, so leave `COMP_RUN_SCHEDULES_IN_DEV` unset (Local runs write production data, below).
+
 ## Shared state (team mode)
 
 Everything above runs against containers on one laptop, so each person has their own database and nobody sees anyone else's policies or evidence.
@@ -150,6 +159,7 @@ Until the hosted deployment exists, run `trigger dev` locally for the jobs you s
 `ENCRYPTION_KEY` must be identical on every machine: it encrypts integration credentials stored in the shared database, so a colleague with a different key cannot read credentials someone else saved.
 `UNSUBSCRIBE_SECRET` must be identical on every machine and in production as well: it signs the unsubscribe links in emails and the one-click `List-Unsubscribe` header, and a link a laptop signed is opened on the production hosts and verified there.
 Share `SECRET_KEY` too (it is also `AUTH_SECRET` in `apps/app` and `BETTER_AUTH_SECRET` in `apps/portal`) so auth behaves the same everywhere; `INTERNAL_API_TOKEN` (API only, never set in `apps/app` or `apps/portal`), `COMP_FORWARDED_IP_TOKEN` (the same value in the API, app and portal) and the `SERVICE_TOKEN_*` values only connect one person's own API and app and can stay per machine.
+Production has its own values of these four in `deploy/server/.env.production.local`, and `push-secrets` refuses a production value equal to a laptop's (`docs/self-hosting-server.md`, step 4).
 
 `scripts/local-env-init.sh` never generates `UNSUBSCRIBE_SECRET`: it writes a commented `# UNSUBSCRIBE_SECRET=FILL_ME_SHARED` line in `apps/api/.env` and `apps/app/.env`; replace it with the shared value from the password manager in both files.
 An env file written before 2026-10-06 holds a per-laptop generated value instead; replace that with the shared value too, or links that laptop sends fail verification in production with `Invalid token`.
@@ -183,6 +193,7 @@ Tests keep their guard: `packages/db` database suites only run when `DATABASE_UR
 New organizations are auto-approved and the Stripe / booking flow is skipped.
 With `SELF_HOSTED=true` the API trusts only the origins in `AUTH_TRUSTED_ORIGINS` plus the api, app and portal origins behind `AUTH_COOKIE_DOMAIN`, never `*.trycomp.ai` or `*.trust.inc`; when `AUTH_TRUSTED_ORIGINS` is unset outside production it also keeps the `http://localhost` defaults.
 `AUTH_COOKIE_DOMAIN` (api, unset locally) is the shared session-cookie domain for a deployed install, for example `.comp.revola.ai`; the API refuses to start unless it starts with a dot, has at least three labels (or `AUTH_COOKIE_DOMAIN_ALLOW_BROAD=1`) and covers the hosts of `BASE_URL`, `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_PORTAL_URL`.
+`TRUSTED_EDGE_PROXY_IPS` (api, unset locally) is a comma-separated list of the IP addresses the Cloudflare Tunnel connector (`cloudflared`) reaches the API from; the API takes `CF-Connecting-IP` as the visitor's address (for rate limits) only on requests whose socket peer is listed or that carry a valid `X-Comp-Origin-Auth`, and with `NODE_ENV=production` and `AUTH_COOKIE_DOMAIN` set it refuses to start unless a valid `TRUSTED_EDGE_PROXY_IPS` or `COMP_ORIGIN_AUTH` is set, and also refuses a malformed list or origin secret even when the other one is valid (a whitespace-only value counts as unset; outside production invalid list entries are ignored with one warning).
 `AUTH_ALLOWED_EMAIL_DOMAINS` (api, unset locally) is a comma-separated list such as `revola.ai`; when set, sign-up from any other email domain fails with `email_domain_not_allowed` unless the address has a pending, unexpired invitation.
 
 ### Platform admin role

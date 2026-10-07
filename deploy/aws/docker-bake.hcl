@@ -93,3 +93,13 @@ target "portal" {
   cache-from = cache_from("portal")
   cache-to   = cache_to("portal")
 }
+
+# The tools image of deploy/server (prisma migrate, trigger.dev deploy); not in the default
+# group, so the AWS install never builds it.
+target "migrate" {
+  inherits   = ["_common"]
+  target     = "migrate"
+  tags       = [image("migrate")]
+  cache-from = cache_from("migrate")
+  cache-to   = cache_to("migrate")
+}
