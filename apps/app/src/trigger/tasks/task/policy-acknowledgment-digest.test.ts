@@ -166,7 +166,7 @@ describe('policyAcknowledgmentDigest', () => {
     it('link to the portal of this deployment', async () => {
       vi.stubEnv('NEXT_PUBLIC_PORTAL_URL', 'https://portal.comp.revola.ai');
       mockFindMany.mockResolvedValueOnce(oneOrg());
-      await taskUnderTest.run({ timestamp: new Date() } as never);
+      await taskUnderTest.run({ timestamp: new Date() });
       expect(renderedElement()).toContain('https://portal.comp.revola.ai/org_1/policy/pol_a');
     });
 
@@ -174,7 +174,7 @@ describe('policyAcknowledgmentDigest', () => {
       vi.stubEnv('NEXT_PUBLIC_PORTAL_URL', undefined);
       vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       mockFindMany.mockResolvedValueOnce(oneOrg());
-      const result = await taskUnderTest.run({ timestamp: new Date() } as never);
+      const result = await taskUnderTest.run({ timestamp: new Date() });
       expect(result).toMatchObject({ emailsSent: 1 });
       expect(renderedElement()).toContain('Access Control');
       expect(renderedElement()).not.toMatch(/trycomp\.ai/);
