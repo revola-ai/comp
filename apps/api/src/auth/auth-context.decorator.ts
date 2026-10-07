@@ -25,6 +25,7 @@ export const AuthContext = createParamDecorator(
       userRoles,
       memberId,
       memberDepartment,
+      apiKeyScopes,
       apiKeyCreatedByMemberId,
       apiKeyOrganizationOwned,
     } = request;
@@ -47,6 +48,7 @@ export const AuthContext = createParamDecorator(
       userRoles,
       memberId,
       memberDepartment,
+      apiKeyScopes,
       apiKeyCreatedByMemberId,
       apiKeyOrganizationOwned,
     };

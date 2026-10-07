@@ -24,6 +24,7 @@ import { PermissionGuard } from '../auth/permission.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
 import { ApiKeyService } from '../auth/api-key.service';
 import { resolveKeyProvenance } from '../auth/api-key-provenance';
+import { assertScopesGrantable } from '../auth/api-key-scope-grant';
 import type { AuthContext as AuthContextType } from '../auth/types';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import type { TransferOwnershipDto } from './dto/transfer-ownership.dto';
@@ -366,6 +367,11 @@ export class OrganizationController {
     if (!body.name) {
       throw new BadRequestException('Name is required');
     }
+    assertScopesGrantable({
+      caller: authContext,
+      requestedScopes: body.scopes ?? [],
+      availableScopes: this.apiKeyService.getAvailableScopes(),
+    });
     return this.apiKeyService.create({
       organizationId,
       name: body.name,

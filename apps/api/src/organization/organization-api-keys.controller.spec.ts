@@ -15,7 +15,10 @@ import type { OrganizationService } from './organization.service';
 
 // POST /v1/organization/api-keys: who a new key belongs to.
 describe('OrganizationController.createApiKey', () => {
-  const mockApiKeyService = { create: jest.fn() };
+  const mockApiKeyService = {
+    create: jest.fn(),
+    getAvailableScopes: () => ['apiKey:create', 'vendor:read', 'risk:read'],
+  };
   const controller = new OrganizationController(
     {} as OrganizationService,
     mockApiKeyService as unknown as ApiKeyService,
@@ -65,7 +68,11 @@ describe('OrganizationController.createApiKey', () => {
   it('gives a key created through an API key that key creator', async () => {
     await controller.createApiKey(
       'org_123',
-      { ...apiKeyAuthContext, apiKeyCreatedByMemberId: 'mem_creator' },
+      {
+        ...apiKeyAuthContext,
+        apiKeyCreatedByMemberId: 'mem_creator',
+        apiKeyScopes: ['apiKey:create', 'vendor:read'],
+      },
       { name: 'Nested Key', scopes: ['vendor:read'] },
     );
     expect(mockApiKeyService.create).toHaveBeenCalledWith(
@@ -96,5 +103,33 @@ describe('OrganizationController.createApiKey', () => {
       }),
     ).rejects.toThrow(BadRequestException);
     expect(mockApiKeyService.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a scope the creating API key does not hold (403)', async () => {
+    await expect(
+      controller.createApiKey(
+        'org_123',
+        {
+          ...apiKeyAuthContext,
+          apiKeyCreatedByMemberId: 'mem_creator',
+          apiKeyScopes: ['apiKey:create'],
+        },
+        { name: 'Escalated', scopes: ['apiKey:create', 'vendor:read'] },
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockApiKeyService.create).not.toHaveBeenCalled();
+  });
+
+  it('lets an API key grant scopes it holds', async () => {
+    await controller.createApiKey(
+      'org_123',
+      {
+        ...apiKeyAuthContext,
+        apiKeyCreatedByMemberId: 'mem_creator',
+        apiKeyScopes: ['apiKey:create', 'vendor:read'],
+      },
+      { name: 'Narrow', scopes: ['vendor:read'] },
+    );
+    expect(mockApiKeyService.create).toHaveBeenCalled();
   });
 });
