@@ -17,6 +17,8 @@ On the laptop that runs the scripts:
 - No `AWS_REGION` or `AWS_DEFAULT_REGION` naming a region other than `us-east-2` (every script refuses one).
 - bash 4 or newer (macOS ships 3.2: `brew install bash`, then `bash --version`).
 - Bun 1.3.4 (the repository's `packageManager`), `git`, `python3` and `curl`.
+- `bun install` run at the repository root (`deploy/server` is a workspace: `push-secrets` needs its `dotenv` and `zod`).
+- The fork as a remote: `git remote -v` lists `https://github.com/revola-ai/comp` (Kyle's checkout calls it `revola`; `origin` is upstream `trycompai/comp`).
 - A terminal: every script that writes refuses to run without one.
 - The main checkout of the repository (not a worktree), whose env files hold the shared values of team mode (`docs/self-hosting-local.md`, Shared state).
 
@@ -165,7 +167,9 @@ The health alarms fire until the first release brings the tunnel up; that is exp
 
 ## 7. First migrate and release
 
-Pick a SHA that is pushed to a branch of `origin`, then **Kyle runs**:
+The server runs the scripts in `deploy/server/on-server/` from the released SHA, so the branch with them (this one, or `main` after it merged) must be pushed to the fork before the first release: `git push revola <branch>`.
+Pick a SHA that is pushed to a branch of revola-ai/comp; `release.sh` checks the fork's URL itself and refuses any other SHA, even one on upstream's branches.
+Then **Kyle runs**:
 
 ```bash
 deploy/server/release.sh migrate <sha>

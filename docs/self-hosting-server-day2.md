@@ -12,12 +12,32 @@ Every step that changes AWS, Cloudflare or Trigger.dev is marked **Kyle runs**; 
 deploy/server/release.sh release <sha>
 ```
 
-The SHA must be on a branch of `origin`.
+The SHA must be pushed to a branch of revola-ai/comp (`git push revola <branch>`); `release.sh` checks the fork's URL itself, so a SHA only on upstream (`origin`) is refused.
 The release builds the images on the server, checks the migrations, brings the new tag up and smoke-checks it from the laptop; a failure brings the previous tag back and says which one serves.
 A release refused at the migration gate prints the `release.sh migrate <sha12>` command to run first.
+A release of a commit older than a migration already applied is refused when Prisma reports the database's migrations as "not found locally": release a commit that includes them.
+When `/` is more than 70% used after a release, the server removes old images by the rules of Prune below and prints what it removed.
 When a release changes Trigger.dev task code, deploy it too (Trigger.dev below).
 
 Releasing the SHA that already serves again is how a changed secret reaches the containers: `render-env.sh` re-reads `comp/production/config` and compose recreates the containers whose env changed.
+If that release fails its checks, it says so: only the env files changed, so the secret is the likely cause; fix it and release again.
+
+### Interrupted releases
+
+Ctrl-C (or a closed terminal) during `release` or `rollback` is safe.
+Before the up step was sent, `release.sh` cancels what runs on the server and says nothing changed only when the server confirms it; otherwise it says the state is unknown (run `status`).
+After the up step was sent, it waits for the step in flight to end, then brings the previous release back (after a first release, it stops the stack) and says what serves.
+A second Ctrl-C leaves at once.
+
+A laptop that went to sleep or lost the network sends no signal: its lease holds the server for up to 20 minutes, and every other command is refused meanwhile.
+**Kyle runs**, once that laptop's `release.sh` has stopped:
+
+```bash
+deploy/server/release.sh unlock     # shows the lease (run, age, time left); type: unlock
+deploy/server/release.sh status     # what serves now
+```
+
+`unlock` is refused while a step still runs on the server and changes no container, so the tag that run brought up keeps serving unrecorded: release it again to verify and record it, or release the SHA that should serve.
 
 ## Rollback
 
@@ -79,6 +99,7 @@ A shell on the server is `aws ssm start-session --target <instance-id> --region 
 
 The server patches itself: dnf-automatic applies security updates every day at 09:00 UTC (Docker included; an update restarts the daemon and the containers come back by themselves).
 `comp-reboot-if-needed.timer` reboots on Sundays at 09:30 UTC only when an installed update needs it; the stack starts again at boot without a release.
+Both wait up to an hour for the release lock, so neither restarts Docker under a release step, and a release step tried meanwhile is refused (try again later); the reboot is skipped, until the next Sunday, while a release holds its lease.
 To see what happened, in a Session Manager shell: `journalctl -u dnf-automatic` and `journalctl -u comp-reboot-if-needed`.
 Comp itself is patched by releasing a newer commit; the `cloudflared` image by bumping its digest in `deploy/server/compose.yaml` (README, The cloudflared image) and releasing.
 
@@ -90,7 +111,7 @@ Comp itself is patched by releasing a newer commit; the `cloudflared` image by b
 deploy/server/release.sh prune
 ```
 
-Run it when `status` shows the disk of `/` above about 70% full.
+A release prunes by itself when `/` ends above 70% used, and `status` prints a `WARNING` line above 70%; run `prune` when it does.
 It lists what it keeps (the serving tag, the 3 most recent other ok tags, the default rollback target, every image a container uses, the pinned `cloudflared` image) and what it would remove, then asks for the typed word `prune`.
 
 ## Changing a secret

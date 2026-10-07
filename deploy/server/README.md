@@ -14,11 +14,11 @@ The runbook, from an empty account to the acceptance checks, is `docs/self-hosti
 | `render-env.sh` | Writes `/opt/comp/env/<service>.env` from the secret and the public files |
 | `push-secrets.ts`, `secrets/*.ts` | Runs on a laptop: builds `comp/production/config` from the operator's env files (runbook step 5); `bun test` in `deploy/server` runs its tests |
 | `provision.sh`, `lib/provision-*.sh` | Creates the AWS resources of the server, one confirmed command at a time (see Provisioning) |
-| `release.sh`, `lib/release-*.sh` | Runs on a laptop: release, rollback, migrate, Trigger.dev deploy, status, logs and prune, through SSM Run Command (see Releasing) |
+| `release.sh`, `lib/release-*.sh` | Runs on a laptop: release, rollback, migrate, Trigger.dev deploy, status, logs, prune and unlock, through SSM Run Command (see Releasing) |
 | `on-server/*.sh`, `lib/server-*.sh` | The server side of `release.sh`, run as root by SSM |
 | `user-data.sh` | First-boot setup of the instance: Docker, the compose and buildx plugins, updates, swap, the unhealthy-container timer, the checkout |
-| `tests/*.test.sh` | Bash tests with a stubbed `aws`; run each with `bash deploy/server/tests/<name>.test.sh` |
-| `tests/fake_*.py`, `tests/fake_git.sh` | Stateful fakes of `aws` (it runs SSM commands locally), `docker`, `git`, `curl` and `flock` |
+| `tests/*.test.sh`, `tests/README.md` | Bash tests with a stubbed `aws`; run each with `bash deploy/server/tests/<name>.test.sh` (the list is in `tests/README.md`) |
+| `tests/fake_*.py`, `tests/fake_git.sh` | Stateful fakes of `aws` (it runs SSM commands locally), `docker`, `git`, `curl` and `flock`; `aws` and `curl` can deliver a signal, as a Ctrl-C would |
 | `tests/tty_run.py` | Runs a script with a pseudo-terminal to type answers into, or with no terminal at all |
 
 ## The stack
@@ -107,11 +107,10 @@ The lists follow the parked AWS design (`deploy/aws/secret-keys.ts` and `unset-k
 - app only: `AUTH_SECRET` (from `SECRET_KEY`), `GOOGLE_GENERATIVE_AI_API_KEY`, `REVALIDATION_SECRET`, `TRIGGER_SECRET_KEY` (from `TRIGGER_SECRET_KEY_APP`).
 - portal only: `SERVICE_TOKEN_PORTAL`.
 - cloudflared: `TUNNEL_TOKEN`.
-
-The app and portal never receive `INTERNAL_API_TOKEN`.
 - migrate (one-off, profile `tools`): `DATABASE_URL` (from `DATABASE_MIGRATION_URL`).
 - trigger (one-off, profile `tools`): `TRIGGER_ACCESS_TOKEN`, `TRIGGER_PROJECT_REF_API`, `TRIGGER_PROJECT_REF_APP`.
 
+The app and portal never receive `INTERNAL_API_TOKEN`.
 No container of the stack reads `DATABASE_MIGRATION_URL`, `TRIGGER_ACCESS_TOKEN` or the `TRIGGER_PROJECT_REF_*` keys; only the one-off tools containers do.
 
 ## Connection budget
@@ -190,9 +189,11 @@ cloud-init runs `user-data.sh` once, as root (`sudo cloud-init status --long` re
   To bump one, change its version and checksum together, taking the checksum from the release's `checksums.txt`.
 - dnf-automatic applies security updates every day at 09:00 UTC and only then (a drop-in replaces the packaged schedule and removes its random delay and its catch-up run at boot, so after downtime the next 09:00 run catches up); `/etc/dnf/vars/releasever` is `latest`, because Amazon Linux 2023 otherwise stays on the AMI's release and finds no updates.
   Docker and containerd are patched too: an update restarts the Docker daemon, which briefly stops the containers, and they come back by themselves (`restart: unless-stopped`).
+  A drop-in (`dnf-automatic.service.d/comp-release-lock.conf`) runs the packaged command under the release lock, `flock -w 3600 /opt/comp/release.lock`, so an update waits up to an hour for a release step instead of restarting Docker under it; `user-data.sh` copies the packaged `ExecStart` and stops if it is not one line.
 - `comp-reboot-if-needed.timer` runs every Sunday at 09:30 UTC, ordered after any running update: it reboots only when `needs-restarting -r` reports that installed updates (a kernel, glibc, systemd) need it, and logs either way (`journalctl -u comp-reboot-if-needed`).
   Docker is enabled at boot and every container is `restart: unless-stopped`, so the stack comes back after the reboot without a release.
   A missed window (the server was off) is not caught up at boot.
+  It also runs under the release lock, and skips the reboot (saying so in its journal) while a release holds its lease between steps.
 - An 8 GiB swap file, `/swapfile`, for image builds (the containers themselves never swap).
 - `comp-restart-unhealthy.timer` (see The stack).
 - A clone of `https://github.com/revola-ai/comp` in `/opt/comp/src`.
@@ -211,21 +212,23 @@ deploy/server/release.sh status                            # tags, containers, l
 deploy/server/release.sh logs <service>                    # prints the aws logs tail command
 deploy/server/release.sh logs --release <log>              # the last 500 lines of a step's log
 deploy/server/release.sh prune                             # remove old images (type: prune)
+deploy/server/release.sh unlock                            # free a lease a stopped run left (type: unlock)
 ```
 
 It refuses other accounts and an `AWS_REGION` or `AWS_DEFAULT_REGION` other than `us-east-2`, and works on the one running instance named `comp-server`.
-`migrate`, `trigger` and `prune` read their typed word from the terminal (`/dev/tty`), never from stdin, and refuse before any AWS call without one; `release` and `rollback` ask nothing (running them is the decision) but print what they will do first.
+`migrate`, `trigger`, `prune` and `unlock` read their typed word from the terminal (`/dev/tty`), never from stdin, and refuse before any AWS call without one; `release` and `rollback` ask nothing (running them is the decision) but print what they will do first.
 It never uses SSH: every server step is one SSM Run Command (`AWS-RunShellScript`, an explicit execution timeout, 600 seconds for delivery) that runs as root.
 The command's text is `lib/server-common.sh` with `on-server/entry.sh` (or `on-server/status.sh`), so it works whatever the server's checkout holds; the work itself runs from `deploy/server/on-server/` of the checkout in `/opt/comp/src`.
 SSM parameters carry names, tags and SHAs only: the server reads the secret itself (`render-env.sh`) and no value appears in a command line, an SSM parameter, a log name or this script's output.
 
-A `<sha>` is 12 or 40 hex characters and must be on a branch of `origin` (`release.sh` runs `git fetch --prune origin`, then `git branch -r --contains`, so a deleted branch does not count), because the server fetches it from GitHub; anything else is refused before any AWS call; its first 12 characters are the image tag.
+A `<sha>` is 12 or 40 hex characters and must be on a branch of the fork `revola-ai/comp`, because the server fetches it from there; anything else is refused before any AWS call, and its first 12 characters are the image tag.
+`release.sh` decides this against the fork's URL, never a remote name (in a checkout of upstream, `origin` is `trycompai/comp`): it fetches `https://github.com/revola-ai/comp` with `--prune` into `refs/comp-release/*` and needs a ref there to contain the SHA, so a deleted branch does not count; push with `git push revola <branch>`.
 
 Every step that may change something, on the server:
 
-- takes the server lock (`flock` on `/opt/comp/release.lock`, never waiting): release, rollback, migrate, trigger and prune run one at a time, and a second caller fails at once;
+- takes the server lock (`flock` on `/opt/comp/release.lock`, never waiting): release, rollback, migrate, trigger, prune and unlock run one at a time, a second caller fails at once, and the security updates and the reboot check wait for it (First boot);
 - holds, for a release or rollback, a lease (`/opt/comp/release.lease`, 20 minutes) between bringing the tag up and recording it (while the laptop runs the smoke checks), so nothing starts in between; an expired lease is ignored;
-- with a SHA, fetches every branch of `origin` into `/opt/comp/src`, refuses local changes there and checks the SHA out detached under umask 022, then makes the checkout (not `.git`, never through a symlink) world-readable so the images' `node` user can read what BuildKit copies;
+- with a SHA, fetches every branch of `https://github.com/revola-ai/comp` (by URL) into `/opt/comp/src`, refuses local changes there and checks the SHA out detached under umask 022, then makes the checkout (not `.git`, never through a symlink) world-readable so the images' `node` user can read what BuildKit copies;
 - writes its full output to `/opt/comp/logs/<utc>-<step>-<sha12>.log` (0600 in a 0700 directory); `release.sh` prints the last 200 lines (at most 20,000 bytes, because SSM keeps 24,000 characters) and the log's path.
   When the output still arrives cut short, it says so and prints the `logs --release` command that fetches the full log in pages.
 - adds one line per attempt to `/opt/comp/releases.log`, `<utc> <action> <sha12> <ok|failed|rolled-back>`; the current tag is the top of the serving history (see rollback).
@@ -235,14 +238,22 @@ Every step that may change something, on the server:
 1. Builds `comp-api`, `comp-app`, `comp-portal` and the tools image `comp-migrate` at the tag, one at a time with `docker buildx bake -f deploy/aws/docker-bake.hcl --load <target>`, skipping images that exist, then renders the env files (`render-env.sh`).
 2. Runs `prisma migrate status` in the tools image against `DATABASE_MIGRATION_URL`.
    Pending or failed migrations, or a status it cannot read, stop the release before any container changes; it prints the list and the `release.sh migrate <sha12>` command.
+   Migrations in the database that the commit lacks ("not found locally" in Prisma's output) stop it too: release a commit that includes them.
+   Prisma 7.6 reports a database that is only ahead, with nothing of the commit missing there, as up to date, so that release goes ahead like a rollback.
 3. `docker compose up -d --no-build --wait --wait-timeout 600` with the new tag (the release's checkout of `compose.yaml`).
 4. From the laptop: `https://api.comp.revola.ai/v1/health/ready`, `https://app.comp.revola.ai/api/health/live` and `https://portal.comp.revola.ai/api/health` must answer 200, and `https://app.comp.revola.ai/` a 302 to `<team>.cloudflareaccess.com` (Access is on); each is retried every 5 seconds, 24 times (about 2 minutes); then it is recorded `ok`.
+   When `/` is then more than 70% used, the server removes old images by the rules of `prune` (below), without asking, and prints what it removed.
 
 A failure after the containers changed (health or smoke) brings the previous `ok` tag back up the same way, smoke-checks it, and says which tag serves; the attempt is recorded `rolled-back`.
+When the release was of the tag that already serves, only the env files changed (re-rendered from the secret), so it says a change in `comp/production/config` is the likely cause.
 After a first release there is nothing to go back to: the failed stack is stopped, the attempt recorded `failed`, and `release.sh` says the site is down.
 A refused release changes no container but leaves `/opt/comp/src` at the new SHA: after a build failure the env files are still those of the previous render, after a migration-gate refusal they are re-rendered from the new SHA.
 When SSM reports the up step timed out, cancelled, undeliverable or terminated, or its output lacks the end marker, `release.sh` says the serving state is unknown and prints `deploy/server/release.sh status`.
-If the laptop is interrupted after the new tag came up, it keeps serving unrecorded; `status` shows the running images next to the recorded tag, and rerunning `release <sha>` (nothing to build) records it.
+Interrupted (Ctrl-C, `SIGTERM`, a closed terminal), `release.sh` cleans up before it exits.
+Before a release or rollback sent its up step, it cancels the SSM command in flight (`aws ssm cancel-command`) and says nothing changed only when the server confirms it; otherwise it says the state is unknown and prints the `status` command.
+Once the up step was sent it never cancels a step (the up step may be replacing containers): it waits for the step in flight to end, then runs the revert step, which brings the previous tag back (or stops the stack after a first release), and reports what serves; a release already recorded stays released.
+A second interrupt leaves at once.
+A laptop that stops without a signal (sleep, a dropped network) leaves the lease for up to 20 minutes, and the tag it brought up serving unrecorded: free the lease with `unlock`, then release the SHA that should serve.
 
 ### rollback
 
@@ -268,31 +279,21 @@ The tasks' own env vars are set in the Trigger.dev dashboard (each project, Envi
 
 ### status, logs
 
-`status` prints the current and previous tags, a lease if one is held, every container of the `comp` project with its image and health, the last 10 lines of `releases.log` and the disk use of `/`; it takes no lock and changes nothing.
+`status` prints the current and previous tags, a lease if one is held, every container of the `comp` project with its image and health, the last 10 lines of `releases.log` and the disk use of `/`, with a `WARNING` line when it is above 70%; it takes no lock and changes nothing.
 `logs <service>` prints `aws logs tail /comp/<service> --follow --region us-east-2` (it does not run it; the tools containers log to `/comp/api`), and `logs --release <log>` fetches the last 500 lines of a step's log, by name or as `/opt/comp/logs/<name>`, in pages of 15,000 bytes.
 
 ### prune
 
 `prune` lists what it keeps and what it would remove, then asks for the typed word `prune`; it keeps the images of the current tag, the 3 most recent other `ok` tags and the default rollback target (`rollback` needs them), the image of every container of the `comp` project, running or stopped, and the pinned `cloudflared` image, which is never a candidate (only `comp-api`, `comp-app`, `comp-portal` and `comp-migrate` images are removed), so it stays even when its container is gone.
 It then trims the build cache to 20 GB (`docker builder prune --keep-storage 20GB -f`) and never runs `docker image prune`, which can delete the digest-pinned `cloudflared` image (Docker lists it untagged).
+A release does the same by itself, without asking, when `/` is more than 70% used after it is recorded (`prune.sh auto`); a failure there leaves the release standing and says so.
+
+### unlock
+
+`unlock` shows the lease a release or rollback holds between its steps (its run, what it is, how long ago it was taken and how long it has left) and, after the typed word `unlock`, removes it.
+The unlock step runs under that run's id, so the server removes exactly the lease shown, and it holds the server lock, so it is refused while any step (of that run or another) still runs; it records `<action> <sha12> unlocked` and changes no container.
+Use it only when that run's `release.sh` has stopped: a run still in its smoke checks could no longer record or revert its release.
 
 ## Tests
 
-```bash
-bash deploy/server/tests/render-env.test.sh   # key sets, modes, refusals, no value in output
-bash deploy/server/tests/render-env-refusals.test.sh   # malformed secret or env files refused by name
-bash deploy/server/tests/compose.test.sh      # docker compose config validates; stack shape
-bash deploy/server/tests/provision.test.sh    # declined, confirmed and second runs; exact commands
-bash deploy/server/tests/provision-failures.test.sh   # refusals, partial and drifted accounts, aws errors
-bash deploy/server/tests/user-data.test.sh    # size limit, checksums, version gates, updates
-bash deploy/server/tests/user-data-units.test.sh   # restarter, reboot check, update window
-bash deploy/server/tests/release.test.sh      # pushed check, exact calls, migration gate, rollback on failure
-bash deploy/server/tests/rollback.test.sh     # rollback, lock, lease, account checks, status, logs
-bash deploy/server/tests/release-ops.test.sh  # migrate, trigger and prune with typed confirmations
-(cd deploy/server && bun test)                # push-secrets: sources, refusals, diff, create or put, terminal
-```
-
-The render-env tests stub `aws` with a fake secret; the provision tests use the stateful fake `tests/fake_aws.py` and type their answers into a pseudo-terminal (`tests/tty_run.py`); the user-data tests source the script and stub `curl`, `docker` and the system tools, so nothing is installed or fetched.
-The release tests run laptop and server in one sandbox: the fake `aws` runs each SSM command locally with `COMP_ROOT` pointing at a temporary `/opt/comp`, and `docker`, `git`, `curl` and `flock` are fakes, so nothing is built, fetched or started.
-`compose.test.sh` needs Docker and Bun (it compares build arguments with `deploy/aws/public-env.ts`) and starts no container; the provision and user-data tests need `shellcheck` and `python3`.
-The push-secrets tests run it as a separate process with `aws` on `PATH` being `secrets/testing/fake-aws.ts` and answers typed into a pseudo-terminal (`tests/tty_run.py`), over fixture env files in temporary checkouts, so nothing reaches AWS or a real env file.
+The suites, how to run them and what they fake are in `tests/README.md`.
