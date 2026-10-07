@@ -131,13 +131,13 @@ if problems:
 
 for service, (lines, secret_count) in rendered.items():
     target = os.path.join(out_dir, f'{service}.env')
+    # mkstemp creates the file 0600, so it is never readable by others, even before the rename.
     descriptor, temporary = tempfile.mkstemp(prefix=f'.{service}.', dir=out_dir)
     try:
         with os.fdopen(descriptor, 'w') as handle:
             handle.write('\n'.join(lines) + '\n')
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(temporary, 0o600)
         os.replace(temporary, target)
     except BaseException:
         os.unlink(temporary)

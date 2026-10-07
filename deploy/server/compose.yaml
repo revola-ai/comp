@@ -3,9 +3,11 @@
 # cloudflared, which carries app/portal/api.comp.revola.ai in from Cloudflare. No port is
 # published; the only way in is the tunnel.
 #
-#   TAG=<12-character git sha> docker compose -f deploy/server/compose.yaml build api
-#   TAG=<12-character git sha> docker compose -f deploy/server/compose.yaml up -d --no-build
+#   sudo env TAG=<12-character git sha> docker compose -f deploy/server/compose.yaml build api
+#   sudo env TAG=<12-character git sha> docker compose -f deploy/server/compose.yaml up -d --no-build
 #
+# Run every compose command as root, in that form: the compose CLI reads env_file itself, and
+# the env files are 0600 root in a 0700 directory; `sudo` drops TAG, hence `sudo env TAG=...`.
 # Env files come from deploy/server/render-env.sh (default /opt/comp/env; COMP_ENV_DIR
 # overrides it for tests). They hold secrets: inspect this file's resolved form with
 # `docker compose config --no-env-resolution`, never plain `config`.

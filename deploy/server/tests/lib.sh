@@ -46,7 +46,8 @@ finish() {
 
 fake_value() { printf 'fakesecret-%s-value' "$1"; }
 
-# write_fixture <file> [--drop KEY] [--set KEY VALUE]...: the secret JSON the aws stub returns.
+# write_fixture <file> [--drop KEY] [--set KEY VALUE] [--set-json KEY JSON]...: the secret JSON
+# the aws stub returns; --set-json gives a raw JSON value (a number, an escaped NUL).
 write_fixture() {
   local file="$1"
   shift
@@ -65,6 +66,9 @@ while i < len(edits):
         i += 2
     elif edits[i] == '--set':
         secret[edits[i + 1]] = edits[i + 2]
+        i += 3
+    elif edits[i] == '--set-json':
+        secret[edits[i + 1]] = json.loads(edits[i + 2])
         i += 3
     else:
         raise SystemExit(f'unknown fixture edit {edits[i]}')
@@ -89,9 +93,25 @@ SH
   export PATH="$TMP/bin:$PATH" AWS_STUB_LOG="$TMP/aws.log" AWS_STUB_SECRET="$TMP/secret.json"
 }
 
-# render <out-dir> <output-file>: runs render-env.sh; stdout and stderr go to <output-file>.
+# render <out-dir> <output-file>: runs $RENDER_SCRIPT (default the committed render-env.sh);
+# stdout and stderr go to <output-file>.
+RENDER_SCRIPT="$SERVER_DIR/render-env.sh"
 render() {
-  bash "$SERVER_DIR/render-env.sh" --out-dir "$1" >"$2" 2>&1
+  bash "$RENDER_SCRIPT" --out-dir "$1" >"$2" 2>&1
+}
+
+# refuses <label> <expected-message> [fixture edits...]: the render fails, names the problem,
+# writes no env file and prints no value.
+refuses() {
+  local label="$1" message="$2" out="$TMP/refused-$1" status
+  shift 2
+  write_fixture "$TMP/secret.json" "$@"
+  render "$out" "$TMP/$label.log"
+  status=$?
+  check "$label: exits non-zero" test "$status" -ne 0
+  check "$label: names the problem" grep -qF -- "$message" "$TMP/$label.log"
+  check "$label: writes no env file" bash -c "! ls '$out'/*.env >/dev/null 2>&1"
+  check "$label: prints no value" bash -c "! grep -q fakesecret '$TMP/$label.log'"
 }
 
 value_of() { # value_of <env-file> <name>: the value after the first "=", verbatim

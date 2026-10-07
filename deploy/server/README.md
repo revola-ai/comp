@@ -23,6 +23,14 @@ This file describes the stack and its configuration; the operator runbook is add
 | `cloudflared` | `cloudflare/cloudflared`, pinned by digest | none | none (distroless image) | 256 MiB | `/comp/cloudflared` |
 
 `TAG` is the 12-character git SHA of the release; compose refuses to run without it.
+Every compose command runs as root, because the compose CLI reads the env files itself and they are 0600 root in a 0700 directory.
+`sudo` drops `TAG` from the environment, so the form is always:
+
+```bash
+sudo env TAG=<sha> docker compose -f deploy/server/compose.yaml build api
+sudo env TAG=<sha> docker compose -f deploy/server/compose.yaml up -d --no-build
+```
+
 The three Comp images are built on the server from the repository root (`docker compose build <service>`, one at a time) and never pulled (`pull_policy: never`), so `docker compose up -d --no-build` with a tag that was never built fails instead of building whatever is checked out.
 The `NEXT_PUBLIC_*` build arguments of `app` and `portal` equal `deploy/aws/public-env.ts` (`tests/compose.test.sh` checks).
 
@@ -34,7 +42,7 @@ Every container drops all capabilities and runs with `no-new-privileges`.
 
 ### Network
 
-All four containers share one bridge network, `comp_comp`, with the fixed subnet `172.30.0.0/24` (clear of the VPC and of Docker's default `172.17.0.0/16`).
+All four containers share one bridge network, `comp_comp`, with the fixed subnet `172.30.0.0/24` (clear of the VPC `vpc-06b67bec700b38a10`, `10.0.0.0/16`, and of Docker's default `172.17.0.0/16`).
 No port is published, and the instance's security group has no inbound rule: the only way in is the tunnel.
 The network is not `internal: true`, because the containers need outbound access (Supabase, Upstash, Resend, model providers, Cloudflare's edge).
 
@@ -51,7 +59,8 @@ It runs in `non-blocking` mode with a 4 MB buffer: a CloudWatch outage drops log
 ### The cloudflared image
 
 Cloudflare publishes `cloudflared` only on Docker Hub (not on ECR Public or GHCR, checked 2026-10-07), so the image comes from `docker.io`, pinned by the digest of its multi-architecture index (`2026.10.0`).
-The server pulls it once per pin change, which stays far inside Docker Hub's anonymous pull limit even though the NAT gateway's address is shared.
+The server pulls it only on first provision or a digest bump and keeps it cached (pruning never removes it), which stays far inside Docker Hub's anonymous pull limit even though the NAT gateway's address is shared.
+If a pull is ever rate-limited, wait and rerun.
 To update it, read the new index digest without pulling (`docker buildx imagetools inspect docker.io/cloudflare/cloudflared:<version>`) and change the tag and digest in `compose.yaml` together.
 The image's entrypoint is `cloudflared --no-autoupdate`; the stack runs `tunnel run`, which reads `TUNNEL_TOKEN` from `cloudflared.env`.
 
@@ -66,6 +75,8 @@ sudo deploy/server/render-env.sh            # writes /opt/comp/env/<service>.env
 It reads the Secrets Manager secret `comp/production/config` (one JSON object) in `us-east-2` with the instance profile and, for each `env/<service>.keys`, writes `/opt/comp/env/<service>.env` (mode 0600 in a 0700 directory) with exactly the listed keys followed by the lines of `env/<service>.public.env`.
 It checks every service before writing any file, and refuses by name a listed key that is missing from the secret, empty, not a string or containing a line break; on a refusal the previous files stay as they were.
 It never prints a value, never passes one as a command-line argument and writes each file through a temporary file in the same directory.
+Writes are atomic per file, not per run: an IO failure partway through can leave some files from the new secret and some from the old, so rerun `render-env.sh` until it succeeds before any `up`.
+Env files of a service removed from `env/` are not deleted; remove them by hand.
 `--out-dir DIR` writes elsewhere (the tests use it); compose reads `COMP_ENV_DIR` (default `/opt/comp/env`).
 
 A `.keys` line is a key name, or `NAME from KEY` when the container variable differs from the key in the secret (the app's `AUTH_SECRET from SECRET_KEY`, and each project's `TRIGGER_SECRET_KEY`).
@@ -124,7 +135,8 @@ Two inputs are assumptions until confirmed: the pool size of 40 (the real value 
 
 ```bash
 bash deploy/server/tests/render-env.test.sh   # key sets, modes, refusals, no value in output
+bash deploy/server/tests/render-env-refusals.test.sh   # malformed secret or env files refused by name
 bash deploy/server/tests/compose.test.sh      # docker compose config validates; stack shape
 ```
 
-Both stub `aws` with a fake secret; `compose.test.sh` needs Docker and Bun (it compares build arguments with `deploy/aws/public-env.ts`) and starts no container.
+All stub `aws` with a fake secret; `compose.test.sh` needs Docker and Bun (it compares build arguments with `deploy/aws/public-env.ts`) and starts no container.
