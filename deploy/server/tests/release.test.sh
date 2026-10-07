@@ -124,7 +124,7 @@ check "release again: builds nothing already built" bash -c "! grep -q 'buildx b
 check "release again: a new run id (random suffix)" test "$(ssm_call 3 args | cut -d' ' -f2)" != "$run_one"
 
 # ---------------------------------------------------------------- the migration gate
-for state in pending failed unreachable; do
+for state in pending failed ahead unreachable; do
   reset_server
   released "$TAG_A"
   docker_state "s['migrations'] = '$state'"
@@ -142,7 +142,11 @@ check "gate pending: lists the pending migration" grep -qF 20261001000000_add_wi
 check "gate pending: prints the migrate command" grep -qF "deploy/server/release.sh migrate $TAG_B" "$TMP/gate-pending.out"
 check "gate failed: says a migration failed" grep -qiF "failed migration" "$TMP/gate-failed.out"
 check "gate unreachable: says the status is unknown" grep -qF "could not read the migration status" "$TMP/gate-unreachable.out"
-no_secret "gate" "$TMP/gate-pending.out" "$TMP/gate-failed.out" "$TMP/gate-unreachable.out"
+check "gate ahead: says the database has migrations this commit lacks" grep -qF \
+  "the database has migrations this commit lacks; release a commit that includes them" "$TMP/gate-ahead.out"
+check "gate ahead: never suggests migrate" bash -c "! grep -qF 'release.sh migrate' '$TMP/gate-ahead.out'"
+check "gate ahead: never calls it pending" bash -c "! grep -qF 'the database lacks migrations' '$TMP/gate-ahead.out'"
+no_secret "gate" "$TMP/gate-pending.out" "$TMP/gate-failed.out" "$TMP/gate-ahead.out" "$TMP/gate-unreachable.out"
 
 reset_server
 released "$TAG_A"
@@ -226,6 +230,15 @@ released "$TAG_A"
 FAKE_CURL_NO_ACCESS=1 release_sh "$TMP/access.out" release "$SHA_B"
 check "Access off: the release is rolled back" test "$(last_record)" = "release $TAG_B rolled-back"
 check "Access off: says the app is not behind Access" grep -qF "cloudflareaccess.com" "$TMP/access.out"
+
+reset_server
+released "$TAG_A"
+FAKE_CURL_BAD_TAG="$TAG_A" release_sh "$TMP/same.out" release "$SHA_A"
+check "re-release of the serving tag fails smoke: exits non-zero" test "$?" -ne 0
+check "re-release of the serving tag fails smoke: no 'X is serving again; X is not'" \
+  bash -c "! grep -qF '$TAG_A is serving again; $TAG_A is not' '$TMP/same.out' && ! grep -qF '$TAG_A is not released' '$TMP/same.out'"
+check "re-release of the serving tag fails smoke: blames the re-rendered env files (the secret)" \
+  grep -qF "only the env files changed, re-rendered from comp/production/config: a change in the secret is the likely cause" "$TMP/same.out"
 
 reset_server
 FAKE_DOCKER_FAIL_UP="$TAG_B" release_sh "$TMP/first.out" release "$SHA_B"

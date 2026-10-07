@@ -48,6 +48,13 @@ def timed_out(args: argparse.Namespace, group: int) -> int:
     return TIMED_OUT
 
 
+def write_all(fd: int, data: bytes) -> None:
+    """os.write may write only part of its data; writes until all of it is written."""
+    view = memoryview(data)
+    while view:
+        view = view[os.write(fd, view):]
+
+
 def run_without_tty(args: argparse.Namespace) -> int:
     with open(args.out, 'wb') as out:
         child = subprocess.Popen(args.command, stdin=subprocess.PIPE, stdout=out,
@@ -75,9 +82,9 @@ def run_with_tty(args: argparse.Namespace, typed: str) -> int:
         os.chdir(args.cwd)
         os.execvp(args.command[0], args.command)
     os.close(stdin_read)
-    os.write(stdin_write, args.stdin.encode())
+    write_all(stdin_write, args.stdin.encode())
     os.close(stdin_write)
-    os.write(master, typed.encode() + EOF)
+    write_all(master, typed.encode() + EOF)
     deadline = time.monotonic() + TIMEOUT_SECONDS
     while True:  # drain the terminal (the echo of the typed text) until the command exits
         finished, status = os.waitpid(pid, os.WNOHANG)

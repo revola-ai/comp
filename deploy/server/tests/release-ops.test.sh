@@ -82,6 +82,14 @@ check "migrate, a failed migration: never asks" bash -c "! grep -qF 'Type migrat
 check "migrate, a failed migration: never deploys" bash -c "! grep -q 'migrate deploy' '$FAKE_DOCKER_LOG'"
 
 reset_server
+released "$TAG_A"
+docker_state "s['migrations'] = 'ahead'"
+release_typed "migrate" "$TMP/ahead.out" migrate "$SHA_B"
+check "migrate, the database is ahead of the commit: refused" test "$?" -ne 0
+check "migrate, the database is ahead of the commit: never asks" bash -c "! grep -qF 'Type migrate' '$TMP/ahead.out'"
+check "migrate, the database is ahead of the commit: never deploys" bash -c "! grep -q 'migrate deploy' '$FAKE_DOCKER_LOG'"
+
+reset_server
 release_typed "migrate" "$TMP/unpushed.out" migrate "$SHA_C"
 check "migrate <unpushed>: refused before any AWS call" test ! -s "$FAKE_AWS_LOG"
 

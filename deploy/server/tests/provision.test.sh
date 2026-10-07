@@ -39,7 +39,8 @@ check "declined: no AMI lookup for an instance it cannot launch" \
 
 # ---------------------------------------------------------------- fresh account, all confirmed
 rm -f "$FAKE_AWS_STATE"
-before="$(cd "$ROOT" && git status --porcelain)"
+# Only deploy/server: another session writing elsewhere in the checkout must not fail this.
+before="$(cd "$ROOT" && git status --porcelain -- deploy/server)"
 HOME="$TMP/home" provision "$(lines_of yes 40)" "$TMP/yes.out" --alert-email "$TEST_EMAIL"
 status=$?
 cp -f "$FAKE_AWS_LOG" "$TMP/yes.log"
@@ -108,9 +109,21 @@ check "confirmed: reminds to confirm the subscription email" \
   grep -qF "click the confirmation link in the email sent to $TEST_EMAIL" "$TMP/yes.out"
 check "confirmed: says how to reach the server" \
   grep -qF "aws ssm start-session --target i-0fake000000000000 --region us-east-2" "$TMP/yes.out"
+check "tty_run writes all of a short-written input" python3 - "$SERVER_DIR/tests/tty_run.py" <<'PY'
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location('tty_run', sys.argv[1])
+tty_run = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(tty_run)
+real_write = os.write
+os.write = lambda fd, data: real_write(fd, bytes(data[:3]))  # at most 3 bytes per call
+read_end, write_end = os.pipe()
+tty_run.write_all(write_end, b'yes\nyes\nno\n')
+os.close(write_end)
+sys.exit(os.read(read_end, 100) != b'yes\nyes\nno\n')
+PY
 check "confirmed: writes no file in the working directory" test -z "$(ls -A "$TMP/cwd")"
 check "confirmed: writes no file in HOME" bash -c "! test -e '$TMP/home' || test -z \"\$(ls -A '$TMP/home')\""
-check "confirmed: changes nothing in the repository" test "$(cd "$ROOT" && git status --porcelain)" = "$before"
+check "confirmed: changes nothing in deploy/server" test "$(cd "$ROOT" && git status --porcelain -- deploy/server)" = "$before"
 
 # ---------------------------------------------------------------- piped answers never count
 cp -f "$FAKE_AWS_STATE" "$TMP/provisioned-state.json"

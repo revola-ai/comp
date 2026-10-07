@@ -47,6 +47,11 @@ after_restore() {
   STAGE=done
   serving="$(result_of serving)"
   case "$REMOTE_CODE:$serving" in
+    4:"$TAG")
+      echo "$TAG was already serving, so only the env files changed, re-rendered from comp/production/config: a change in the secret is the likely cause."
+      echo "It serves with those env files now; fix the secret (deploy/server/push-secrets.ts), then release $TAG again."
+      smoke "$serving" || echo "Its smoke checks still fail: the site may be down (deploy/server/release.sh status)."
+      ;;
     4:?*)
       if smoke "$serving"; then
         echo "Now serving $serving (it passes the smoke checks); $TAG is not released."

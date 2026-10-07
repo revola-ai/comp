@@ -57,7 +57,11 @@ restore() {
   if up_wait "$previous"; then
     record "$action" "$tag" rolled-back
     result "serving=$previous"
-    echo "$previous is serving again; $tag is not."
+    if [[ "$previous" == "$tag" ]]; then
+      echo "$tag was already serving: only the env files changed, re-rendered from comp/production/config: a change in the secret is the likely cause."
+    else
+      echo "$previous is serving again; $tag is not."
+    fi
     return 4
   fi
   record "$action" "$tag" failed
@@ -99,6 +103,7 @@ case "$step" in
       case "$MIGRATIONS" in
         up-to-date) ;;
         pending) failed_before_change 3 "REFUSING: the database lacks migrations of $tag (listed above). Apply them first: deploy/server/release.sh migrate $tag" ;;
+        ahead) failed_before_change 3 "REFUSING: the database has migrations this commit lacks; release a commit that includes them (listed above)." ;;
         failed) failed_before_change 3 "REFUSING: the database has a failed migration (above). Resolve it by hand (prisma migrate resolve), then deploy/server/release.sh migrate $tag" ;;
         *) failed_before_change 3 "REFUSING: could not read the migration status (above)." ;;
       esac

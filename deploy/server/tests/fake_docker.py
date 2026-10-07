@@ -7,7 +7,8 @@ $FAKE_DOCKER_STATE and appends every call to $FAKE_DOCKER_LOG as
 "[TAG=<TAG>] [REGISTRY=<REGISTRY>] docker <argv, shell-quoted>".
 
 State: images (refs, "comp-api:<tag>"), containers ({service: image ref} of the comp
-project), migrations ("up-to-date", "pending", "failed" or "unreachable").
+project), migrations ("up-to-date", "pending", "failed", "ahead" (the database has a migration
+this checkout lacks: Prisma 7.6's historiesDiverge output) or "unreachable").
 Knobs (environment):
   FAKE_DOCKER_FAIL_UP       `compose up` with this TAG replaces the containers, then fails
   FAKE_DOCKER_FAIL_BUILD    `buildx bake` of this target fails
@@ -152,6 +153,12 @@ def migrate(command: str, env: dict[str, str]) -> NoReturn:
                  'To apply migrations in production run prisma migrate deploy.', 1)
         if status == 'failed':
             done('Following migration have failed:\n20261001000000_add_widget', 1)
+        if status == 'ahead':
+            done('Your local migration history and the migrations table from your database are different:\n\n'
+                 'The last common migration is: 20260901000000_init\n\n'
+                 'The migration have not yet been applied:\n20261001000000_add_widget\n\n'
+                 'The migration from the database are not found locally in prisma/migrations:\n'
+                 '20261005000000_newer_widget', 1)
         done('Database schema is up to date!')
     if command.endswith('prisma migrate deploy'):
         if env.get('COMP_I_AM_TOUCHING_PROD') != '1':

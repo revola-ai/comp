@@ -67,8 +67,11 @@ build_images() {
 }
 
 # migration_status <tag>: runs `prisma migrate status` in comp-migrate:<tag> against the
-# migration URL, prints its output and sets MIGRATIONS to up-to-date, pending, failed or
-# unknown (it could not tell: the database was unreachable or Prisma failed otherwise).
+# migration URL, prints its output and sets MIGRATIONS to up-to-date, pending, failed, ahead
+# (the database has migrations this checkout lacks, which Prisma reports as "not found locally";
+# checked before pending, because a diverged history lists both) or unknown (it could not
+# tell: the database was unreachable or Prisma failed otherwise). Prisma 7.6 reports a database
+# that is only ahead (no local migration missing there) as up to date, like a rollback.
 migration_status() {
   local output status=0
   echo "== prisma migrate status (comp-migrate:$1)"
@@ -78,6 +81,8 @@ migration_status() {
     MIGRATIONS=up-to-date
   elif [[ "$output" == *"have failed"* ]]; then
     MIGRATIONS=failed
+  elif [[ "$output" == *"from the database are not found locally"* ]]; then
+    MIGRATIONS=ahead
   elif [[ "$output" == *"have not yet been applied"* ]]; then
     MIGRATIONS=pending
   else
