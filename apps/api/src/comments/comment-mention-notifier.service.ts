@@ -8,12 +8,14 @@ import { NovuService } from '../notifications/novu.service';
 import { appLink } from '../utils/public-url';
 import { CommentEntityType } from '@db';
 
-/** Origins a client-supplied context URL may point at: this deployment only. */
+/**
+ * Origins a client-supplied context URL may point at: this deployment's app only
+ * (never BETTER_AUTH_URL, the API host in this fork).
+ */
 function getAllowedOrigins(): string[] {
-  const candidates = [
-    process.env.NEXT_PUBLIC_APP_URL,
-    process.env.BETTER_AUTH_URL,
-  ].filter(Boolean) as string[];
+  const candidates = [process.env.NEXT_PUBLIC_APP_URL].filter(
+    (value): value is string => Boolean(value),
+  );
 
   const origins = new Set<string>();
   for (const candidate of candidates) {

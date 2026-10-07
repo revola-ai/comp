@@ -31,12 +31,16 @@ describe('public URLs for links in emails and notifications', () => {
     }
   });
 
-  it('uses NEXT_PUBLIC_APP_URL, then BETTER_AUTH_URL, trimmed and without a trailing slash', () => {
+  it('uses NEXT_PUBLIC_APP_URL, trimmed and without a trailing slash', () => {
     const { appBaseUrl } = freshModule();
-    process.env.BETTER_AUTH_URL = ' https://api.comp.revola.ai/ ';
-    expect(appBaseUrl()).toBe('https://api.comp.revola.ai');
-    process.env.NEXT_PUBLIC_APP_URL = 'https://app.comp.revola.ai//';
+    process.env.NEXT_PUBLIC_APP_URL = ' https://app.comp.revola.ai// ';
     expect(appBaseUrl()).toBe('https://app.comp.revola.ai');
+  });
+
+  it('never falls back to BETTER_AUTH_URL, which is the API host in this fork', () => {
+    const { appBaseUrl } = freshModule();
+    process.env.BETTER_AUTH_URL = 'https://api.comp.revola.ai';
+    expect(appBaseUrl()).toBeUndefined();
   });
 
   it('returns undefined, never an upstream host, and warns once naming the variables', () => {
@@ -48,7 +52,6 @@ describe('public URLs for links in emails and notifications', () => {
     expect(portalBaseUrl()).toBeUndefined();
     expect(warn).toHaveBeenCalledTimes(2);
     expect(String(warn.mock.calls[0]?.[0])).toContain('NEXT_PUBLIC_APP_URL');
-    expect(String(warn.mock.calls[0]?.[0])).toContain('BETTER_AUTH_URL');
     expect(String(warn.mock.calls[1]?.[0])).toContain('NEXT_PUBLIC_PORTAL_URL');
     expect(JSON.stringify(warn.mock.calls)).not.toContain('trycomp.ai');
   });

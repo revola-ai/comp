@@ -27,9 +27,12 @@ export function publicBaseUrl(
   return undefined;
 }
 
-/** The app's base URL: NEXT_PUBLIC_APP_URL, else BETTER_AUTH_URL (the existing order). */
+/**
+ * The app's base URL: NEXT_PUBLIC_APP_URL only. Never BETTER_AUTH_URL, which is the API
+ * host in this fork, where app pages do not exist.
+ */
 export function appBaseUrl(): string | undefined {
-  return publicBaseUrl(['NEXT_PUBLIC_APP_URL', 'BETTER_AUTH_URL']);
+  return publicBaseUrl(['NEXT_PUBLIC_APP_URL']);
 }
 
 /** The employee portal's base URL. */

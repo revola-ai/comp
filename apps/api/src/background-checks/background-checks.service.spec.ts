@@ -443,10 +443,10 @@ describe('background checks', () => {
     expect(identityClient.createBackgroundCheck).not.toHaveBeenCalled();
   });
 
-  it('uses BETTER_AUTH_URL as the local app URL fallback for setup redirects', async () => {
+  it('uses APP_URL as the local app URL fallback for setup redirects', async () => {
     process.env.NEXT_PUBLIC_APP_URL = '';
-    process.env.APP_URL = '';
-    process.env.BETTER_AUTH_URL = 'http://localhost:3000';
+    process.env.APP_URL = 'http://localhost:3000';
+    process.env.BETTER_AUTH_URL = 'http://localhost:3333';
     const createSetupSession = jest.fn().mockResolvedValue({
       url: 'https://checkout.stripe.com/c/session_1',
     });

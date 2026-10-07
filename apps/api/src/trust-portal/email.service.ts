@@ -98,7 +98,7 @@ export class TrustEmailService {
     requesterJobTitle?: string | null;
     purpose?: string | null;
     requestedDurationDays?: number | null;
-    reviewUrl: string;
+    reviewUrl: string | undefined;
   }): Promise<void> {
     const {
       toEmail,

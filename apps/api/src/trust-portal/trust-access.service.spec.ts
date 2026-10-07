@@ -624,7 +624,9 @@ describe('TrustAccessService access request notification', () => {
   it('links to the app host when the API is self-hosted on its own host', async () => {
     process.env.BETTER_AUTH_URL = 'https://api.comp.revola.ai';
     process.env.NEXT_PUBLIC_APP_URL = 'https://app.comp.revola.ai';
-    mockDb.trust.findUnique.mockResolvedValue({ contactEmail: 'owner@acme.com' });
+    mockDb.trust.findUnique.mockResolvedValue({
+      contactEmail: 'owner@acme.com',
+    });
 
     await service['sendAccessRequestNotificationToOrg'](
       'org_123',
@@ -642,7 +644,10 @@ describe('TrustAccessService access request notification', () => {
 
   it('points the review button at the access requests page, not the trust overview', async () => {
     // contactEmail present -> single recipient, no member fallback lookup.
-    mockDb.trust.findUnique.mockResolvedValue({ contactEmail: 'owner@acme.com' });
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.comp.revola.ai';
+    mockDb.trust.findUnique.mockResolvedValue({
+      contactEmail: 'owner@acme.com',
+    });
 
     const dto: CreateAccessRequestDto = {
       name: 'Jane Doe',
@@ -661,8 +666,30 @@ describe('TrustAccessService access request notification', () => {
     // trust portal settings/overview page).
     expect(emailService.sendAccessRequestNotification).toHaveBeenCalledWith(
       expect.objectContaining({
-        reviewUrl: 'https://app.trycomp.ai/org_123/trust/access-requests',
+        reviewUrl: 'https://app.comp.revola.ai/org_123/trust/access-requests',
       }),
+    );
+  });
+
+  it('sends without a review link when only BETTER_AUTH_URL (the API host) is set', async () => {
+    process.env.BETTER_AUTH_URL = 'https://api.comp.revola.ai';
+    const warn = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+    mockDb.trust.findUnique.mockResolvedValue({
+      contactEmail: 'owner@acme.com',
+    });
+
+    await service['sendAccessRequestNotificationToOrg'](
+      'org_123',
+      'tar_456',
+      'Acme Inc',
+      { name: 'Jane Doe', email: 'jane@example.com' },
+    );
+    warn.mockRestore();
+
+    expect(emailService.sendAccessRequestNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ reviewUrl: undefined }),
     );
   });
 });

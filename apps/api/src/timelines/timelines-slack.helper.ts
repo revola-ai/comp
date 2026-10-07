@@ -14,11 +14,7 @@ function orgLabel({
   orgId: string;
   safeOrg: string;
 }): string {
-  const appUrl = publicBaseUrl([
-    'NEXT_PUBLIC_APP_URL',
-    'BETTER_AUTH_URL',
-    'APP_URL',
-  ]);
+  const appUrl = publicBaseUrl(['NEXT_PUBLIC_APP_URL', 'APP_URL']);
   if (!appUrl) return safeOrg;
   return `<${appUrl}/${orgId}/admin/organizations/${orgId}|${safeOrg}>`;
 }

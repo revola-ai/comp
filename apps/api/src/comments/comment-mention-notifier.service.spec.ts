@@ -33,12 +33,16 @@ jest.mock('../email/templates/comment-mentioned', () => ({
   CommentMentionedEmail: (props: unknown) => commentMentionedEmailMock(props),
 }));
 
+import { NovuService } from '../notifications/novu.service';
 import { CommentMentionNotifierService } from './comment-mention-notifier.service';
 
 const ENV_KEYS = ['NEXT_PUBLIC_APP_URL', 'BETTER_AUTH_URL'] as const;
 
 describe('CommentMentionNotifierService links', () => {
-  const novu = { trigger: jest.fn().mockResolvedValue(undefined) };
+  const novuService = new NovuService();
+  const novuTrigger = jest
+    .spyOn(novuService, 'trigger')
+    .mockResolvedValue(undefined);
   const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
   let warn: jest.SpyInstance;
   let service: CommentMentionNotifierService;
@@ -53,7 +57,7 @@ describe('CommentMentionNotifierService links', () => {
     ]);
     mockDb.taskItem.findFirst.mockResolvedValue(null);
     mockDb.task.findFirst.mockResolvedValue({ title: '2FA' });
-    service = new CommentMentionNotifierService(novu as never);
+    service = new CommentMentionNotifierService(novuService);
   });
 
   afterEach(() => {
@@ -107,10 +111,20 @@ describe('CommentMentionNotifierService links', () => {
     );
   });
 
+  it('rejects a context URL on the API host in BETTER_AUTH_URL', async () => {
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.comp.revola.ai';
+    process.env.BETTER_AUTH_URL = 'https://api.comp.revola.ai';
+    await notify('https://api.comp.revola.ai/org_1/tasks/tsk_1');
+    expect(sentCommentUrl()).toBe(
+      'https://app.comp.revola.ai/org_1/tasks/tsk_1',
+    );
+  });
+
   it('still sends, without a link and never an upstream one, when the app URL is unset', async () => {
+    process.env.BETTER_AUTH_URL = 'https://api.comp.revola.ai';
     await notify('https://app.trycomp.ai/org_1/tasks/tsk_1');
     expect(commentMentionedEmailMock).toHaveBeenCalledTimes(1);
     expect(sentCommentUrl()).toBeUndefined();
-    expect(JSON.stringify(novu.trigger.mock.calls)).not.toContain('trycomp.ai');
+    expect(JSON.stringify(novuTrigger.mock.calls)).not.toContain('trycomp.ai');
   });
 });

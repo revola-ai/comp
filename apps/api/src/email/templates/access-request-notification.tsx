@@ -10,6 +10,7 @@ import {
   Tailwind,
   Text,
 } from '@react-email/components';
+import { CallToAction } from '../components/call-to-action';
 import { Footer } from '../components/footer';
 import { Logo } from '../components/logo';
 
@@ -21,7 +22,8 @@ interface Props {
   requesterJobTitle?: string | null;
   purpose?: string | null;
   requestedDurationDays?: number | null;
-  reviewUrl: string;
+  /** Undefined when the app URL is not configured: the email then has no button. */
+  reviewUrl?: string;
 }
 
 export const AccessRequestNotificationEmail = ({
@@ -112,14 +114,11 @@ export const AccessRequestNotificationEmail = ({
               </Text>
             )}
 
-            <Section className="mt-[32px] mb-[32px] text-center">
-              <Button
-                className="rounded-[3px] bg-[#121212] px-[20px] py-[12px] text-center text-[14px] font-semibold text-white no-underline"
-                href={reviewUrl}
-              >
-                Review Request
-              </Button>
-            </Section>
+            <CallToAction
+              href={reviewUrl}
+              label="Review Request"
+              showUrl={false}
+            />
 
             <Section
               className="mt-[30px] mb-[20px] rounded-[3px] border-l-4 p-[15px]"
