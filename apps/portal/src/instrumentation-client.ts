@@ -5,14 +5,16 @@
 import * as Sentry from '@sentry/nextjs';
 
 Sentry.init({
-  dsn:
-    process.env.NEXT_PUBLIC_SENTRY_DSN ??
-    'https://331f1c3d4b08e9352dd1a2621e1ae845@o4509214247813120.ingest.us.sentry.io/4511304630927360',
+  // No DSN means no Sentry: never upstream Comp's project, which would receive this
+  // deployment's errors, request data and session replays.
+  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN || undefined,
 
   // Only report from production. NEXT_PUBLIC_VERCEL_ENV is inlined at build time
   // per Vercel deployment; preview/dev builds (or a missing var) keep Sentry
-  // disabled — a no-op, never an error — to avoid noise and quota burn.
-  enabled: process.env.NEXT_PUBLIC_VERCEL_ENV === 'production',
+  // disabled - a no-op, never an error - to avoid noise and quota burn.
+  enabled:
+    Boolean(process.env.NEXT_PUBLIC_SENTRY_DSN) &&
+    process.env.NEXT_PUBLIC_VERCEL_ENV === 'production',
 
   integrations: [
     // Add `data-sentry-mask` (or `.sentry-mask`) to any element rendering

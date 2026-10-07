@@ -6,14 +6,14 @@ import * as Sentry from '@sentry/nextjs';
 import { scrubSensitiveHeaders } from './src/lib/sentry-scrub';
 
 Sentry.init({
-  dsn:
-    process.env.SENTRY_DSN ??
-    'https://331f1c3d4b08e9352dd1a2621e1ae845@o4509214247813120.ingest.us.sentry.io/4511304630927360',
+  // No DSN means no Sentry: never upstream Comp's project, which would receive this
+  // deployment's errors, request data and session replays.
+  dsn: process.env.SENTRY_DSN || undefined,
 
   // Only report from production. On Vercel, VERCEL_ENV is 'production' | 'preview'
   // | 'development'; on any non-production deployment (or if the var is missing)
-  // Sentry stays disabled — a no-op, never an error — to avoid noise and quota burn.
-  enabled: process.env.VERCEL_ENV === 'production',
+  // Sentry stays disabled - a no-op, never an error - to avoid noise and quota burn.
+  enabled: Boolean(process.env.SENTRY_DSN) && process.env.VERCEL_ENV === 'production',
 
   tracesSampleRate: process.env.NODE_ENV === 'development' ? 1.0 : 0.1,
 

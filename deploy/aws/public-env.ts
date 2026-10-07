@@ -31,7 +31,7 @@ export const DEFAULT_URLS: PublicUrls = Object.freeze({
 export const INTENTIONALLY_UNSET: Readonly<Record<string, string>> = Object.freeze({
   NEXT_PUBLIC_POSTHOG_KEY: 'no product analytics in the Revola install',
   NEXT_PUBLIC_POSTHOG_HOST: 'no product analytics in the Revola install',
-  NEXT_PUBLIC_SENTRY_DSN: 'Sentry is not used; unset keeps the upstream DSN disabled',
+  NEXT_PUBLIC_SENTRY_DSN: 'Sentry is not used; unset means no Sentry (there is no upstream default)',
   NEXT_PUBLIC_VERCEL_ENV: 'not on Vercel; unset keeps client Sentry reporting off',
   NEXT_PUBLIC_NOVU_APPLICATION_IDENTIFIER: 'no Novu in-app notifications',
   NEXT_PUBLIC_IS_DUB_ENABLED: 'no Dub referral program',
