@@ -179,9 +179,9 @@ cloud-init runs `user-data.sh` once, as root (`sudo cloud-init status --long` re
 - Docker, git, python3, dnf-automatic and dnf-utils from the Amazon Linux repository.
 - The compose plugin (`v5.5.1`) and buildx (`v0.37.2`) from their GitHub releases into `/usr/local/lib/docker/cli-plugins`, each checked against a pinned sha256; a mismatch stops the run.
   To bump one, change its version and checksum together, taking the checksum from the release's `checksums.txt`.
-- dnf-automatic applies security updates every day at 09:00 UTC (a drop-in replaces the packaged schedule and removes its random delay); `/etc/dnf/vars/releasever` is `latest`, because Amazon Linux 2023 otherwise stays on the AMI's release and finds no updates.
+- dnf-automatic applies security updates every day at 09:00 UTC and only then (a drop-in replaces the packaged schedule and removes its random delay and its catch-up run at boot, so after downtime the next 09:00 run catches up); `/etc/dnf/vars/releasever` is `latest`, because Amazon Linux 2023 otherwise stays on the AMI's release and finds no updates.
   Docker and containerd are patched too: an update restarts the Docker daemon, which briefly stops the containers, and they come back by themselves (`restart: unless-stopped`).
-- `comp-reboot-if-needed.timer` runs every Sunday at 09:30 UTC: it reboots only when `needs-restarting -r` reports that installed updates (a kernel, glibc, systemd) need it, and logs either way (`journalctl -u comp-reboot-if-needed`).
+- `comp-reboot-if-needed.timer` runs every Sunday at 09:30 UTC, ordered after any running update: it reboots only when `needs-restarting -r` reports that installed updates (a kernel, glibc, systemd) need it, and logs either way (`journalctl -u comp-reboot-if-needed`).
   Docker is enabled at boot and every container is `restart: unless-stopped`, so the stack comes back after the reboot without a release.
   A missed window (the server was off) is not caught up at boot.
 - An 8 GiB swap file, `/swapfile`, for image builds (the containers themselves never swap).
@@ -201,5 +201,5 @@ bash deploy/server/tests/user-data.test.sh    # size limit, checksums, version g
 bash deploy/server/tests/user-data-units.test.sh   # restarter, reboot check, update window
 ```
 
-The render-env tests stub `aws` with a fake secret; the provision tests use the stateful fake `tests/fake_aws.py` and type their answers into a pseudo-terminal (`tests/tty_run.py`); the user-data tests source the script and stubs `curl`, `docker` and the system tools, so nothing is installed or fetched.
+The render-env tests stub `aws` with a fake secret; the provision tests use the stateful fake `tests/fake_aws.py` and type their answers into a pseudo-terminal (`tests/tty_run.py`); the user-data tests source the script and stub `curl`, `docker` and the system tools, so nothing is installed or fetched.
 `compose.test.sh` needs Docker and Bun (it compares build arguments with `deploy/aws/public-env.ts`) and starts no container; the provision and user-data tests need `shellcheck` and `python3`.

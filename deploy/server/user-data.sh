@@ -192,6 +192,8 @@ SCRIPT
   cat >"$2/comp-reboot-if-needed.service" <<UNIT
 [Unit]
 Description=Reboot when installed updates need it
+# Ordered after the update run, so a reboot never cuts a dnf transaction short.
+After=dnf-automatic.service
 
 [Service]
 Type=oneshot
@@ -210,13 +212,17 @@ WantedBy=timers.target
 UNIT
 }
 
-install_update_window() { # install_update_window <unit dir>: dnf-automatic daily at 09:00 UTC
+# install_update_window <unit dir>: dnf-automatic daily at 09:00 UTC and only then; after
+# downtime the next 09:00 run catches up instead of a run at boot (the packaged timer is
+# Persistent=true).
+install_update_window() {
   mkdir -p "$1/dnf-automatic.timer.d"
   cat >"$1/dnf-automatic.timer.d/comp-window.conf" <<'UNIT'
 [Timer]
 OnCalendar=
 OnCalendar=*-*-* 09:00:00 UTC
 RandomizedDelaySec=0
+Persistent=false
 UNIT
 }
 

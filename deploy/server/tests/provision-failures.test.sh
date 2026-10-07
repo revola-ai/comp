@@ -22,6 +22,20 @@ edit_state() { # edit_state <python statements over `s`>: changes the fake accou
     "$FAKE_AWS_STATE" "$1"
 }
 
+# ---------------------------------------------------------------- the harness itself
+# A run that hangs must fail the suite, never pass as "exited non-zero and created nothing".
+# /bin/sleep, because the sleep on PATH is the recording stub.
+for mode in "--typed ''" --no-tty; do
+  (
+    failures=0
+    TTY_RUN_TIMEOUT=1 eval harness "$mode" --out "'$TMP/hung.out'" -- /bin/sleep 30
+    echo "status=$? failures=$failures"
+  ) >"$TMP/hung.report" 2>&1
+  check "hung child ($mode): reported as a failed check" grep -qF "FAIL tty_run timed out" "$TMP/hung.report"
+  check "hung child ($mode): counted as a failure" grep -qF "status=124 failures=1" "$TMP/hung.report"
+  check "hung child ($mode): the output says so" grep -qxF "tty_run: timed out after 1 seconds" "$TMP/hung.out"
+done
+
 # ---------------------------------------------------------------- refusals before any create
 fresh
 FAKE_AWS_ACCOUNT=111122223333 provision "$ALL_YES" "$TMP/account.out" --alert-email "$TEST_EMAIL"

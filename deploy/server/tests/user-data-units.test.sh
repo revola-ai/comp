@@ -88,6 +88,7 @@ check "reboot check: installed executable" test "$(mode_of "$REBOOTER")" = 755
 check "reboot check: is shellcheck clean" shellcheck "$REBOOTER"
 check "reboot check: the service runs it" grep -qxF "ExecStart=$REBOOTER" "$UNITS/comp-reboot-if-needed.service"
 check "reboot check: oneshot" grep -qxF "Type=oneshot" "$UNITS/comp-reboot-if-needed.service"
+check "reboot check: never during an update run" grep -qxF "After=dnf-automatic.service" "$UNITS/comp-reboot-if-needed.service"
 check "reboot check: Sundays 09:30 UTC" grep -qxF "OnCalendar=Sun *-*-* 09:30:00 UTC" "$UNITS/comp-reboot-if-needed.timer"
 check "reboot check: never catches up after downtime" grep -qxF "Persistent=false" "$UNITS/comp-reboot-if-needed.timer"
 check "reboot check: starts with the machine" grep -qxF "WantedBy=timers.target" "$UNITS/comp-reboot-if-needed.timer"
@@ -115,6 +116,7 @@ WINDOW="$UNITS/dnf-automatic.timer.d/comp-window.conf"
 check "update window: clears the packaged schedule" grep -qxF "OnCalendar=" "$WINDOW"
 check "update window: daily 09:00 UTC" grep -qxF "OnCalendar=*-*-* 09:00:00 UTC" "$WINDOW"
 check "update window: no random delay" grep -qxF "RandomizedDelaySec=0" "$WINDOW"
+check "update window: no catch-up run at boot" grep -qxF "Persistent=false" "$WINDOW"
 check "update window: a timer section" test "$(head -n 1 "$WINDOW")" = "[Timer]"
 
 finish

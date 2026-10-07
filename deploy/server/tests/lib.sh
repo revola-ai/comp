@@ -147,6 +147,19 @@ lines_of() { # lines_of <word> <count>: <count> lines of <word>, for typed answe
   for ((i = 0; i < $2; i++)); do printf '%s\n' "$1"; done
 }
 
+# harness <tty_run.py args...>: runs tests/tty_run.py and returns its status. A timeout (124)
+# is also a failed check of its own, so a hang can never pass as "exited non-zero and created
+# nothing".
+harness() {
+  local status=0
+  python3 "$SERVER_DIR/tests/tty_run.py" "$@" || status=$?
+  if [[ "$status" -eq 124 ]]; then
+    echo "FAIL tty_run timed out: $*"
+    failures=$((failures + 1))
+  fi
+  return "$status"
+}
+
 # provision <typed> <output-file> [args...]: runs provision.sh from an empty working directory
 # with a pseudo-terminal as its /dev/tty, <typed> typed into it (then end-of-input) and an empty
 # stdin; stdout and stderr go to <output-file>; the aws log starts empty.
@@ -155,8 +168,7 @@ provision() {
   shift 2
   : >"$FAKE_AWS_LOG"
   mkdir -p "$TMP/cwd"
-  (cd "$TMP/cwd" && python3 "$SERVER_DIR/tests/tty_run.py" --typed "$typed" --out "$output" \
-    -- bash "$SERVER_DIR/provision.sh" "$@")
+  harness --typed "$typed" --cwd "$TMP/cwd" --out "$output" -- bash "$SERVER_DIR/provision.sh" "$@"
 }
 
 # provision_piped <tty|no-tty> <stdin> <output-file> [args...]: like provision, but <stdin> is
@@ -167,8 +179,8 @@ provision_piped() {
   shift 3
   : >"$FAKE_AWS_LOG"
   mkdir -p "$TMP/cwd"
-  (cd "$TMP/cwd" && python3 "$SERVER_DIR/tests/tty_run.py" "${mode[@]}" --stdin "$input" \
-    --out "$output" -- bash "$SERVER_DIR/provision.sh" "$@")
+  harness "${mode[@]}" --stdin "$input" --cwd "$TMP/cwd" --out "$output" \
+    -- bash "$SERVER_DIR/provision.sh" "$@"
 }
 
 ops_of() { # ops_of <aws-log>: "service operation" of each call, one per line
