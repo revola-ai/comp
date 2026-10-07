@@ -7,7 +7,7 @@ import type { ComplianceCheck } from '../types';
  *
  * If encryption is not available on the system (Windows Home without TPM,
  * or hardware that doesn't support Device Encryption), the check passes
- * with a note — we don't fail users for hardware/edition limitations.
+ * with a note - we don't fail users for hardware/edition limitations.
  */
 export class WindowsDiskEncryptionCheck implements ComplianceCheck {
   checkType = 'disk_encryption' as const;
@@ -20,11 +20,11 @@ export class WindowsDiskEncryptionCheck implements ComplianceCheck {
       return bitlockerResult;
     }
 
-    // BitLocker commands failed — check if encryption is even available
+    // BitLocker commands failed - check if encryption is even available
     const availability = this.checkEncryptionAvailability();
 
     if (!availability.available) {
-      // Encryption is not available on this system — pass with explanation
+      // Encryption is not available on this system - pass with explanation
       return {
         checkType: this.checkType,
         passed: true,
@@ -125,7 +125,7 @@ export class WindowsDiskEncryptionCheck implements ComplianceCheck {
       return {
         available: false,
         reason:
-          'Windows Home edition without TPM — neither BitLocker nor Device Encryption is supported',
+          'Windows Home edition without TPM - neither BitLocker nor Device Encryption is supported',
       };
     }
 
@@ -135,7 +135,7 @@ export class WindowsDiskEncryptionCheck implements ComplianceCheck {
       return {
         available: false,
         reason:
-          'Windows Home edition — BitLocker requires Windows Pro. Device Encryption may not be supported by your hardware',
+          'Windows Home edition - BitLocker requires Windows Pro. Device Encryption may not be supported by your hardware',
       };
     }
 
@@ -143,11 +143,11 @@ export class WindowsDiskEncryptionCheck implements ComplianceCheck {
     if (!hasTpm) {
       return {
         available: false,
-        reason: 'No TPM detected — BitLocker requires a TPM 2.0 chip or compatible security device',
+        reason: 'No TPM detected - BitLocker requires a TPM 2.0 chip or compatible security device',
       };
     }
 
-    // Pro/Enterprise with TPM — encryption should be available
+    // Pro/Enterprise with TPM - encryption should be available
     return { available: true, reason: '' };
   }
 
