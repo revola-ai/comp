@@ -68,6 +68,16 @@ function bearerOf(headers: Headers): string | null {
   return value?.startsWith('Bearer ') ? value.slice(7) : null;
 }
 
+// The session token better-auth looks up. Its bearer plugin replaces the session
+// cookie with an unsigned bearer token (no '.'), so that token takes precedence;
+// a signed-looking one whose signature does not verify is ignored and the
+// cookie is used.
+function sessionTokenOf(headers: Headers): string | null {
+  const bearer = bearerOf(headers);
+  if (bearer && !bearer.includes('.')) return bearer;
+  return headers.get('cookie')?.match(/session_token=([^;]+)/)?.[1] ?? null;
+}
+
 const agent = new Agent({ keepAlive: false });
 
 describe('credential attempt limit for bearer tokens (HybridAuthGuard)', () => {
@@ -106,7 +116,7 @@ describe('credential attempt limit for bearer tokens (HybridAuthGuard)', () => {
     mockGetMcpSession.mockReset();
     mockGetSession.mockImplementation(({ headers }: { headers: Headers }) =>
       Promise.resolve(
-        bearerOf(headers) === VALID_SESSION_TOKEN
+        sessionTokenOf(headers) === VALID_SESSION_TOKEN
           ? {
               user: { id: 'usr_1', email: 'u@example.com', role: null },
               session: { id: 'ses_1', activeOrganizationId: 'org_1' },
@@ -201,6 +211,39 @@ describe('credential attempt limit for bearer tokens (HybridAuthGuard)', () => {
       statuses.push((await withBearer('198.51.100.50', `junk-${i}`)).status);
     }
     expect(statuses).toEqual(Array(N).fill(401));
+  });
+
+  it('counts a junk bearer token sent with a valid session cookie (the bearer token takes precedence)', async () => {
+    const both = (client: string) =>
+      send(client, {
+        Authorization: 'Bearer junk',
+        Cookie: `better-auth.session_token=${VALID_SESSION_TOKEN}`,
+      });
+    const statuses: number[] = [];
+    for (let i = 0; i < N; i += 1) {
+      statuses.push((await both('198.51.100.70')).status);
+    }
+    expect(statuses).toEqual(Array(N).fill(401));
+    mockGetSession.mockClear();
+    mockGetMcpSession.mockClear();
+    expect((await both('198.51.100.70')).status).toBe(429);
+    expect(mockGetSession).not.toHaveBeenCalled();
+    expect(mockGetMcpSession).not.toHaveBeenCalled();
+  });
+
+  it('gives the attempt back when a request with a bearer token and a valid cookie is accepted', async () => {
+    for (let i = 0; i < N - 1; i += 1) {
+      await withBearer('198.51.100.80', `junk-${i}`);
+    }
+    const statuses: number[] = [];
+    for (let i = 0; i < N + 5; i += 1) {
+      const response = await send('198.51.100.80', {
+        Authorization: 'Bearer unsigned.signature',
+        Cookie: `better-auth.session_token=${VALID_SESSION_TOKEN}`,
+      });
+      statuses.push(response.status);
+    }
+    expect(statuses).toEqual(Array(N + 5).fill(200));
   });
 
   it('keeps the attempt of a bearer lookup that hits a credential-store outage', async () => {
