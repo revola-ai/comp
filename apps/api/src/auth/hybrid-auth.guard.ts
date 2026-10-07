@@ -13,13 +13,15 @@ import { ApiKeyService } from './api-key.service';
 import { hasAppAccess } from './app-access';
 import { auth } from './auth.server';
 import { API_KEY_HEADER, SERVICE_TOKEN_HEADER } from './credential-headers';
+import { releaseCredentialSlot } from './credential-slot';
 import {
   credentialStoreUnavailable,
+  CredentialStoreUnavailableException,
   isCredentialStoreFailure,
 } from './credential-store-error';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { SKIP_ORG_CHECK_KEY } from './skip-org-check.decorator';
-import { resolveServiceByToken } from './service-token.config';
+import { authenticateServiceToken } from './service-token-auth';
 import { AuthenticatedRequest } from './types';
 
 @Injectable()
@@ -38,7 +40,25 @@ export class HybridAuthGuard implements CanActivate {
     ]);
     if (isPublic) return true;
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    try {
+      return await this.authenticate({ context, request });
+    } catch (error) {
+      // The store being down says nothing about the credential: give the
+      // pre-authentication limiter's slot back.
+      if (error instanceof CredentialStoreUnavailableException) {
+        releaseCredentialSlot(request);
+      }
+      throw error;
+    }
+  }
 
+  private async authenticate({
+    context,
+    request,
+  }: {
+    context: ExecutionContext;
+    request: AuthenticatedRequest;
+  }): Promise<boolean> {
     // Try API Key authentication first (for external customers)
     const apiKey = request.headers[API_KEY_HEADER] as string;
     if (apiKey) {
@@ -48,7 +68,7 @@ export class HybridAuthGuard implements CanActivate {
     // Try Service Token authentication (for internal services)
     const serviceToken = request.headers[SERVICE_TOKEN_HEADER] as string;
     if (serviceToken) {
-      return this.handleServiceTokenAuth(request, serviceToken);
+      return authenticateServiceToken({ request, token: serviceToken });
     }
 
     // Try session-based authentication (bearer token or cookies)
@@ -91,78 +111,7 @@ export class HybridAuthGuard implements CanActivate {
     request.apiKeyOrganizationOwned = result.organizationOwned;
     // API keys are organization-scoped; no session user/member is attached here.
     request.userRoles = null;
-
-    return true;
-  }
-
-  private async handleServiceTokenAuth(
-    request: AuthenticatedRequest,
-    token: string,
-  ): Promise<boolean> {
-    const service = resolveServiceByToken(token);
-    if (!service) {
-      throw new UnauthorizedException('Invalid service token');
-    }
-
-    const organizationId = request.headers['x-organization-id'] as string;
-    if (!organizationId) {
-      throw new UnauthorizedException(
-        'x-organization-id header is required for service token auth',
-      );
-    }
-
-    const org = await db.organization
-      .findUnique({ where: { id: organizationId }, select: { id: true } })
-      .catch((error: unknown) => {
-        this.logger.error('Service token organization lookup failed', error);
-        throw credentialStoreUnavailable();
-      });
-    if (!org) {
-      throw new UnauthorizedException(
-        'Organization not found for the provided x-organization-id',
-      );
-    }
-
-    request.organizationId = organizationId;
-    request.authType = 'service';
-    request.isApiKey = false;
-    request.isServiceToken = true;
-    request.serviceName = service.definition.name;
-    request.isPlatformAdmin = false;
-    request.userRoles = null;
-
-    // Service tokens can pass x-user-id to act on behalf of a user
-    // Validate that the user exists and belongs to the organization
-    const actingUserId = request.headers['x-user-id'] as string;
-    if (actingUserId) {
-      const member = await db.member.findFirst({
-        // Only active memberships may act — an offboarded/deactivated user must
-        // not receive new audit / enteredById attribution. Mirrors the filters
-        // ActingUserResolver applies to its creator/owner lookups.
-        where: {
-          userId: actingUserId,
-          organizationId,
-          deactivated: false,
-          isActive: true,
-        },
-        select: { id: true, userId: true },
-      });
-      if (member) {
-        request.userId = actingUserId;
-        // Set the acting membership too, so Member-FK sinks (audit rows,
-        // enteredById, etc.) can attribute to the acting member and not just
-        // the user.
-        request.memberId = member.id;
-      } else {
-        this.logger.warn(
-          `Service token x-user-id "${actingUserId}" is not an active member of org ${organizationId}`,
-        );
-      }
-    }
-
-    this.logger.log(
-      `Service "${service.definition.name}" authenticated for org ${organizationId}`,
-    );
+    releaseCredentialSlot(request);
 
     return true;
   }

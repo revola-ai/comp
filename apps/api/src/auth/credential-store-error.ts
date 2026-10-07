@@ -3,14 +3,32 @@ import { ServiceUnavailableException } from '@nestjs/common';
 /** The reason a credential check answers 503: the store behind it is down. */
 export const CREDENTIAL_STORE_UNAVAILABLE = 'credential_store_unavailable';
 
-/** 503 with a named reason and no details of the underlying failure. */
-export function credentialStoreUnavailable(): ServiceUnavailableException {
-  return new ServiceUnavailableException({
-    statusCode: 503,
-    error: 'Service Unavailable',
-    reason: CREDENTIAL_STORE_UNAVAILABLE,
-    message: 'Authentication is temporarily unavailable. Retry shortly.',
-  });
+/** Seconds a client should wait before retrying after a credential-store 503. */
+export const CREDENTIAL_STORE_RETRY_AFTER_SECONDS = 5;
+
+/**
+ * 503 with a named reason and no details of the underlying failure. Its own
+ * class so the response gets Retry-After (CredentialStoreUnavailableFilter) and
+ * the pre-authentication limiter gives the slot back.
+ */
+export class CredentialStoreUnavailableException extends ServiceUnavailableException {
+  constructor() {
+    super({
+      statusCode: 503,
+      error: 'Service Unavailable',
+      reason: CREDENTIAL_STORE_UNAVAILABLE,
+      message: 'Authentication is temporarily unavailable. Retry shortly.',
+    });
+  }
+}
+
+export function credentialStoreUnavailable(): CredentialStoreUnavailableException {
+  return new CredentialStoreUnavailableException();
+}
+
+/** Rethrows `error` as a credential-store 503 if it is a store failure, else as is. */
+export function asCredentialStoreError(error: unknown): unknown {
+  return isCredentialStoreFailure(error) ? credentialStoreUnavailable() : error;
 }
 
 // Prisma's connection-level failures: P1xxx (cannot reach, timed out, TLS...),

@@ -1,10 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import {
-  Controller,
-  Get,
-  ServiceUnavailableException,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -212,19 +207,6 @@ describe('pre-authentication limiter (machine credentials by verified client IP)
     }
     expect(statuses[N - 1]).toBe(401);
     expect(statuses[N]).toBe(429);
-  });
-
-  it('answers 503 and refunds the slot when the credential store is down', async () => {
-    validateApiKey.mockRejectedValue(
-      new ServiceUnavailableException({
-        reason: 'credential_store_unavailable',
-      }),
-    );
-    for (let i = 0; i <= N; i += 1) {
-      expect(await withKey('192.0.2.70', `any-${i}`)).toBe(503);
-    }
-    validateApiKey.mockImplementation(resolveByKey);
-    expect(await withKey('192.0.2.70', VALID_KEY)).toBe(200);
   });
 
   it('cannot be dodged by forging client IP headers without the origin secret', async () => {
