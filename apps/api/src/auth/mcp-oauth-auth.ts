@@ -30,9 +30,12 @@ const logger = new Logger('HybridAuthGuard');
 export async function authenticateMcpOAuth({
   request,
   headers,
+  onAccepted,
 }: {
   request: AuthenticatedRequest;
   headers: Headers;
+  /** Called once the token resolves to an existing user. */
+  onAccepted: () => void;
 }): Promise<boolean> {
   const token = await auth.api.getMcpSession({ headers }).catch(() => null);
   if (!token?.userId) {
@@ -47,6 +50,7 @@ export async function authenticateMcpOAuth({
   if (!user) {
     return false;
   }
+  onAccepted();
 
   request.userId = user.id;
   request.userEmail = user.email;

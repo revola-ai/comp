@@ -3,10 +3,10 @@ import type { ApiKeyService } from './api-key.service';
 import type { AuthenticatedRequest } from './types';
 
 /**
- * API-key authentication for HybridAuthGuard. Checking a key is the guard's
- * only database-backed credential check, so it first takes an attempt from the
- * caller's verified client IP bucket (`takeAttempt`, 429 with no lookup once
- * the bucket is full). Only acceptance gives the attempt back: a wrong key, a
+ * API-key authentication for HybridAuthGuard. Checking a key is a
+ * database-backed credential check (as is a bearer token's, see
+ * HybridAuthGuard), so it first takes an attempt from the caller's verified
+ * client IP bucket (`takeAttempt`, 429 with no lookup once the bucket is full). Only acceptance gives the attempt back: a wrong key, a
  * credential-store outage (503) or any other error keeps it, so a flood of
  * junk keys stays counted even while it saturates the database pool.
  */

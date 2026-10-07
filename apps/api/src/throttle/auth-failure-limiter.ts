@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
-/** Machine-credential attempts one client IP may have unrefunded per window. */
+/**
+ * Credential attempts (API keys, bearer and service tokens) one client IP may
+ * have unrefunded per window.
+ */
 export const AUTH_FAILURE_LIMIT = 30;
 export const AUTH_FAILURE_WINDOW_MS = 60_000;
 

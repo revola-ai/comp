@@ -40,8 +40,9 @@ export class HybridAuthGuard implements CanActivate {
     ]);
     if (isPublic) return true;
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    // Machine credentials that fail cost an attempt of the caller's verified
-    // client IP bucket (429 once it is full); sessions never do.
+    // Credentials checked against the database (API keys, bearer tokens) and
+    // service tokens that fail cost an attempt of the caller's verified client
+    // IP bucket (429 once it is full); cookie-only sessions never do.
     const takeAttempt = () =>
       reserveCredentialAttempt({
         limiter: this.attemptLimiter,
@@ -75,13 +76,18 @@ export class HybridAuthGuard implements CanActivate {
       SKIP_ORG_CHECK_KEY,
       [context.getHandler(), context.getClass()],
     );
-    return this.handleSessionAuth(request, skipOrgCheck);
+    return this.handleSessionAuth({ request, skipOrgCheck, takeAttempt });
   }
 
-  private async handleSessionAuth(
-    request: AuthenticatedRequest,
-    skipOrgCheck = false,
-  ): Promise<boolean> {
+  private async handleSessionAuth({
+    request,
+    skipOrgCheck,
+    takeAttempt,
+  }: {
+    request: AuthenticatedRequest;
+    skipOrgCheck: boolean;
+    takeAttempt: () => () => void;
+  }): Promise<boolean> {
     try {
       // Build headers for better-auth SDK
       // Forwards both Authorization (bearer session token) and Cookie headers
@@ -101,6 +107,12 @@ export class HybridAuthGuard implements CanActivate {
         );
       }
 
+      // A bearer token is looked up in the database as it is (session token,
+      // then MCP OAuth token), so it takes an attempt first, given back once a
+      // lookup accepts it. Cookies are signed, so a forged one is refused
+      // before any lookup, and stale browser tabs must not lock an office out.
+      const release = authHeader ? takeAttempt() : () => undefined;
+
       // Use better-auth SDK to resolve session
       // Works with both bearer session tokens and httpOnly cookies
       const session = await auth.api.getSession({ headers });
@@ -108,7 +120,9 @@ export class HybridAuthGuard implements CanActivate {
       if (!session) {
         // Fallback: the hosted MCP server (Gram) sends an OAuth access token as a
         // Bearer token, which getSession does not resolve. Try the MCP OAuth path.
-        if (await authenticateMcpOAuth({ request, headers })) {
+        if (
+          await authenticateMcpOAuth({ request, headers, onAccepted: release })
+        ) {
           return true;
         }
         throw new UnauthorizedException('Invalid or expired session');
@@ -121,6 +135,7 @@ export class HybridAuthGuard implements CanActivate {
           'Invalid session: missing user information',
         );
       }
+      release();
 
       const organizationId = sessionData.activeOrganizationId;
       if (!organizationId && !skipOrgCheck) {
