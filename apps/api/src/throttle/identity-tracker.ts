@@ -37,8 +37,9 @@ function validIp(value: string | undefined): string | undefined {
  * - a valid origin header (Cloudflare in front of an ALB), or a socket peer
  *   listed in TRUSTED_EDGE_PROXY_IPS (the Cloudflare Tunnel connector):
  *   CF-Connecting-IP;
- * - otherwise the socket address. There is no `trust proxy`, so a forged
- *   X-Forwarded-For never reaches `req.ip`.
+ * - otherwise the socket peer address (`req.ip` only when the socket has
+ *   none). There is no `trust proxy`, so a forged X-Forwarded-For never
+ *   reaches `req.ip`; the trust check and this fallback use the same peer.
  */
 export function verifiedClientIp({
   req,
@@ -53,7 +54,7 @@ export function verifiedClientIp({
     const first = validIp(forwarded?.split(',')[0]);
     if (first) return first;
   }
-  const peer = req.socket?.remoteAddress ?? req.ip;
+  const peer = validIp(req.socket?.remoteAddress) ?? validIp(req.ip);
   const viaCloudflare =
     hasValidOriginAuth({ headers, env }) || isTrustedEdgePeer({ peer, env });
   if (viaCloudflare) {
@@ -62,7 +63,7 @@ export function verifiedClientIp({
     );
     if (connecting) return connecting;
   }
-  return validIp(req.ip) ?? validIp(req.socket?.remoteAddress);
+  return peer;
 }
 
 function expandIpv6(address: string): string[] {

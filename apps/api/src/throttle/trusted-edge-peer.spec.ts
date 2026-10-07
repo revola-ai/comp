@@ -14,7 +14,7 @@ describe('parseTrustedEdgeProxyIps', () => {
       parseTrustedEdgeProxyIps({ value: ' 172.30.0.10 ,fd00:30::10\n' }),
     ).toEqual({
       addresses: ['172.30.0.10', 'fd00:30::10'],
-      hasInvalidEntry: false,
+      invalidEntryCount: 0,
     });
   });
 
@@ -31,20 +31,36 @@ describe('parseTrustedEdgeProxyIps', () => {
   ])('reads %s as no addresses', (_case, value) => {
     expect(parseTrustedEdgeProxyIps({ value })).toEqual({
       addresses: [],
-      hasInvalidEntry: false,
+      invalidEntryCount: 0,
     });
   });
 
   it.each([
-    ['a hostname', 'cloudflared'],
-    ['a CIDR range', '172.30.0.0/24'],
-    ['an empty entry', '172.30.0.10,,172.30.0.11'],
-    ['a trailing comma', '172.30.0.10,'],
-    ['an out-of-range octet', '172.30.0.256'],
-  ])('flags %s as invalid and keeps only the valid entries', (_case, value) => {
-    const parsed = parseTrustedEdgeProxyIps({ value });
-    expect(parsed.hasInvalidEntry).toBe(true);
-    expect(parsed.addresses.every((address) => address !== value)).toBe(true);
+    ['a hostname', 'cloudflared', []],
+    ['a CIDR range', '172.30.0.0/24', []],
+    [
+      'an empty entry',
+      '172.30.0.10,,172.30.0.11',
+      ['172.30.0.10', '172.30.0.11'],
+    ],
+    ['a trailing comma', '172.30.0.10,', ['172.30.0.10']],
+    ['an out-of-range octet', '172.30.0.256,fd00:30::10', ['fd00:30::10']],
+  ])(
+    'counts %s as invalid and keeps exactly the valid entries',
+    (_case, value, addresses) => {
+      expect(parseTrustedEdgeProxyIps({ value })).toEqual({
+        addresses,
+        invalidEntryCount: 1,
+      });
+    },
+  );
+
+  it('counts every invalid entry', () => {
+    const parsed = parseTrustedEdgeProxyIps({ value: 'a, b ,172.30.0.10,' });
+    expect(parsed).toEqual({
+      addresses: ['172.30.0.10'],
+      invalidEntryCount: 3,
+    });
   });
 });
 
@@ -111,13 +127,25 @@ describe('client IP behind a Cloudflare Tunnel (TRUSTED_EDGE_PROXY_IPS)', () => 
     expect(identityTracker({ req: forged, env })).toBe('ip:172.30.0.99');
   });
 
-  it('decides on the socket peer, not on req.ip', () => {
+  it('decides on the socket peer, not on req.ip, and keys on that peer', () => {
     const spoofedIp = {
       headers: { 'cf-connecting-ip': '198.51.100.1' },
       ip: TUNNEL,
       socket: { remoteAddress: '172.30.0.99' },
     };
-    expect(verifiedClientIp({ req: spoofedIp, env })).toBe(TUNNEL);
+    expect(verifiedClientIp({ req: spoofedIp, env })).toBe('172.30.0.99');
+    expect(identityTracker({ req: spoofedIp, env })).toBe('ip:172.30.0.99');
+  });
+
+  it('never trusts a comma-joined or duplicated CF-Connecting-IP from the tunnel', () => {
+    // Node joins a repeated header into one comma-separated value.
+    for (const value of [
+      '198.51.100.1, 198.51.100.2',
+      '198.51.100.1,198.51.100.1',
+    ]) {
+      const joined = { headers: { 'cf-connecting-ip': value }, ip: TUNNEL };
+      expect(verifiedClientIp({ req: joined, env })).toBe(TUNNEL);
+    }
   });
 
   it('uses req.ip as the peer when the socket address is unknown', () => {

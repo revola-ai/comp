@@ -3,7 +3,8 @@ import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
-import { Agent } from 'node:http';
+import { Agent, request as httpRequest } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { ApiKeyService } from '../auth/api-key.service';
@@ -74,6 +75,7 @@ const agent = new Agent({ keepAlive: false });
 
 describe('client IP behind a Cloudflare Tunnel (throttler, failure limiter, better-auth header)', () => {
   let app: INestApplication;
+  let port = 0;
   const savedEnv = { ...process.env };
   const validateApiKey = jest.fn().mockResolvedValue(null);
 
@@ -98,6 +100,7 @@ describe('client IP behind a Cloudflare Tunnel (throttler, failure limiter, bett
     app = moduleRef.createNestApplication({ logger: false });
     app.use(clientIpHeaderMiddleware);
     await app.listen(0);
+    port = (app.getHttpServer() as { address(): AddressInfo }).address().port;
   });
 
   afterAll(async () => {
@@ -120,6 +123,28 @@ describe('client IP behind a Cloudflare Tunnel (throttler, failure limiter, bett
     send('/probe/client-ip', headers).then(
       (response) => (response.body as { ip: string | null }).ip,
     );
+  // Sends CF-Connecting-IP as two header lines, which Node joins with ", ".
+  const clientIpWithRepeatedHeader = (visitors: string[]) =>
+    new Promise<string | null>((resolve, reject) => {
+      const call = httpRequest(
+        {
+          agent,
+          host: '127.0.0.1',
+          port,
+          path: '/probe/client-ip',
+          headers: { 'CF-Connecting-IP': visitors },
+        },
+        (response) => {
+          let body = '';
+          response.on('data', (chunk: Buffer) => (body += chunk.toString()));
+          response.on('end', () =>
+            resolve((JSON.parse(body) as { ip: string | null }).ip),
+          );
+        },
+      );
+      call.on('error', reject);
+      call.end();
+    });
   const badKey = (visitor: string, i: number) =>
     status('/probe/private', {
       'CF-Connecting-IP': visitor,
@@ -165,6 +190,16 @@ describe('client IP behind a Cloudflare Tunnel (throttler, failure limiter, bett
       expect(await clientIpOf({ 'CF-Connecting-IP': '198.51.100.22' })).toBe(
         '198.51.100.22',
       );
+    });
+    it('does not take a repeated CF-Connecting-IP as the visitor', async () => {
+      for (const visitors of [
+        ['198.51.100.23', '198.51.100.24'],
+        ['198.51.100.25', '198.51.100.25'],
+      ]) {
+        expect(await clientIpWithRepeatedHeader(visitors)).toMatch(
+          /(^|:)127\.0\.0\.1$/,
+        );
+      }
     });
   });
 

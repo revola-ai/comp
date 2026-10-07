@@ -34,7 +34,8 @@ function digest(value: string): Buffer {
 
 /**
  * Timing-safe comparison. Both sides are hashed first so the comparison does
- * not leak the expected length. An empty or unset side never matches.
+ * not leak the expected length. An empty or unset side, or a whitespace-only
+ * expected value, never matches.
  */
 export function secretMatches({
   presented,
@@ -43,7 +44,7 @@ export function secretMatches({
   presented: string | undefined;
   expected: string | undefined;
 }): boolean {
-  if (!presented || !expected) return false;
+  if (!presented || !expected?.trim()) return false;
   return timingSafeEqual(digest(presented), digest(expected));
 }
 
@@ -95,20 +96,20 @@ export function unwrapIpv4Mapped(address: string): string {
 
 /**
  * The valid addresses of a TRUSTED_EDGE_PROXY_IPS value (trimmed, IPv4-mapped
- * IPv6 unwrapped), and whether any entry was not an IP address. An unset or
+ * IPv6 unwrapped), and how many entries were not an IP address. An unset or
  * blank value holds no entries; an empty entry ("a,,b") is invalid.
  */
 export function parseTrustedEdgeProxyIps({
   value,
 }: {
   value: string | undefined;
-}): { addresses: string[]; hasInvalidEntry: boolean } {
-  if (!value?.trim()) return { addresses: [], hasInvalidEntry: false };
+}): { addresses: string[]; invalidEntryCount: number } {
+  if (!value?.trim()) return { addresses: [], invalidEntryCount: 0 };
   const entries = value
     .split(',')
     .map((entry) => unwrapIpv4Mapped(entry.trim()));
   const addresses = entries.filter((entry) => isIP(entry) !== 0);
-  return { addresses, hasInvalidEntry: addresses.length !== entries.length };
+  return { addresses, invalidEntryCount: entries.length - addresses.length };
 }
 
 function familyOf(address: string): 'ipv4' | 'ipv6' {
@@ -117,11 +118,27 @@ function familyOf(address: string): 'ipv4' | 'ipv6' {
 
 // Parsed once per distinct setting value, not on every request.
 let trustedPeers: { value: string; list: BlockList } | undefined;
+let warnedInvalidEntries = false;
+
+/**
+ * Production refuses an invalid list at boot (edge-secrets.ts); elsewhere the
+ * invalid entries are ignored, and the process says so once, naming the
+ * variable and the count, never the values.
+ */
+function warnInvalidEntries(count: number): void {
+  if (count === 0 || warnedInvalidEntries) return;
+  warnedInvalidEntries = true;
+  console.warn(
+    `${TRUSTED_EDGE_PROXY_IPS}: ignoring ${count} invalid ${count === 1 ? 'entry' : 'entries'} (not an IP address); CF-Connecting-IP is trusted only from the valid ones.`,
+  );
+}
 
 function trustedPeerList(value: string): BlockList {
   if (trustedPeers?.value === value) return trustedPeers.list;
+  const { addresses, invalidEntryCount } = parseTrustedEdgeProxyIps({ value });
+  warnInvalidEntries(invalidEntryCount);
   const list = new BlockList();
-  for (const address of parseTrustedEdgeProxyIps({ value }).addresses) {
+  for (const address of addresses) {
     list.addAddress(address, familyOf(address));
   }
   trustedPeers = { value, list };

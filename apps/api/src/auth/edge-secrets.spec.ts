@@ -129,6 +129,18 @@ describe('assertEdgeSecrets', () => {
       },
     );
 
+    it('treats a whitespace-only COMP_ORIGIN_AUTH as unset', () => {
+      const blank = { ...tunnel, COMP_ORIGIN_AUTH: '   ' };
+      expect(() => assertEdgeSecrets({ env: blank })).not.toThrow();
+      const message = messageOf(() =>
+        assertEdgeSecrets({
+          env: { ...blank, TRUSTED_EDGE_PROXY_IPS: undefined },
+        }),
+      );
+      expect(message).toContain('TRUSTED_EDGE_PROXY_IPS');
+      expect(message).toContain('COMP_ORIGIN_AUTH');
+    });
+
     it.each([
       ['a hostname', 'cloudflared'],
       ['a CIDR range', '172.30.0.0/24'],

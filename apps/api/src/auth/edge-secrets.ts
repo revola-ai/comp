@@ -37,11 +37,17 @@ function bootError({
  * configured, and each one that is configured must be well formed.
  */
 function assertCloudflareTrust({ env }: { env: Env }): void {
-  const origin = env[ORIGIN_AUTH] ?? '';
+  // Whitespace-only counts as unset, like a blank TRUSTED_EDGE_PROXY_IPS.
+  const rawOrigin = env[ORIGIN_AUTH] ?? '';
+  const origin = rawOrigin.trim() ? rawOrigin : '';
   const peers = parseTrustedEdgeProxyIps({
     value: env[TRUSTED_EDGE_PROXY_IPS],
   });
-  if (!origin && peers.addresses.length === 0 && !peers.hasInvalidEntry) {
+  if (
+    !origin &&
+    peers.addresses.length === 0 &&
+    peers.invalidEntryCount === 0
+  ) {
     throw bootError({
       detail: `${ORIGIN_AUTH} (exactly 64 characters from [A-Za-z0-9], for Cloudflare in front of a load balancer) or ${TRUSTED_EDGE_PROXY_IPS} (the comma-separated IP addresses of the Cloudflare Tunnel connector) must be set`,
       consequence: UNTRUSTED_PROXY,
@@ -53,7 +59,7 @@ function assertCloudflareTrust({ env }: { env: Env }): void {
       consequence: UNTRUSTED_PROXY,
     });
   }
-  if (peers.hasInvalidEntry) {
+  if (peers.invalidEntryCount > 0) {
     throw bootError({
       detail: `${TRUSTED_EDGE_PROXY_IPS} must be a comma-separated list of IP addresses, with no empty entry`,
       consequence: UNTRUSTED_PROXY,
