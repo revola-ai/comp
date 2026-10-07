@@ -21,7 +21,8 @@ SENT_ANY=""      # set once any command was sent
 INFLIGHT_ID=""   # the SSM command being waited for
 INFLIGHT_KIND="" # its kind: entry or status
 INFLIGHT_STEP="" # its step name (status for a read-only one)
-LAST_STEP=""     # the name of the last step that ended
+INFLIGHT_LOG=""  # its log on the server (/opt/comp/logs/<name>), for an entry step
+LAST_STEP=""     # the name of the last step that ended, set with REMOTE_* before INFLIGHT_ID clears
 DELIVERY_SECONDS=600
 POLL_SECONDS=5
 WORK="$(mktemp -d)"
@@ -44,11 +45,11 @@ require_local() {
 # resolve_pushed <sha>: FULL_SHA and TAG for a 12- or 40-character SHA that some branch of the
 # fork contains; anything else stops before any AWS call. "Pushed" is decided against the URL
 # the server fetches from (COMP_REPO_URL), never a remote name (Kyle's `origin` is upstream):
-# its branches are fetched with --prune into refs/comp-release/, so a deleted branch no longer
-# counts and no remote's refs are touched.
+# its branches (no tags) are fetched with --prune into refs/comp-release/, so a deleted branch no
+# longer counts and no remote's refs or local tags are touched.
 resolve_pushed() {
   [[ "$1" =~ ^[0-9a-f]{12}$|^[0-9a-f]{40}$ ]] || die "'$1' is not a 12- or 40-character git SHA"
-  git -C "$REPO_ROOT" fetch --prune --quiet "$COMP_REPO_URL" '+refs/heads/*:refs/comp-release/*' ||
+  git -C "$REPO_ROOT" fetch --prune --no-tags --quiet "$COMP_REPO_URL" '+refs/heads/*:refs/comp-release/*' ||
     die "git fetch --prune $COMP_REPO_URL failed"
   FULL_SHA="$(git -C "$REPO_ROOT" rev-parse --verify --quiet "$1^{commit}")" ||
     die "$1 is not a commit in this repository (after fetching $COMP_REPO_URL)"
@@ -131,7 +132,9 @@ remote() {
 }
 
 # await_command <command-id> <max polls>: waits for an SSM command to end, prints its output
-# and sets REMOTE_STATUS, REMOTE_CODE, REMOTE_ENDED and REMOTE_LOG.
+# and sets REMOTE_STATUS, REMOTE_CODE, REMOTE_ENDED, REMOTE_LOG and LAST_STEP. INFLIGHT_ID is
+# cleared last, so an interrupt while the output prints still sees the step in flight and
+# awaits it again (the command has ended: that returns at once, with the same result).
 await_command() {
   local id="$1" max="$2" polls=0 status code details
   while :; do
@@ -153,7 +156,6 @@ print(answer.get("Status", "Unknown"), answer.get("ResponseCode", -1), answer.ge
     esac
     break
   done
-  INFLIGHT_ID=""
   REMOTE_STATUS="$status"
   split_output
   case "$status" in
@@ -165,6 +167,8 @@ print(answer.get("Status", "Unknown"), answer.get("ResponseCode", -1), answer.ge
     *) REMOTE_CODE=1; echo "SSM command $id ended $status ($details); the server step may not have run to completion." ;;
   esac
   [[ "$REMOTE_CODE" -ne 0 || "$status" == Success ]] || REMOTE_CODE=1
+  LAST_STEP="$INFLIGHT_STEP"
+  INFLIGHT_ID=""
 }
 
 # split_output: prints the step's own output and keeps its meta lines in $WORK/meta.
@@ -201,9 +205,8 @@ step() {
   local name="$1" timeout="$2" run="$3" lease="$4" sha="$5" log
   shift 5
   log="$(step_name "$name" "$TAG").log"
-  CUT_SHORT="" INFLIGHT_STEP="$name"
+  CUT_SHORT="" INFLIGHT_STEP="$name" INFLIGHT_LOG="$log"
   remote "comp release.sh $name${TAG:+ $TAG}" "$timeout" entry "$log" "$run" "$lease" "$sha" "$@"
-  LAST_STEP="$name"
   if [[ -n "$CUT_SHORT" ]]; then
     echo "Full log: /opt/comp/logs/$log (fetch it with: deploy/server/release.sh logs --release $log)"
   elif [[ -n "$REMOTE_LOG" ]]; then

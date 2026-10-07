@@ -7,8 +7,10 @@
 #                                     failed migrations, then compose up --wait
 #   release.sh up rollback <sha12>    the same without build or migration check; refuses a tag
 #                                     whose three images are gone, or the serving one
-#   release.sh finish <action> <sha12>  after the laptop's smoke checks passed: records ok; after
-#                                     a release, prunes old images when / is over 70% used
+#   release.sh finish <action> <sha12>  after the laptop's smoke checks passed: records ok and
+#                                     says so (recorded=ok); after a release, then prunes old
+#                                     images when / is over 70% used, for at most 600 s
+#                                     (prune=ok|failed|timed-out), which never fails the step
 #   release.sh revert <action> <sha12>  after they failed: brings the previous tag back
 #   release.sh unlock <action> <sha12>  `release.sh unlock` on the laptop: removes the lease of
 #                                     a run whose laptop stopped (entry.sh checked it is that
@@ -85,6 +87,16 @@ bring_up() {
   restore "$previous"
 }
 
+prune_after_release() { # prune.sh auto, bounded; its outcome as comp-result: prune=...
+  local status=0
+  timeout 600 bash "$(dirname "${BASH_SOURCE[0]}")/prune.sh" auto || status=$?
+  case "$status" in
+    0) result "prune=ok" ;;
+    124) result "prune=timed-out"; echo "Warning: the post-release prune timed out after 600 s; the release stands." ;;
+    *) result "prune=failed"; echo "Warning: the post-release prune failed (above); the release stands." ;;
+  esac
+}
+
 failed_before_change() { # failed_before_change <status> <message>
   echo "$2"
   result "changed=no"
@@ -119,10 +131,9 @@ case "$step" in
     record "$action" "$tag" ok
     lease_drop
     result "serving=$tag"
+    result "recorded=ok"
     echo "Recorded: $action $tag ok."
-    if [[ "$action" == release ]] && ! bash "$(dirname "${BASH_SOURCE[0]}")/prune.sh" auto; then
-      echo "Warning: pruning after the release failed (above); the release stands. Free space with deploy/server/release.sh prune."
-    fi
+    [[ "$action" != release ]] || prune_after_release
     ;;
   revert)
     lease_drop

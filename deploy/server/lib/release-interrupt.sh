@@ -1,19 +1,19 @@
 # shellcheck shell=bash
 # What deploy/server/release.sh does when it is interrupted: Ctrl-C (INT), SIGTERM, or a closed
-# terminal (HUP). Sourced after lib/release-remote.sh and lib/release-flow.sh, never run alone.
+# terminal (HUP). Sourced after the other lib/release-*.sh files, never run on its own.
 #
-# Before a release or rollback has sent its up step, it cancels the SSM command in flight
-# (aws ssm cancel-command) and says nothing changed only when the server confirms it (the
-# step ended normally with comp-result: changed=no); otherwise the state is unknown and it
-# points at `status`. Once the up step was sent it never cancels a step (the up step may be
-# halfway through compose up): it waits for the step in flight to end, then runs the revert
-# step, which brings the previous tag back (or stops the stack after a first release), and
-# reports what serves. A second interrupt leaves at once; a lease left behind on the server is
-# removed with `release.sh unlock`.
+# It cancels (aws ssm cancel-command) only a step that only reads: status, logs, migrate-status
+# and prune-plan. Any other step is never cut short (a migration could stay half applied):
+# it waits for the step to end and reports its result, saying nothing changed only when the
+# server confirms it (comp-result: changed=no). Once a release or rollback sent its up step,
+# it then runs the revert step, which brings the previous tag back (or stops the stack after
+# a first release), and reports what serves. A second interrupt leaves at once and says what
+# keeps running; a lease left behind on the server is removed with `release.sh unlock`.
 
 STAGE=""               # up: the up step may be in flight; verify: it succeeded; done: reporting
 UP_RUN="" UP_ACTION="" # the run and the action (release or rollback) of that up step
-CANCEL_POLLS=24        # how long to wait for a cancelled command to stop (about 2 minutes)
+READ_ONLY_STEPS='^(status|migrate-status|prune-plan)$' # what an interrupt may cancel
+TOOLS_POLLS=$(((TOOLS_SECONDS + DELIVERY_SECONDS + 300) / POLL_SECONDS)) # migrate, trigger, prune
 
 trap 'on_signal INT 130' INT
 trap 'on_signal TERM 143' TERM
@@ -37,14 +37,24 @@ on_signal() { # on_signal <signal> <exit status>
 
 leave_now() { # leave_now <exit status>: the second interrupt
   echo
-  echo "Interrupted again: leaving now. A step already sent keeps running on the server; check it"
-  echo "with deploy/server/release.sh status, and free a lease left behind with deploy/server/release.sh unlock."
+  echo "Interrupted again: leaving now."
+  if [[ "$STAGE" == up ]]; then
+    echo "The server finishes the $UP_ACTION step of $TAG on its own; if it succeeds, $TAG serves unverified under a 20-minute lease."
+    echo "Next: deploy/server/release.sh status, then deploy/server/release.sh unlock, then release (or roll back to) the SHA that should serve."
+  elif [[ -n "$INFLIGHT_ID" && "$INFLIGHT_KIND" == entry ]]; then
+    echo "The $INFLIGHT_STEP step is still running on the server; check it with deploy/server/release.sh status and deploy/server/release.sh logs --release $INFLIGHT_LOG."
+    [[ -z "$STAGE" ]] || echo "If a lease stays behind, free it with deploy/server/release.sh unlock."
+  else
+    echo "Check the server with deploy/server/release.sh status; free a lease left behind with deploy/server/release.sh unlock."
+  fi
   exit "$1"
 }
 
 interrupted_before_up() {
-  if [[ -n "$INFLIGHT_ID" ]]; then
-    cancel_inflight
+  if [[ -n "$INFLIGHT_ID" && ( "$INFLIGHT_KIND" == status || "$INFLIGHT_STEP" =~ $READ_ONLY_STEPS ) ]]; then
+    cancel_read_only
+  elif [[ -n "$INFLIGHT_ID" ]]; then
+    wait_for_step
   elif [[ -n "$SENDING" ]]; then
     echo "An SSM command was being sent; it may have reached the server, so the state is unknown."
     echo "Check it with: deploy/server/release.sh status"
@@ -55,23 +65,24 @@ interrupted_before_up() {
   fi
 }
 
-# cancel_inflight: cancels the SSM command in flight and reports what the server confirms.
-cancel_inflight() {
+cancel_read_only() { # cancels the read-only SSM command in flight
   local id="$INFLIGHT_ID"
   capture aws ssm cancel-command --command-id "$id" --instance-ids "$INSTANCE_ID" --region "$REGION" ||
     echo "Could not cancel SSM command $id: $ERR"
-  if [[ "$INFLIGHT_KIND" == status ]]; then
-    INFLIGHT_ID=""
-    echo "Cancelled SSM command $id, a read-only step: nothing changed on the server."
-    return
-  fi
-  echo "Cancelled SSM command $id (the $INFLIGHT_STEP step); waiting for the server to stop it."
-  await_command "$id" "$CANCEL_POLLS"
+  INFLIGHT_ID=""
+  echo "Cancelled the $INFLIGHT_STEP step (SSM command $id); it only reads: it changes no container, migration or release."
+}
+
+wait_for_step() { # waits for a step that changes something (migrate, trigger, prune) and reports it
+  echo "The $INFLIGHT_STEP step is running on the server and is never cut short (it may be applying a"
+  echo "migration, deploying or removing images): waiting for it to end. Interrupt again to leave it running."
+  await_command "$INFLIGHT_ID" "$TOOLS_POLLS"
   if unchanged; then
     echo "The server confirms the step changed nothing."
+  elif [[ "$REMOTE_CODE" -eq 0 ]]; then
+    echo "The $LAST_STEP step finished (above); this command stops here."
   else
-    echo "The server did not confirm that the $INFLIGHT_STEP step changed nothing: the state is unknown."
-    echo "Check it with: deploy/server/release.sh status"
+    echo "The $LAST_STEP step ended with status $REMOTE_CODE (above); check it with deploy/server/release.sh status."
   fi
 }
 
@@ -79,7 +90,7 @@ interrupted_up() {
   if [[ -n "$INFLIGHT_ID" ]]; then
     echo "The $UP_ACTION step of $TAG is running on the server and is never cut short (it may be"
     echo "replacing containers): waiting for it to end, then bringing the previous release back."
-    echo "Interrupt again to leave it running."
+    echo "Interrupt again to leave: the server then finishes it, and $TAG may serve unverified under a 20-minute lease."
     await_command "$INFLIGHT_ID" $(((RELEASE_SECONDS + DELIVERY_SECONDS + 300) / POLL_SECONDS))
   elif [[ -n "$SENDING" ]]; then
     unknown_state "The $UP_ACTION of $TAG was interrupted while its up step was being sent"
@@ -115,7 +126,6 @@ interrupted_verify() {
   if [[ -n "$INFLIGHT_ID" ]]; then
     echo "Waiting for the $INFLIGHT_STEP step of $TAG to end on the server (interrupt again to leave it)."
     await_command "$INFLIGHT_ID" $(((UP_SECONDS + DELIVERY_SECONDS + 300) / POLL_SECONDS))
-    LAST_STEP="$INFLIGHT_STEP"
   elif [[ -n "$SENDING" ]]; then
     unknown_state "$TAG was interrupted while its $INFLIGHT_STEP step was being sent"
     echo "If the server stays held, free it with deploy/server/release.sh unlock."
@@ -123,9 +133,10 @@ interrupted_verify() {
   fi
   case "$LAST_STEP" in
     finish)
-      if [[ "$REMOTE_CODE" -eq 0 ]]; then
+      if [[ "$(result_of recorded)" == ok ]]; then
         echo "$TAG passed the smoke checks and was recorded before the interrupt: it is released."
         echo "To undo it: deploy/server/release.sh rollback"
+        after_prune
       else
         echo "$TAG is up and passed the smoke checks, but recording it failed (above)."
         echo "Check what serves with: deploy/server/release.sh status"

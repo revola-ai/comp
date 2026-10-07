@@ -65,6 +65,13 @@ after_restore() {
   exit 1
 }
 
+after_prune() { # after a recorded release: a failed or slow post-release prune, said apart
+  case "$(result_of prune)" in
+    failed) echo "Released $TAG, but the post-release prune failed (above); free space with deploy/server/release.sh prune." ;;
+    timed-out) echo "Released $TAG, but the post-release prune timed out after 600 s; free space with deploy/server/release.sh prune." ;;
+  esac
+}
+
 unknown_state() { # unknown_state <what happened>: the step's outcome cannot be trusted
   echo "$1, and the serving state is unknown: the server did not report how the step ended."
   echo "Check what serves now with: deploy/server/release.sh status"
@@ -95,10 +102,11 @@ bring_up() {
   if smoke "$TAG"; then
     step finish "$UP_SECONDS" "$run" own - release finish "$action" "$TAG"
     STAGE=done
-    [[ "$REMOTE_CODE" -eq 0 ]] ||
+    [[ "$(result_of recorded)" == ok ]] ||
       die "$TAG is up and passes the smoke checks, but recording it failed (above); rerun: deploy/server/release.sh $action $TAG"
     echo
     echo "Released $TAG: it serves and passes the smoke checks ($action)."
+    after_prune
     return 0
   fi
   echo "The smoke checks of $TAG failed; bringing the previous release back."

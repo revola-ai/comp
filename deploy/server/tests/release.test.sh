@@ -28,8 +28,8 @@ for bad in "$SHA_C:$NOT_ON_FORK" "$TAG_C:$NOT_ON_FORK" "$SHA_U:$NOT_ON_FORK" "$T
   check "release $sha: no AWS call at all" test ! -s "$FAKE_AWS_LOG"
 done
 check "refusals: no docker call" test ! -s "$FAKE_DOCKER_LOG"
-check "refusals: the laptop fetches the fork's URL (never a remote name) into its own refs, pruning" \
-  has_line "$FAKE_GIT_LOG" "git -C $ROOT fetch --prune --quiet $FORK +refs/heads/*:refs/comp-release/*"
+check "refusals: the laptop fetches the fork's branches by URL (never a remote name, no tags) into its own refs, pruning" \
+  has_line "$FAKE_GIT_LOG" "git -C $ROOT fetch --prune --no-tags --quiet $FORK +refs/heads/*:refs/comp-release/*"
 check "refusals: the laptop never fetches a remote by name" bash -c "! grep -qE '^git -C $ROOT fetch .* (origin|revola)( |\$)' '$FAKE_GIT_LOG'"
 check "refusals: the pushed check asks only the fork's refs" \
   has_line "$FAKE_GIT_LOG" "git -C $ROOT for-each-ref --contains $SHA_U --format=%(refname) refs/comp-release/"

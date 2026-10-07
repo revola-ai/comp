@@ -227,7 +227,19 @@ reset_server
 released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A"
 FAKE_DOCKER_FAIL_PRUNE=1 FAKE_DF_USE=90 release_sh "$TMP/auto-fail.out" release "$SHA_B"
 check "a failed prune after a release: the release stands" test "$?:$(last_record)" = "0:release $TAG_B ok"
-check "a failed prune after a release: says so" grep -qF "pruning after the release failed" "$TMP/auto-fail.out"
+check "a failed prune after a release: the laptop says released, prune failed" \
+  grep -qF "Released $TAG_B, but the post-release prune failed" "$TMP/auto-fail.out"
+check "a failed prune after a release: never calls it a recording failure" bash -c "! grep -qF 'recording it failed' '$TMP/auto-fail.out'"
+reset_server
+released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A"
+FAKE_TIMEOUT_EXPIRE=1 FAKE_DF_USE=90 release_sh "$TMP/auto-slow.out" release "$SHA_B"
+check "a post-release prune that times out: the release stands" test "$?:$(last_record)" = "0:release $TAG_B ok"
+check "a post-release prune that times out: bounded to 600 s" grep -qE "^timeout 600 bash .*/prune\.sh auto\$" "$FAKE_TIMEOUT_LOG"
+check "a post-release prune that times out: the laptop says so" \
+  grep -qF "Released $TAG_B, but the post-release prune timed out" "$TMP/auto-slow.out"
+check "a post-release prune that times out: never a recording failure" bash -c "! grep -qF 'recording it failed' '$TMP/auto-slow.out'"
+check "the finish step reports the recording before it prunes" bash -c "
+  log=\$(ls '$SERVER'/logs/*-finish-$TAG_B.log) && grep -n '' \"\$log\" | grep -E 'comp-result: recorded=ok|post-release prune' | head -n 1 | grep -qF recorded=ok"
 reset_server
 released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A" "$TAG_B"
 FAKE_DF_USE=90 release_sh "$TMP/auto-rollback.out" rollback

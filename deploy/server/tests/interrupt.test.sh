@@ -11,6 +11,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 source "$SERVER_DIR/tests/release-lib.sh"
 install_release_fakes
 UP="up -d --no-build --wait --wait-timeout 600"
+TAG_E=eeeeeeeeeeee TAG_F=ffffffffffff
 LOG_RE='[0-9]{8}T[0-9]{6}Z-[a-z-]+-[0-9a-f]{12}\.log'
 RUN_RE="[0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8}"
 cancels() { grep -c '^aws ssm cancel-command ' "$FAKE_AWS_LOG"; }
@@ -84,6 +85,34 @@ check "Ctrl-C twice: points at status and unlock" \
 
 reset_server
 released "$TAG_A"
+FAKE_AWS_INTERRUPT="INT@fake-command-0,TERM@fake-command-0" release_sh "$TMP/leave-up.out" release "$SHA_B"
+check "leaving while up runs: says the server brings the tag up unverified under the lease" \
+  said "$TMP/leave-up.out" "$TAG_B serves unverified under a 20-minute lease"
+check "leaving while up runs: next steps are status, unlock, then release or roll back" \
+  said "$TMP/leave-up.out" "Next: deploy/server/release.sh status, then deploy/server/release.sh unlock, then release (or roll back to) the SHA that should serve."
+
+# A signal while release.sh prints a step's output (the step has ended; tests/release-lib.sh awk)
+reset_server
+released "$TAG_A"
+FAKE_AWK_INTERRUPT="INT@1" release_sh "$TMP/print-up.out" release "$SHA_B"
+check "Ctrl-C while printing the up step: never says it was not sent" bash -c "! grep -qF 'was not sent' '$TMP/print-up.out'"
+check "Ctrl-C while printing the up step: reverts it (up, revert)" test "$(ssm_sends)" -eq 2
+check "Ctrl-C while printing the up step: serving the previous tag" test "$(serving)" = "comp-api:$TAG_A"
+check "Ctrl-C while printing the up step: recorded as rolled back" test "$(last_record)" = "release $TAG_B rolled-back"
+reset_server
+released "$TAG_A"
+FAKE_AWK_INTERRUPT="INT@2" release_sh "$TMP/print-finish.out" release "$SHA_B"
+check "Ctrl-C while printing finish: no revert of the recorded release" test "$(ssm_sends)" -eq 2
+check "Ctrl-C while printing finish: still released" test "$(last_record):$(serving)" = "release $TAG_B ok:comp-api:$TAG_B"
+check "Ctrl-C while printing finish: says it is released" said "$TMP/print-finish.out" "it is released"
+reset_server
+released "$TAG_A"
+FAKE_CURL_BAD_TAG="$TAG_B" FAKE_AWK_INTERRUPT="INT@2" release_sh "$TMP/print-revert.out" release "$SHA_B"
+check "Ctrl-C while printing revert: no second revert" test "$(ssm_sends)" -eq 2
+check "Ctrl-C while printing revert: reports what serves" said "$TMP/print-revert.out" "Now serving $TAG_A"
+
+reset_server
+released "$TAG_A"
 FAKE_AWS_INTERRUPT="INT@ssm send-command" release_sh "$TMP/sending.out" release "$SHA_B"
 check "Ctrl-C while the up step is sent: exits non-zero" test "$?" -ne 0
 check "Ctrl-C while the up step is sent: the state is unknown" said "$TMP/sending.out" "serving state is unknown"
@@ -105,22 +134,60 @@ check "Ctrl-C before anything was sent: exits 130" test "$?" -eq 130
 check "Ctrl-C before anything was sent: says nothing was sent" said "$TMP/early.out" "Nothing was sent to the server"
 check "Ctrl-C before anything was sent: no SSM command" test "$(ssm_sends)" -eq 0
 
+cancelled() { grep -c "^aws ssm cancel-command --command-id $1 --instance-ids $INSTANCE --region us-east-2\$" "$FAKE_AWS_LOG"; }
 reset_server
 released "$TAG_A"
 FAKE_AWS_INTERRUPT="INT@fake-command-0" release_typed "prune" "$TMP/prune.out" prune
-check "Ctrl-C during a prune step: exits non-zero" test "$?" -ne 0
-check "Ctrl-C during a prune step: cancels the SSM command" test "$(grep -c \
-  "^aws ssm cancel-command --command-id fake-command-0 --instance-ids $INSTANCE --region us-east-2\$" "$FAKE_AWS_LOG")" -eq 1
-check "Ctrl-C during a prune step: cancelled with no answer, so the state is unknown" said "$TMP/prune.out" "state is unknown"
-check "Ctrl-C during a prune step: prints the status command" said "$TMP/prune.out" "deploy/server/release.sh status"
-check "Ctrl-C during a prune step: never claims nothing changed" bash -c "! grep -qiF 'nothing changed' '$TMP/prune.out'"
-check "Ctrl-C during a prune step: never asks, never applies" test "$(ssm_sends)" -eq 1
+check "Ctrl-C during prune's plan (read-only): exits non-zero" test "$?" -ne 0
+check "Ctrl-C during prune's plan (read-only): cancels it" test "$(cancelled fake-command-0)" -eq 1
+check "Ctrl-C during prune's plan (read-only): says it only reads" said "$TMP/prune.out" "it only reads"
+check "Ctrl-C during prune's plan (read-only): never asks, never applies" test "$(ssm_sends)" -eq 1
+
+reset_server
+released "$TAG_A"
+docker_state "s['migrations'] = 'pending'"
+FAKE_AWS_INTERRUPT="INT@fake-command-0" release_typed "migrate" "$TMP/mstatus.out" migrate "$SHA_B"
+check "Ctrl-C during migrate's status (read-only): cancels it" test "$(cancelled fake-command-0)" -eq 1
+check "Ctrl-C during migrate's status (read-only): never applies" test "$(ssm_sends)" -eq 1
+
+reset_server
+released "$TAG_A"
+docker_state "s['migrations'] = 'pending'"
+FAKE_AWS_INTERRUPT="INT@fake-command-1" release_typed "migrate" "$TMP/mdeploy.out" migrate "$SHA_B"
+check "Ctrl-C during migrate deploy: exits non-zero" test "$?" -ne 0
+check "Ctrl-C during migrate deploy: never cancels it" test "$(cancels)" -eq 0
+check "Ctrl-C during migrate deploy: waits, so it ends applied" grep -qF '"migrations": "up-to-date"' "$FAKE_DOCKER_STATE"
+check "Ctrl-C during migrate deploy: says it waits, then that it finished" \
+  bash -c "grep -qF 'never cut short' '$TMP/mdeploy.out' && grep -qF 'The migrate step finished' '$TMP/mdeploy.out'"
+check "Ctrl-C during migrate deploy: recorded" test "$(last_record)" = "migrate $TAG_B ok"
+
+reset_server
+released "$TAG_A"
+docker_state "s['migrations'] = 'pending'"
+FAKE_AWS_INTERRUPT="INT@fake-command-1,TERM@fake-command-1" release_typed "migrate" "$TMP/mleave.out" migrate "$SHA_B"
+check "Ctrl-C twice during migrate deploy: leaves at once" said "$TMP/mleave.out" "Interrupted again"
+check "Ctrl-C twice during migrate deploy: says it still runs, with its log" grep -qE \
+  "The migrate step is still running on the server; check it with deploy/server/release.sh status and deploy/server/release.sh logs --release [0-9]{8}T[0-9]{6}Z-migrate-$TAG_B\.log" "$TMP/mleave.out"
+check "Ctrl-C twice during migrate deploy: never cancels it" test "$(cancels)" -eq 0
+
+reset_server
+released "$TAG_A"
+FAKE_AWS_INTERRUPT="INT@fake-command-0" release_typed "trigger" "$TMP/trigger.out" trigger "$SHA_B"
+check "Ctrl-C during a Trigger.dev deploy: never cancels it" test "$(cancels)" -eq 0
+check "Ctrl-C during a Trigger.dev deploy: waits for both projects" test "$(grep -c ' trigger sh -c ' "$FAKE_DOCKER_LOG")" -eq 2
+check "Ctrl-C during a Trigger.dev deploy: says it finished" said "$TMP/trigger.out" "The trigger step finished"
+
+reset_server
+released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A" "$TAG_B"
+FAKE_AWS_INTERRUPT="INT@fake-command-1" release_typed "prune" "$TMP/papply.out" prune
+check "Ctrl-C during prune's removal: never cancels it" test "$(cancels)" -eq 0
+check "Ctrl-C during prune's removal: waits until it removed the images" grep -qF "removed comp-api:$TAG_F" "$TMP/papply.out"
 
 reset_server
 released "$TAG_A"
 exec 8>>"$SERVER/release.lock"
 flock -n 8
-FAKE_SSM_CANCEL=late FAKE_AWS_INTERRUPT="INT@fake-command-0" release_typed "migrate" "$TMP/confirmed.out" migrate "$SHA_B"
+FAKE_AWS_INTERRUPT="INT@fake-command-0" release_typed "trigger" "$TMP/confirmed.out" trigger "$SHA_B"
 check "Ctrl-C during a refused step: exits non-zero" test "$?" -ne 0
 check "Ctrl-C during a refused step: the server confirms nothing changed" said "$TMP/confirmed.out" "The server confirms the step changed nothing"
 exec 8>&-
@@ -128,7 +195,7 @@ exec 8>&-
 reset_server
 released "$TAG_A" "$TAG_B"
 FAKE_AWS_INTERRUPT="INT@fake-command-0" release_sh "$TMP/tags.out" rollback
-check "Ctrl-C while rollback reads the tags: a read-only step changed nothing" said "$TMP/tags.out" "read-only"
+check "Ctrl-C while rollback reads the tags: cancelled, it only reads" said "$TMP/tags.out" "it only reads"
 check "Ctrl-C while rollback reads the tags: nothing else sent" test "$(ssm_sends)" -eq 1
 
 reset_server
