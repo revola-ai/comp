@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { publicBaseUrl } from './public-url';
 
 /** Neither UNSUBSCRIBE_SECRET nor AUTH_SECRET is set, so no token can be signed or checked. */
 export class UnsubscribeSecretMissingError extends Error {
@@ -42,17 +43,6 @@ function warnUnsubscribeDisabledOnce(): void {
 }
 
 /**
- * Base URL for unsubscribe links. `/unsubscribe/preferences` is an app page, so this is
- * NEXT_PUBLIC_APP_URL; NEXT_PUBLIC_BETTER_AUTH_URL points at the API when it is
- * self-hosted on its own host, where the page does not exist.
- */
-function getBaseUrl(): string {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (appUrl) return appUrl.replace(/\/+$/, '');
-  return 'https://app.trycomp.ai';
-}
-
-/**
  * Generate a secure unsubscribe token for an email address
  */
 export function generateUnsubscribeToken(email: string): string {
@@ -88,10 +78,15 @@ export function getUnsubscribeToken(email: string): string | undefined {
 
 /**
  * The unsubscribe URL (preferences page) for an email address, or undefined when no
- * secret is configured, in which case the email omits its unsubscribe link.
+ * secret or no NEXT_PUBLIC_APP_URL is configured, in which case the email omits its
+ * unsubscribe link. `/unsubscribe/preferences` is an app page, so the base is
+ * NEXT_PUBLIC_APP_URL; NEXT_PUBLIC_BETTER_AUTH_URL points at the API when it is
+ * self-hosted on its own host, where the page does not exist.
  */
 export function getUnsubscribeUrl(email: string): string | undefined {
   const token = getUnsubscribeToken(email);
   if (token === undefined) return undefined;
-  return `${getBaseUrl()}/unsubscribe/preferences?email=${encodeURIComponent(email)}&token=${token}`;
+  const appUrl = publicBaseUrl(['NEXT_PUBLIC_APP_URL']);
+  if (appUrl === undefined) return undefined;
+  return `${appUrl}/unsubscribe/preferences?email=${encodeURIComponent(email)}&token=${token}`;
 }

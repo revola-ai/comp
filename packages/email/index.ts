@@ -19,6 +19,7 @@ export * from './lib/check-unsubscribe';
 export * from './lib/invite-member';
 export * from './lib/magic-link';
 export * from './lib/policy-notification';
+export * from './lib/public-url';
 export * from './lib/resend';
 export * from './lib/training-completed';
 export * from './lib/unassigned-items-notification';

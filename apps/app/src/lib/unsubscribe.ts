@@ -39,16 +39,25 @@ function signToken(email: string): string {
   return createHmac('sha256', secret).update(email).digest('base64url');
 }
 
+let warnedAppUrlMissing = false;
+
 /**
- * Base URL for unsubscribe links. `/unsubscribe/preferences` is an app page,
- * so this is NEXT_PUBLIC_APP_URL. NEXT_PUBLIC_BETTER_AUTH_URL is not used:
- * when the API is self-hosted on its own host it points at the API, where the
- * page does not exist.
+ * Base URL for unsubscribe links, or undefined (one warning per process, no value) when
+ * NEXT_PUBLIC_APP_URL is unset. `/unsubscribe/preferences` is an app page, so this is
+ * NEXT_PUBLIC_APP_URL. NEXT_PUBLIC_BETTER_AUTH_URL is not used: when the API is
+ * self-hosted on its own host it points at the API, where the page does not exist. There
+ * is no upstream default host, which would send the address and its signed token there.
  */
-function getBaseUrl(): string {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (appUrl) return appUrl.replace(/\/+$/, '');
-  return 'https://app.trycomp.ai';
+function getBaseUrl(): string | undefined {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/+$/, '');
+  if (appUrl) return appUrl;
+  if (!warnedAppUrlMissing) {
+    warnedAppUrlMissing = true;
+    console.warn(
+      '[unsubscribe] NEXT_PUBLIC_APP_URL is not set: unsubscribe links are left out. Set it to the public app URL of this deployment.',
+    );
+  }
+  return undefined;
 }
 
 /**
@@ -69,13 +78,16 @@ export function verifyUnsubscribeToken({
 
 /**
  * The preferences page URL for an address, or undefined (with one warning per process)
- * when no secret is configured, in which case the page shows no link.
+ * when no secret or no NEXT_PUBLIC_APP_URL is configured, in which case the page shows
+ * no link.
  */
 export function getUnsubscribeUrl(email: string): string | undefined {
   if (!isUnsubscribeConfigured()) {
     warnUnsubscribeDisabledOnce();
     return undefined;
   }
+  const baseUrl = getBaseUrl();
+  if (baseUrl === undefined) return undefined;
   const token = signToken(email);
-  return `${getBaseUrl()}/unsubscribe/preferences?email=${encodeURIComponent(email)}&token=${token}`;
+  return `${baseUrl}/unsubscribe/preferences?email=${encodeURIComponent(email)}&token=${token}`;
 }

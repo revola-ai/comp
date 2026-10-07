@@ -174,6 +174,7 @@ describe('notification templates and the unsubscribe secret', () => {
   const saved = {
     UNSUBSCRIBE_SECRET: process.env.UNSUBSCRIBE_SECRET,
     AUTH_SECRET: process.env.AUTH_SECRET,
+    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
   };
   let warn: jest.SpyInstance;
 
@@ -207,8 +208,11 @@ describe('notification templates and the unsubscribe secret', () => {
     '$name links to the preferences page when the secret is set',
     ({ element }) => {
       process.env.UNSUBSCRIBE_SECRET = 'unsubscribe-test-secret';
+      process.env.NEXT_PUBLIC_APP_URL = 'https://app.comp.revola.ai';
       const html = renderToStaticMarkup(element);
-      expect(html).toContain('/unsubscribe/preferences?email=person%40revola.ai');
+      expect(html).toContain(
+        'https://app.comp.revola.ai/unsubscribe/preferences?email=person%40revola.ai',
+      );
     },
   );
 });

@@ -40,6 +40,17 @@ describe('app unsubscribe links with a configured secret', () => {
     );
   });
 
+  it('builds no link without NEXT_PUBLIC_APP_URL, never an upstream host, warning once', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', '');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { getUnsubscribeUrl } = await freshModule();
+    expect(getUnsubscribeUrl(EMAIL)).toBeUndefined();
+    expect(getUnsubscribeUrl('other@revola.ai')).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('NEXT_PUBLIC_APP_URL');
+    warn.mockRestore();
+  });
+
   it('verifies its own token and rejects a forged or foreign one', async () => {
     const { verifyUnsubscribeToken } = await freshModule();
     const token = createHmac('sha256', SECRET).update(EMAIL).digest('base64url');

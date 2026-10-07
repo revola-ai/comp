@@ -44,11 +44,36 @@ describe('unsubscribe links without a configured secret', () => {
   });
 });
 
+describe('unsubscribe links without NEXT_PUBLIC_APP_URL', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.stubEnv('UNSUBSCRIBE_SECRET', SECRET);
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', '');
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    warn.mockRestore();
+  });
+
+  it('builds no link instead of pointing at an upstream host, warning once', async () => {
+    const { getUnsubscribeToken, getUnsubscribeUrl } = await freshModule();
+    expect(getUnsubscribeUrl(EMAIL)).toBeUndefined();
+    expect(getUnsubscribeUrl('other@revola.ai')).toBeUndefined();
+    // The token itself does not depend on a host; the API header builder uses it.
+    expect(getUnsubscribeToken(EMAIL)).toBeDefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('NEXT_PUBLIC_APP_URL');
+  });
+});
+
 describe('unsubscribe links with a configured secret', () => {
   let warn: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.stubEnv('UNSUBSCRIBE_SECRET', SECRET);
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.comp.revola.ai/');
     warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
   afterEach(() => {
@@ -61,7 +86,9 @@ describe('unsubscribe links with a configured secret', () => {
     const expected = createHmac('sha256', SECRET).update(EMAIL).digest('base64url');
     expect(isUnsubscribeConfigured()).toBe(true);
     expect(getUnsubscribeToken(EMAIL)).toBe(expected);
-    expect(getUnsubscribeUrl(EMAIL)).toContain(`token=${expected}`);
+    expect(getUnsubscribeUrl(EMAIL)).toBe(
+      `https://app.comp.revola.ai/unsubscribe/preferences?email=person%40revola.ai&token=${expected}`,
+    );
     expect(warn).not.toHaveBeenCalled();
   });
 

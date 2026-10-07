@@ -118,6 +118,19 @@ describe('email tasks and the List-Unsubscribe header', () => {
       expect(warn).not.toHaveBeenCalled();
     });
 
+    it('send-email leaves the header out, never pointing at an upstream host, when NEXT_PUBLIC_API_URL is unset', async () => {
+      delete process.env.NEXT_PUBLIC_API_URL;
+      await runSendEmail(sendEmail);
+      await runSendEmail(sendEmail);
+      expect(mockSend).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify(mockSend.mock.calls)).not.toContain('trycomp.ai');
+      expect(
+        sentHeaders(mockSend).headers?.['List-Unsubscribe'],
+      ).toBeUndefined();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain('NEXT_PUBLIC_API_URL');
+    });
+
     it('send-batch-email adds the headers to every message', async () => {
       await sendBatch.run({ emails: [message] });
       const [item] = mockBatchSend.mock.calls[0]?.[0] as SentHeaders[];
