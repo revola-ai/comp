@@ -12,6 +12,7 @@ Knobs (environment):
   FAKE_DOCKER_FAIL_UP       `compose up` with this TAG replaces the containers, then fails
   FAKE_DOCKER_FAIL_BUILD    `buildx bake` of this target fails
   FAKE_DOCKER_FAIL_TRIGGER  `trigger.dev deploy` in this apps/<project> fails
+  FAKE_DOCKER_FAIL_PRUNE    `builder prune` fails
 Nothing here runs a container.
 """
 import json
@@ -191,5 +192,7 @@ if argv[:2] == ['image', 'rm']:
     state['images'].remove(ref)
     done(f'Untagged: {ref}')
 if argv[:2] == ['builder', 'prune']:
+    if os.environ.get('FAKE_DOCKER_FAIL_PRUNE'):
+        fail('ERROR: failed to prune build cache (fake)')
     done('Total:\t1.5GB')
 fail(f'fake docker: {shlex.join(argv)} is not known')

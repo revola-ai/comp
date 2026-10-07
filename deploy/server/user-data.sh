@@ -5,8 +5,8 @@
 #
 # It installs Docker from the AL2023 repository, the compose and buildx plugins from their
 # GitHub releases (pinned versions, pinned sha256; a mismatch stops the run), git, python3,
-# dnf-automatic (security updates applied daily at 09:00 UTC) and dnf-utils (a reboot check on
-# Sundays at 09:30 UTC, rebooting only when updates need it); adds an 8 GiB swap file; installs a
+# dnf-automatic (security updates daily at 09:00 UTC) and dnf-utils (a reboot check Sundays at
+# 09:30 UTC, only when updates need it; both wait for the release lock); adds 8 GiB swap; installs a
 # timer that restarts unhealthy comp containers every minute; clones revola-ai/comp into
 # /opt/comp/src; and last checks Docker Engine >= 25 and Compose >= 2.30 (compose.yaml needs both).
 # On success it writes /opt/comp/provisioned. EC2 caps user data at 16 KB.
@@ -32,6 +32,9 @@ REPO_URL=https://github.com/revola-ai/comp
 SRC_DIR=/opt/comp/src
 SWAP_FILE=/swapfile
 SWAP_MIB=8192
+# The lock release.sh steps take (lib/server-common.sh; tests/user-data-units.test.sh checks it):
+# security updates and the reboot check wait for it, so neither restarts Docker mid-release.
+LOCKED="/usr/bin/flock -w 3600 /opt/comp/release.lock"
 
 fail() {
   echo "user-data: FAILED: $*" >&2
@@ -170,9 +173,12 @@ install_reboot_check() {
   mkdir -p "$1" "$2"
   cat >"$script" <<'SCRIPT'
 #!/bin/bash
-# Reboots when installed updates need it (needs-restarting -r exits 1 and says so); otherwise
-# does nothing. Run by comp-reboot-if-needed.timer; output in `journalctl -u comp-reboot-if-needed`.
+# Reboots when installed updates need it (needs-restarting -r exits 1 and says so), unless a
+# release holds the server between its steps (an unexpired /opt/comp/release.lease); otherwise
+# does nothing. Run by comp-reboot-if-needed.timer under the release lock; output in
+# `journalctl -u comp-reboot-if-needed`.
 set -uo pipefail
+LEASE="${COMP_LEASE_FILE:-/opt/comp/release.lease}"
 report="$(needs-restarting -r 2>&1)"
 status=$?
 echo "$report"
@@ -181,6 +187,14 @@ if [[ "$status" -eq 0 ]]; then
   exit 0
 fi
 if [[ "$status" -eq 1 && "$report" == *"Reboot is required"* ]]; then
+  holder="" expires=0 what=""
+  [[ ! -s "$LEASE" ]] || read -r holder expires what <"$LEASE" || true
+  [[ "$expires" =~ ^[0-9]+$ ]] || expires=0
+  left=$((expires - $(date +%s)))
+  if [[ -n "$holder" ]] && ((left > 0)); then
+    echo "reboot needed, but not rebooting: $what (run $holder) holds the server for $left more seconds"
+    exit 0
+  fi
   echo "rebooting to finish installing updates"
   systemctl reboot
   exit
@@ -197,7 +211,7 @@ After=dnf-automatic.service
 
 [Service]
 Type=oneshot
-ExecStart=$script
+ExecStart=$LOCKED $script
 UNIT
   cat >"$2/comp-reboot-if-needed.timer" <<'UNIT'
 [Unit]
@@ -226,6 +240,19 @@ Persistent=false
 UNIT
 }
 
+# install_update_lock <unit dir> <packaged dnf-automatic.service>: runs the packaged update
+# command under the release lock (a drop-in resets ExecStart and wraps it), so updates never
+# restart Docker while a release step runs. Upstream dnf 4.14 ships
+# "/usr/bin/dnf-automatic /etc/dnf/automatic.conf --timer"; any other shape stops the run.
+install_update_lock() {
+  local command
+  [[ -f "$2" ]] || fail "$2 is missing (is dnf-automatic installed?)"
+  command="$(sed -n 's/^ExecStart=//p' "$2")"
+  [[ -n "$command" && "$command" != *$'\n'* ]] || fail "expected one ExecStart line in $2, got: ${command:-none}"
+  mkdir -p "$1/dnf-automatic.service.d"
+  printf '[Service]\nExecStart=\nExecStart=%s %s\n' "$LOCKED" "$command" >"$1/dnf-automatic.service.d/comp-release-lock.conf"
+}
+
 make_swap() {
   if [[ ! -f "$SWAP_FILE" ]]; then
     dd if=/dev/zero of="$SWAP_FILE" bs=1M count="$SWAP_MIB" status=none
@@ -247,6 +274,7 @@ main() {
   echo "user-data: security updates, reboot check, swap, unhealthy-container timer"
   configure_updates /etc/dnf/automatic.conf /etc/dnf/vars/releasever
   install_update_window /etc/systemd/system
+  install_update_lock /etc/systemd/system /usr/lib/systemd/system/dnf-automatic.service
   install_reboot_check /usr/local/sbin /etc/systemd/system
   install_restarter /usr/local/sbin /etc/systemd/system
   systemctl daemon-reload

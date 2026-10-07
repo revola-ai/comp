@@ -18,6 +18,7 @@ RELEASES_LOG="$COMP_ROOT/releases.log"
 RELEASE_LOCK="$COMP_ROOT/release.lock"
 RELEASE_LEASE="$COMP_ROOT/release.lease"
 LEASE_SECONDS=1200 # how long a release waits between its steps for the laptop's smoke checks
+DISK_PRUNE_PERCENT=70 # above this use of /, a release prunes after itself and status warns
 # <utc>-<step>[-<sha12>]: the name of a step's log and of a run.
 STEP_NAME_RE='^[0-9]{8}T[0-9]{6}Z-[a-z]+(-[a-z]+)?(-[0-9a-f]{12})?$'
 # A run: the name of its first step and 8 random hex characters, unique per operator.
@@ -28,6 +29,9 @@ STACK_IMAGES=(api app portal)
 result() { printf 'comp-result: %s\n' "$*"; } # a line release.sh reads back from the output
 
 utc_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# root_use_percent: the use of / in percent, digits only (df -P prints "73%").
+root_use_percent() { df -P / | awk 'NR == 2 { sub(/%$/, "", $5); print $5 }'; }
 
 # record <action> <sha12> <outcome>: one line per attempt in releases.log.
 record() { printf '%s %s %s %s\n' "$(utc_now)" "$1" "$2" "$3" >>"$RELEASES_LOG"; }

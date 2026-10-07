@@ -5,6 +5,7 @@
 #
 #   status.sh show                 current and previous tag, the lease, the comp containers with
 #                                  their health, the last 10 lines of releases.log, disk use of /
+#                                  (with a warning line above 70%)
 #   status.sh tags                 only comp-result: current=... and previous=...
 #   status.sh lease                comp-result: lease_holder, lease_what, lease_age (seconds since
 #                                  it was taken) and lease_left (seconds to expiry, <= 0: expired)
@@ -32,6 +33,10 @@ show() {
   if [[ -f "$RELEASES_LOG" ]]; then tail -n 10 "$RELEASES_LOG"; else echo "(none yet)"; fi
   echo
   df -h /
+  use="$(root_use_percent)"
+  if [[ "$use" =~ ^[0-9]+$ ]] && ((use > DISK_PRUNE_PERCENT)); then
+    echo "WARNING: / is $use% used (over $DISK_PRUNE_PERCENT%); free space with deploy/server/release.sh prune"
+  fi
 }
 
 page() { # page <name> <offset>

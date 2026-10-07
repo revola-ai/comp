@@ -190,4 +190,42 @@ release_typed "prune" "$TMP/prune-stack.out" prune
 check "prune after rollbacks: keeps the default rollback target" grep -qF "\"comp-api:$TAG_A\"" "$FAKE_DOCKER_STATE"
 check "prune after rollbacks: removes what is outside the history and the newest tags" \
   bash -c "! grep -qF 'comp-api:$TAG_F' '$FAKE_DOCKER_STATE'"
+
+# ---------------------------------------------------------------- disk: prune after a release, warn in status
+auto_server() { # five ok releases (A serving), then release B with / at <use> percent
+  reset_server
+  released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A"
+  FAKE_DF_USE="$1" release_sh "$TMP/auto-$1.out" release "$SHA_B"
+}
+AUTO_REMOVED="$(printf 'comp-%s\n' "api:$TAG_E" "app:$TAG_E" "portal:$TAG_E" "migrate:$TAG_E" \
+  "api:$TAG_F" "app:$TAG_F" "portal:$TAG_F" "migrate:$TAG_F")"
+auto_server 71
+check "disk over 70% after a release: the release succeeds" test "$?:$(last_record)" = "0:release $TAG_B ok"
+check "disk over 70% after a release: removes the images prune would, without asking" \
+  test "$(sed -n 's/^docker image rm //p' "$FAKE_DOCKER_LOG" | sort)" = "$(sort <<<"$AUTO_REMOVED")"
+check "disk over 70% after a release: keeps the current, previous and last 3 ok tags" bash -c "
+  for t in $TAG_B $TAG_A $TAG_C $TAG_D; do grep -qF \"comp-api:\$t\" '$FAKE_DOCKER_STATE' || exit 1; done"
+check "disk over 70% after a release: keeps the pinned cloudflared image" grep -qF "\"$TUNNEL_REF\"" "$FAKE_DOCKER_STATE"
+check "disk over 70% after a release: trims the build cache to 20 GB" \
+  has_line "$FAKE_DOCKER_LOG" "docker builder prune --keep-storage 20GB -f"
+check "disk over 70% after a release: says why" grep -qF "/ is 71% used, over 70%" "$TMP/auto-71.out"
+check "disk over 70% after a release: reports what it removed" \
+  bash -c "grep -qxF 'removed comp-api:$TAG_E' '$TMP/auto-71.out' && grep -qxF 'removed comp-migrate:$TAG_F' '$TMP/auto-71.out'"
+check "disk over 70% after a release: the finish step does it (no extra SSM command)" test "$(ssm_sends)" -eq 2
+auto_server 70
+check "disk at 70%: removes nothing" bash -c "! grep -qE 'image rm|builder prune' '$FAKE_DOCKER_LOG'"
+check "disk at 70%: says so" grep -qF "/ is 70% used: nothing pruned" "$TMP/auto-70.out"
+reset_server
+released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A"
+FAKE_DOCKER_FAIL_PRUNE=1 FAKE_DF_USE=90 release_sh "$TMP/auto-fail.out" release "$SHA_B"
+check "a failed prune after a release: the release stands" test "$?:$(last_record)" = "0:release $TAG_B ok"
+check "a failed prune after a release: says so" grep -qF "pruning after the release failed" "$TMP/auto-fail.out"
+reset_server
+released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A" "$TAG_B"
+FAKE_DF_USE=90 release_sh "$TMP/auto-rollback.out" rollback
+check "a rollback never prunes" bash -c "! grep -qE 'image rm|builder prune' '$FAKE_DOCKER_LOG'"
+FAKE_DF_USE=71 release_sh "$TMP/status-full.out" status
+check "status over 70%: a warning line" grep -qxF "WARNING: / is 71% used (over 70%); free space with deploy/server/release.sh prune" "$TMP/status-full.out"
+FAKE_DF_USE=70 release_sh "$TMP/status-ok.out" status
+check "status at 70%: no warning" bash -c "! grep -qF WARNING '$TMP/status-ok.out'"
 finish

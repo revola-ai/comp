@@ -7,7 +7,8 @@
 #                                     failed migrations, then compose up --wait
 #   release.sh up rollback <sha12>    the same without build or migration check; refuses a tag
 #                                     whose three images are gone, or the serving one
-#   release.sh finish <action> <sha12>  after the laptop's smoke checks passed: records ok
+#   release.sh finish <action> <sha12>  after the laptop's smoke checks passed: records ok; after
+#                                     a release, prunes old images when / is over 70% used
 #   release.sh revert <action> <sha12>  after they failed: brings the previous tag back
 #   release.sh unlock <action> <sha12>  `release.sh unlock` on the laptop: removes the lease of
 #                                     a run whose laptop stopped (entry.sh checked it is that
@@ -114,6 +115,9 @@ case "$step" in
     lease_drop
     result "serving=$tag"
     echo "Recorded: $action $tag ok."
+    if [[ "$action" == release ]] && ! bash "$(dirname "${BASH_SOURCE[0]}")/prune.sh" auto; then
+      echo "Warning: pruning after the release failed (above); the release stands. Free space with deploy/server/release.sh prune."
+    fi
     ;;
   revert)
     lease_drop

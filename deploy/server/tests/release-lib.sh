@@ -3,7 +3,7 @@
 # One sandbox plays both machines. The laptop runs deploy/server/release.sh; the fake aws
 # (tests/fake_aws.py) runs each SSM command at once, locally, with /bin/sh and
 # COMP_ROOT=$SERVER (the server's /opt/comp; src/ holds a copy of deploy/server), as SSM would run
-# it as root on the server. docker, git, curl, flock and sleep are fakes on PATH, so nothing
+# it as root on the server. docker, git, curl, flock, df and sleep are fakes on PATH, so nothing
 # reaches AWS, GitHub, Docker, Trigger.dev, a database or the internet.
 
 SHA_A=aaaaaaaaaaaa1111111111111111111111111111 # pushed to the fork; released before the tests start
@@ -25,7 +25,19 @@ install_release_fakes() {
     printf '#!/usr/bin/env bash\nexec python3 %q "$@"\n' "$SERVER_DIR/tests/fake_$fake.py" >"$bin/$fake"
   done
   cp -f "$SERVER_DIR/tests/fake_git.sh" "$bin/git"
-  chmod 755 "$bin/docker" "$bin/curl" "$bin/flock" "$bin/git"
+  # df of / at $FAKE_DF_USE percent (default 40), as `df -P /` and `df -h /` print it
+  cat >"$bin/df" <<'SH'
+#!/usr/bin/env bash
+use="${FAKE_DF_USE:-40}"
+if [[ "$1" == -P ]]; then
+  printf 'Filesystem     1024-blocks     Used Available Capacity Mounted on\n'
+  printf '/dev/nvme0n1p1    52416492 %8d  %8d      %s%% /\n' $((524164 * use)) $((524164 * (100 - use))) "$use"
+else
+  printf 'Filesystem      Size  Used Avail Use%% Mounted on\n/dev/nvme0n1p1   50G   %dG   %dG  %s%% /\n' \
+    $((use / 2)) $(((100 - use) / 2)) "$use"
+fi
+SH
+  chmod 755 "$bin/docker" "$bin/curl" "$bin/flock" "$bin/git" "$bin/df"
   export FAKE_DOCKER_LOG="$TMP/docker.log" FAKE_DOCKER_STATE="$TMP/docker-state.json" \
     FAKE_GIT_LOG="$TMP/git.log" FAKE_GIT_HEAD="$TMP/git-head" FAKE_CURL_LOG="$TMP/curl.log" \
     FAKE_SSM_ROOT="$SERVER" FAKE_AWS_SECRET="$TMP/secret.json" \
@@ -53,7 +65,7 @@ reset_server() {
   rm -f "$FAKE_GIT_HEAD.pruned" "$FAKE_CURL_LOG.interrupted"
   unset FAKE_DOCKER_FAIL_UP FAKE_DOCKER_FAIL_BUILD FAKE_DOCKER_FAIL_TRIGGER FAKE_CURL_BAD_TAG \
     FAKE_CURL_NO_ACCESS FAKE_GIT_DIRTY FAKE_SSM_TRUNCATE FAKE_AWS_ACCOUNT FAKE_SSM_END FAKE_GIT_STALE \
-    FAKE_AWS_INTERRUPT FAKE_SSM_CANCEL FAKE_CURL_INTERRUPT
+    FAKE_AWS_INTERRUPT FAKE_SSM_CANCEL FAKE_CURL_INTERRUPT FAKE_DF_USE FAKE_DOCKER_FAIL_PRUNE
 }
 
 docker_state() { # docker_state <python statements over `s`>: edits the fake docker state

@@ -6,7 +6,8 @@
 #   entry.sh <log-name> <run-id> <new|own> <sha|-> <script> [args...]
 #
 # 1. Takes the server lock (flock on /opt/comp/release.lock, never waiting), so release,
-#    rollback, migrate, trigger and prune run one at a time; a second caller fails at once.
+#    rollback, migrate, trigger, prune and unlock run one at a time; a second caller fails at
+#    once. dnf-automatic and the reboot check (user-data.sh) wait up to an hour for it.
 # 2. Checks the lease a release keeps between its steps (while the laptop runs the smoke
 #    checks): "new" refuses while another run holds it, "own" needs it to be <run-id>'s.
 # 3. Writes everything after this to /opt/comp/logs/<log-name> (0600 in a 0700 directory).
@@ -53,7 +54,7 @@ if ! mkdir -p "$COMP_LOGS" || ! chmod 700 "$COMP_LOGS"; then
 fi
 exec 9>>"$RELEASE_LOCK"
 if ! flock -n 9; then
-  refuse 75 "another release.sh step (release, rollback, migrate, trigger or prune) is running on the server; try again when it ends (deploy/server/release.sh status)"
+  refuse 75 "another release.sh step (release, rollback, migrate, trigger, prune or unlock), the daily security update or the reboot check is running on the server; try again when it ends (deploy/server/release.sh status)"
 fi
 if lease_live; then
   if [[ "$lease_mode" != own || "$LEASE_HOLDER" != "$run_id" ]]; then

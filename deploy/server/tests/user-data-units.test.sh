@@ -86,7 +86,8 @@ check "restarter: docker ps failure exits non-zero" test "$?" -ne 0
 REBOOTER="$SBIN/comp-reboot-if-needed"
 check "reboot check: installed executable" test "$(mode_of "$REBOOTER")" = 755
 check "reboot check: is shellcheck clean" shellcheck "$REBOOTER"
-check "reboot check: the service runs it" grep -qxF "ExecStart=$REBOOTER" "$UNITS/comp-reboot-if-needed.service"
+check "reboot check: the service runs it under the release lock (waits up to an hour)" \
+  grep -qxF "ExecStart=/usr/bin/flock -w 3600 /opt/comp/release.lock $REBOOTER" "$UNITS/comp-reboot-if-needed.service"
 check "reboot check: oneshot" grep -qxF "Type=oneshot" "$UNITS/comp-reboot-if-needed.service"
 check "reboot check: never during an update run" grep -qxF "After=dnf-automatic.service" "$UNITS/comp-reboot-if-needed.service"
 check "reboot check: Sundays 09:30 UTC" grep -qxF "OnCalendar=Sun *-*-* 09:30:00 UTC" "$UNITS/comp-reboot-if-needed.timer"
@@ -105,6 +106,19 @@ check "reboot check: nothing new is logged" grep -qxF "no reboot needed" "$TMP/n
 reboot_run 1 $'Core libraries or services have been updated since boot-up:\n  * kernel\n\nReboot is required to fully utilize these updates.' "$TMP/nr-yes.out"
 check "reboot check: a new kernel reboots" grep -qxF "systemctl reboot" "$STUB_LOG"
 check "reboot check: a reboot is logged" grep -qxF "rebooting to finish installing updates" "$TMP/nr-yes.out"
+export COMP_LEASE_FILE="$TMP/release.lease"
+NOW_EPOCH="$(date +%s)"
+printf '20261007T095000Z-release-bbbbbbbbbbbb-0123abcd %s release bbbbbbbbbbbb\n' "$((NOW_EPOCH + 300))" >"$COMP_LEASE_FILE"
+reboot_run 1 $'Core libraries or services have been updated since boot-up:\n  * kernel\n\nReboot is required to fully utilize these updates.' "$TMP/nr-lease.out"
+lease_status=$?
+check "reboot check: a live release lease skips the reboot" bash -c "! grep -q 'systemctl reboot' '$STUB_LOG'"
+check "reboot check: a skipped reboot exits zero" test "$lease_status" -eq 0
+check "reboot check: a skipped reboot is logged with the holder" \
+  grep -qF "not rebooting: release bbbbbbbbbbbb (run 20261007T095000Z-release-bbbbbbbbbbbb-0123abcd) holds the server for 300 more seconds" "$TMP/nr-lease.out"
+printf '20261007T095000Z-release-bbbbbbbbbbbb-0123abcd %s release bbbbbbbbbbbb\n' "$((NOW_EPOCH - 1))" >"$COMP_LEASE_FILE"
+reboot_run 1 $'Core libraries or services have been updated since boot-up:\n  * kernel\n\nReboot is required to fully utilize these updates.' "$TMP/nr-expired.out"
+check "reboot check: an expired lease does not stop the reboot" grep -qxF "systemctl reboot" "$STUB_LOG"
+unset COMP_LEASE_FILE
 reboot_run 1 "Error: unknown command" "$TMP/nr-err.out"
 check "reboot check: an error exits non-zero" test "$?" -ne 0
 check "reboot check: an error does not reboot" bash -c "! grep -q 'systemctl reboot' '$STUB_LOG'"
@@ -118,5 +132,28 @@ check "update window: daily 09:00 UTC" grep -qxF "OnCalendar=*-*-* 09:00:00 UTC"
 check "update window: no random delay" grep -qxF "RandomizedDelaySec=0" "$WINDOW"
 check "update window: no catch-up run at boot" grep -qxF "Persistent=false" "$WINDOW"
 check "update window: a timer section" test "$(head -n 1 "$WINDOW")" = "[Timer]"
+
+# ---------------------------------------------------------------- updates take the release lock
+PACKAGED="$TMP/dnf-automatic.service"
+printf '[Unit]\nDescription=dnf automatic\n\n[Service]\nType=oneshot\nNice=19\nExecStart=/usr/bin/dnf-automatic /etc/dnf/automatic.conf --timer\n' >"$PACKAGED"
+(install_update_lock "$UNITS" "$PACKAGED") >"$TMP/lock.out" 2>&1
+check "update lock: installs" test "$?" -eq 0
+LOCK_DROPIN="$UNITS/dnf-automatic.service.d/comp-release-lock.conf"
+check "update lock: resets the packaged command, then runs it under the release lock" test "$(cat "$LOCK_DROPIN" 2>/dev/null)" = \
+  "$(printf '%s\n' '[Service]' 'ExecStart=' 'ExecStart=/usr/bin/flock -w 3600 /opt/comp/release.lock /usr/bin/dnf-automatic /etc/dnf/automatic.conf --timer')"
+# shellcheck disable=SC2016 # expanded by the inner bash
+check "update lock: the lock is the one release steps take" test /opt/comp/release.lock = \
+  "$(env -u COMP_ROOT bash -c 'source "$1" && printf %s "$RELEASE_LOCK"' _ "$SERVER_DIR/lib/server-common.sh")"
+check "update lock: the reboot check reads the lease release steps write" \
+  grep -qF 'COMP_LEASE_FILE:-/opt/comp/release.lease' "$SBIN/comp-reboot-if-needed"
+(install_update_lock "$UNITS" "$TMP/missing.service") >"$TMP/lock-missing.out" 2>&1
+check "update lock: a missing packaged unit fails" test "$?" -ne 0
+check "update lock: says which file" grep -qF "$TMP/missing.service" "$TMP/lock-missing.out"
+printf 'ExecStart=/usr/bin/dnf-automatic\nExecStart=/usr/bin/true\n' >"$TMP/two.service"
+(install_update_lock "$TMP/units-two" "$TMP/two.service") >"$TMP/lock-two.out" 2>&1
+check "update lock: two ExecStart lines fail (check the packaged unit by hand)" test "$?" -ne 0
+check "update lock: two ExecStart lines install nothing" test ! -e "$TMP/units-two/dnf-automatic.service.d"
+check "user-data installs the update lock from the packaged unit" \
+  grep -qF "install_update_lock /etc/systemd/system /usr/lib/systemd/system/dnf-automatic.service" "$SERVER_DIR/user-data.sh"
 
 finish

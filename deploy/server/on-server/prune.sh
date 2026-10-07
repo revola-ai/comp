@@ -5,6 +5,9 @@
 #   prune.sh plan            prints what is kept and what would go (comp-result: remove=...)
 #   prune.sh apply <ref>...  removes those of <ref> that would still go, then trims the build
 #                            cache to 20 GB (docker builder prune --keep-storage 20GB -f)
+#   prune.sh auto            after a release (on-server/release.sh finish), with no confirmation:
+#                            when / is more than 70% used, removes everything `plan` would list,
+#                            then trims the build cache; otherwise does nothing
 #
 # Only comp-api, comp-app, comp-portal and comp-migrate images are ever removed. Kept: the tags
 # of the current release and the last 3 other ok releases (releases.log), the default rollback
@@ -64,7 +67,7 @@ apply() {
   for ref in "$@"; do
     [[ "$ref" =~ $CANDIDATE_RE ]] || { echo "skipping $ref: not a comp image"; continue; }
     grep -qxF -- "$ref" <<<"$remove" || { echo "skipping $ref: kept now"; continue; }
-    docker image rm "$ref" || { echo "could not remove $ref"; status=1; }
+    if docker image rm "$ref" >/dev/null; then echo "removed $ref"; else echo "could not remove $ref"; status=1; fi
   done
   echo "== docker builder prune --keep-storage 20GB -f"
   docker builder prune --keep-storage 20GB -f || status=1
@@ -72,8 +75,24 @@ apply() {
   return "$status"
 }
 
+auto() {
+  local use remove
+  use="$(root_use_percent)"
+  [[ "$use" =~ ^[0-9]+$ ]] || { echo "could not read the disk use of / (df -P /)"; return 1; }
+  if ((use <= DISK_PRUNE_PERCENT)); then
+    echo "Disk: / is $use% used: nothing pruned."
+    return 0
+  fi
+  echo "Disk: / is $use% used, over $DISK_PRUNE_PERCENT%: removing old images by the rules of release.sh prune."
+  remove="$(removable)" || { echo "could not list the images or containers"; return 1; }
+  [[ -n "$remove" ]] || echo "No image to remove."
+  # shellcheck disable=SC2086 # one image ref per word
+  apply $remove
+}
+
 case "${1:-}" in
   plan) plan ;;
   apply) shift && apply "$@" ;;
-  *) echo "usage: prune.sh plan | apply <ref>..." >&2; exit 2 ;;
+  auto) auto ;;
+  *) echo "usage: prune.sh plan | apply <ref>... | auto" >&2; exit 2 ;;
 esac
