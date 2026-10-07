@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""A stateful stand-in for the aws CLI, used by deploy/server/tests/provision*.test.sh.
+"""A stateful stand-in for the aws CLI, used by deploy/server/tests/provision*.test.sh and
+release*.test.sh.
 
-It answers only the calls deploy/server/provision.sh makes, keeps what was "created" in the
+It answers only the calls deploy/server/provision.sh, release.sh and render-env.sh make, keeps
+what was "created" in the
 JSON file $FAKE_AWS_STATE (so a second run sees the first run's resources) and appends every
 argv, shell-quoted, to $FAKE_AWS_LOG. It ignores --query: each operation answers with the text
 provision.sh asks for, and the tests pin every call's exact argv, so the two stay in step.
@@ -12,11 +14,17 @@ Knobs (environment):
   FAKE_AWS_PROFILE_NOT_READY   run-instances fails this many times with the IAM-propagation error
   FAKE_AWS_WARN                every successful call also writes a warning to stderr
   FAKE_AWS_PAGED               list answers come back as text pages, the first one empty
+  FAKE_AWS_SECRET              the file get-secret-value answers with (render-env.sh)
+  FAKE_SSM_ROOT                ssm send-command runs its commands right away, locally, with
+                               /bin/sh and COMP_ROOT=<this> (the server's /opt/comp)
+  FAKE_SSM_TRUNCATE            keep this many characters of a command's output (SSM keeps 24000)
+  FAKE_SSM_PENDING_POLLS       get-command-invocation answers InProgress this many times first
 Nothing here talks to AWS.
 """
 import json
 import os
 import shlex
+import subprocess
 import sys
 from typing import NoReturn
 
@@ -28,7 +36,7 @@ STATE_PATH = os.environ['FAKE_AWS_STATE']
 EMPTY = {
     'role': False, 'attached': [], 'inline': None, 'profile': False, 'profile_roles': [],
     'security_groups': [], 'log_groups': {}, 'instances': [], 'run_attempts': 0,
-    'topic': False, 'subscriptions': {}, 'health_checks': [], 'alarms': {},
+    'topic': False, 'subscriptions': {}, 'health_checks': [], 'alarms': {}, 'commands': {},
 }
 state = dict(EMPTY)
 if os.path.exists(STATE_PATH):
@@ -150,6 +158,44 @@ if service == 'ec2':
 
 if (service, operation) == ('ssm', 'get-parameter'):
     out('ami-0fakeal2023arm64')
+
+# ---------------------------------------------------------------- ssm run-command, secrets
+if (service, operation) == ('secretsmanager', 'get-secret-value'):
+    with open(os.environ['FAKE_AWS_SECRET']) as handle:
+        print(handle.read())
+    sys.exit(0)  # read-only: leaves the state file to the caller (an SSM command runs this)
+
+if (service, operation) == ('ssm', 'send-command'):
+    if required_opt('--document-name') != 'AWS-RunShellScript':
+        error('InvalidDocument', 'SendCommand', 'only AWS-RunShellScript is faked')
+    required_opt('--timeout-seconds')
+    parameters = json.loads(required_opt('--parameters'))
+    if not parameters.get('executionTimeout'):
+        error('InvalidParameters', 'SendCommand', 'set executionTimeout explicitly')
+    script = '\n'.join(parameters['commands'])
+    run = subprocess.run(['/bin/sh', '-c', script], capture_output=True, text=True,
+                         env={**os.environ, 'COMP_ROOT': os.environ['FAKE_SSM_ROOT']})
+    keep = int(os.environ.get('FAKE_SSM_TRUNCATE', '24000'))
+    command_id = f"fake-command-{len(state['commands'])}"
+    state['commands'][command_id] = {
+        'instance': required_opt('--instance-ids'), 'code': run.returncode, 'polls': 0,
+        'stdout': run.stdout[:keep], 'stderr': run.stderr[:8000],
+    }
+    out(command_id)
+
+if (service, operation) == ('ssm', 'get-command-invocation'):
+    command = state['commands'].get(required_opt('--command-id'))
+    if command is None or command['instance'] != required_opt('--instance-id'):
+        error('InvocationDoesNotExist', 'GetCommandInvocation', 'no such invocation')
+    command['polls'] += 1
+    pending = command['polls'] <= int(os.environ.get('FAKE_SSM_PENDING_POLLS', '1'))
+    status = 'InProgress' if pending else ('Success' if command['code'] == 0 else 'Failed')
+    out(json.dumps({
+        'Status': status, 'StatusDetails': status,
+        'ResponseCode': -1 if pending else command['code'],
+        'StandardOutputContent': '' if pending else command['stdout'],
+        'StandardErrorContent': '' if pending else command['stderr'],
+    }))
 
 if service == 'logs':
     if operation == 'describe-log-groups':

@@ -29,6 +29,8 @@ EXPECTED_APP="$(sorted "${SHARED[@]}" "${API_AND_APP[@]}" "${RUNTIME[@]}" \
 EXPECTED_PORTAL="$(sorted "${SHARED[@]}" "${RUNTIME[@]}" \
   SERVICE_TOKEN_PORTAL BACKEND_API_URL PORTAL_DISABLE_MICROSOFT_SIGN_IN)"
 EXPECTED_CLOUDFLARED="TUNNEL_TOKEN"
+EXPECTED_MIGRATE="DATABASE_URL"
+EXPECTED_TRIGGER="$(sorted TRIGGER_ACCESS_TOKEN TRIGGER_PROJECT_REF_API TRIGGER_PROJECT_REF_APP)"
 
 # ---------------------------------------------------------------- committed files
 committed_names_only() { # every .keys line is a comment, NAME or "NAME from KEY"
@@ -45,15 +47,16 @@ check "public env files set no secret key" public_holds_no_secret_key
 entry_scripts_executable() { # every committed entry script is 100755 (tests/lib.sh, lib/ are sourced)
   local mode path found=0
   while read -r mode _ _ path; do
-    [[ "$path" == deploy/server/tests/lib.sh || "$path" == deploy/server/lib/* ]] && continue
+    [[ "$path" == deploy/server/tests/lib.sh || "$path" == deploy/server/tests/release-lib.sh ||
+      "$path" == deploy/server/lib/* ]] && continue
     found=1
     [[ "$mode" == 100755 ]] || { echo "  not executable in git: $path"; return 1; }
   done < <(cd "$ROOT" && git ls-files -s -- 'deploy/server/*.sh')
   [[ "$found" -eq 1 ]]
 }
 check "entry scripts are committed executable" entry_scripts_executable
-check "services are api, app, cloudflared and portal" \
-  test "$(cd "$SERVER_DIR/env" && printf '%s ' *.keys)" = "api.keys app.keys cloudflared.keys portal.keys "
+check "services are api, app, cloudflared, portal and the tools migrate and trigger" \
+  test "$(cd "$SERVER_DIR/env" && printf '%s ' *.keys)" = "api.keys app.keys cloudflared.keys migrate.keys portal.keys trigger.keys "
 
 # ---------------------------------------------------------------- success
 OUT="$TMP/out"
@@ -67,8 +70,11 @@ check "api has exactly its keys" test "$(names_of "$OUT/api.env")" = "$EXPECTED_
 check "app has exactly its keys" test "$(names_of "$OUT/app.env")" = "$EXPECTED_APP"
 check "portal has exactly its keys" test "$(names_of "$OUT/portal.env")" = "$EXPECTED_PORTAL"
 check "cloudflared has exactly its keys" test "$(names_of "$OUT/cloudflared.env")" = "$EXPECTED_CLOUDFLARED"
-check "writes no other file (no temporary left)" test "$(files_in "$OUT")" = "api.env app.env cloudflared.env portal.env"
-for service in api app portal cloudflared; do
+check "migrate has exactly its keys" test "$(names_of "$OUT/migrate.env")" = "$EXPECTED_MIGRATE"
+check "trigger has exactly its keys" test "$(names_of "$OUT/trigger.env")" = "$EXPECTED_TRIGGER"
+check "writes no other file (no temporary left)" test "$(files_in "$OUT")" = \
+  "api.env app.env cloudflared.env migrate.env portal.env trigger.env"
+for service in api app portal cloudflared migrate trigger; do
   check "$service.env is 0600" test "$(mode_of "$OUT/$service.env")" = 600
 done
 check "the env directory is 0700" test "$(mode_of "$OUT")" = 700
@@ -80,6 +86,11 @@ check "api TRIGGER_SECRET_KEY is the api project key" \
   test "$(value_of "$OUT/api.env" TRIGGER_SECRET_KEY)" = "$(fake_value TRIGGER_SECRET_KEY_API)"
 check "app TRIGGER_SECRET_KEY is the app project key" \
   test "$(value_of "$OUT/app.env" TRIGGER_SECRET_KEY)" = "$(fake_value TRIGGER_SECRET_KEY_APP)"
+check "migrate DATABASE_URL is the migration URL" \
+  test "$(value_of "$OUT/migrate.env" DATABASE_URL)" = "$(fake_value DATABASE_MIGRATION_URL)"
+for name in DATABASE_MIGRATION_URL TRIGGER_ACCESS_TOKEN TRIGGER_PROJECT_REF_API TRIGGER_PROJECT_REF_APP; do
+  check "only the tools get $name" bash -c "! grep -l '$(fake_value "$name")' '$OUT'/{api,app,portal,cloudflared}.env"
+done
 check "no value is printed" bash -c "! grep -q fakesecret '$TMP/ok.log'"
 
 expect_public() { # expect_public <service> <name> <value>

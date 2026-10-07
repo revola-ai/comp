@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# Helpers for deploy/server/provision.sh (sourced, never run on its own).
+# Helpers for deploy/server/provision.sh (sourced, never run on its own); release.sh reuses
+# die (prefixed with $TOOL_NAME), capture, quote_cmd, open_terminal and ask.
 #
 # Every step looks before it creates: `probe` (a get that fails with NotFound when the thing
 # is missing) or `query` (a describe/list that returns nothing), then `create`, which prints
@@ -16,7 +17,7 @@ ERR="" # its stderr, shown only when the call fails
 TTY_FD=""
 
 die() {
-  echo "provision: $*" >&2
+  echo "${TOOL_NAME:-provision}: $*" >&2
   exit 1
 }
 
@@ -61,9 +62,11 @@ capture() {
   return "${status:-1}"
 }
 
-open_terminal() { # opens /dev/tty for the answers; refuses when there is no terminal
+# open_terminal [message]: opens /dev/tty for the answers; refuses with <message> when there is
+# no terminal.
+open_terminal() {
   if ! { exec {TTY_FD}</dev/tty; } 2>/dev/null; then
-    die "provision.sh needs a terminal to confirm each create; run it from an interactive shell (piped answers are never accepted)"
+    die "${1:-provision.sh needs a terminal to confirm each create; run it from an interactive shell (piped answers are never accepted)}"
   fi
 }
 

@@ -12,7 +12,7 @@ failures=0
 # A value with every character an env file could mangle: $, quotes, " #", braces.
 TRICKY_VALUE="postgresql://u:fakesecret\$p'a\"ss #x \${HOME}@pooler:5432/db?sslmode=verify-full"
 
-# Every key of comp/production/config the four services read (names only).
+# Every key of comp/production/config the services read (names only).
 FIXTURE_KEYS=(
   DATABASE_URL APP_AWS_ENDPOINT APP_AWS_REGION APP_AWS_ACCESS_KEY_ID APP_AWS_SECRET_ACCESS_KEY
   APP_AWS_BUCKET_NAME APP_AWS_ORG_ASSETS_BUCKET APP_AWS_QUESTIONNAIRE_UPLOAD_BUCKET
@@ -21,8 +21,8 @@ FIXTURE_KEYS=(
   ENCRYPTION_KEY AUTH_GOOGLE_ID AUTH_GOOGLE_SECRET OPENAI_API_KEY ANTHROPIC_API_KEY
   GOOGLE_GENERATIVE_AI_API_KEY INTERNAL_API_TOKEN SERVICE_TOKEN_TRIGGER SERVICE_TOKEN_PORTAL
   REVALIDATION_SECRET MACED_API_KEY TRIGGER_SECRET_KEY_API TRIGGER_SECRET_KEY_APP TUNNEL_TOKEN
-  # Present in the secret but read by no container (migrations and Trigger.dev deploys).
-  DATABASE_MIGRATION_URL TRIGGER_PROJECT_REF_API TRIGGER_PROJECT_REF_APP
+  # Read only by the one-off tools containers (migrations and Trigger.dev deploys).
+  DATABASE_MIGRATION_URL TRIGGER_PROJECT_REF_API TRIGGER_PROJECT_REF_APP TRIGGER_ACCESS_TOKEN
 )
 
 check() { # check <name> <command...>: one ok/FAIL line per assertion

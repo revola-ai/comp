@@ -124,4 +124,49 @@ check "model assertions ran" test "$python_status" -eq 0
 check "every model assertion passed" bash -c "! grep -q '^FAIL' '$TMP/model.log'"
 check "compose file holds no secret value" bash -c "! grep -q fakesecret '$COMPOSE_FILE'"
 
+# ---------------------------------------------------------------- the tools profile
+compose --profile tools config --format json >"$TMP/tools.json" 2>"$TMP/tools.err"
+check "the tools profile renders" test -s "$TMP/tools.json"
+python3 - "$TMP/tools.json" "$TAG_VALUE" "$TMP" <<'PY' >"$TMP/tools.log"
+import json, sys
+
+config_path, tag, tmp = sys.argv[1:4]
+services = json.load(open(config_path))['services']
+results = []
+
+def check(name, condition):
+    results.append(('ok  ' if condition else 'FAIL') + ' ' + name)
+
+def env_names(path):
+    return sorted(line.split('=', 1)[0] for line in open(path).read().splitlines() if line)
+
+check('tools: the profile adds exactly migrate and trigger',
+      sorted(services) == ['api', 'app', 'cloudflared', 'migrate', 'portal', 'trigger'])
+for name in ('migrate', 'trigger'):
+    service = services.get(name, {})
+    options = service.get('logging', {}).get('options', {})
+    check(f'{name}: image comp-migrate:<TAG>, never pulled or built',
+          service.get('image') == f'comp-migrate:{tag}' and service.get('pull_policy') == 'never'
+          and 'build' not in service)
+    check(f'{name}: only in the tools profile', service.get('profiles') == ['tools'])
+    check(f'{name}: never restarts', service.get('restart') == 'no')
+    check(f'{name}: drops every capability', service.get('cap_drop') == ['ALL'])
+    check(f'{name}: no new privileges', 'no-new-privileges:true' in service.get('security_opt', []))
+    check(f'{name}: runs with init', service.get('init') is True)
+    check(f'{name}: publishes no port', not service.get('ports'))
+    check(f'{name}: on the default network, not the stack network', list(service.get('networks', {})) == ['default'])
+    check(f'{name}: logs to /comp/api without blocking',
+          service.get('logging', {}).get('driver') == 'awslogs' and options.get('awslogs-group') == '/comp/api'
+          and options.get('mode') == 'non-blocking' and options.get('awslogs-create-group') == 'false')
+    check(f'{name}: memory limited', int(service.get('mem_limit') or 0) > 0)
+    check(f'{name}: no healthcheck', not service.get('healthcheck'))
+    check(f'{name}: environment is exactly its env file',
+          sorted(service.get('environment', {})) == env_names(f'{tmp}/env/{name}.env'))
+print('\n'.join(results))
+PY
+tools_status=$?
+cat "$TMP/tools.log"
+check "tools assertions ran" test "$tools_status" -eq 0
+check "every tools assertion passed" bash -c "! grep -q '^FAIL' '$TMP/tools.log'"
+
 finish

@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1.7
-# Fork-owned images for the AWS install: targets api, app and portal (linux/arm64).
+# Fork-owned images for the AWS install: targets api, app and portal (linux/arm64), and the
+# tools image migrate (deploy/server only).
 # Build with deploy/aws/docker-bake.hcl from the repository root; the build context is the
 # whole monorepo (.dockerignore keeps env files, installs and build output out).
 
@@ -102,6 +103,22 @@ RUN cd apps/portal \
      NODE_OPTIONS=--max-old-space-size=6144 bun run build:docker \
   && cp -R .next/static .next/standalone/apps/portal/.next/static \
   && cp -R public .next/standalone/apps/portal/public
+
+# ---------------------------------------------------------------- tools image
+# comp-migrate, the one-off tools image of deploy/server (never serves traffic): the workspace
+# with its node_modules and built libraries, packages/db (prisma.config.ts, the migrations) for
+# `prisma migrate status|deploy`, and apps/api and apps/app with their schema files for
+# `trigger.dev deploy` (whose CA extension reads deploy/aws/certs). Prisma verifies the
+# database against the Supabase CA (DATABASE_SSL_CA). Runs as root under cap_drop: ALL.
+FROM libs AS migrate
+COPY deploy/aws/certs/supabase-ca.crt /app/certs/supabase-ca.crt
+COPY deploy/aws/certs/supabase-ca.crt ./deploy/aws/certs/supabase-ca.crt
+COPY apps/api ./apps/api
+COPY apps/app ./apps/app
+RUN cd apps/api && bun run db:getschema \
+  && cd ../app && bun run db:getschema && bunx prisma generate --schema=prisma/schema
+ENV DATABASE_SSL_CA=/app/certs/supabase-ca.crt
+WORKDIR /repo/packages/db
 
 # ---------------------------------------------------------------- runtime images
 # Every image carries the public Supabase root CA and verifies the database against it.

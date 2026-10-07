@@ -3,8 +3,10 @@
 # cloudflared, which carries app/portal/api.comp.revola.ai in from Cloudflare. No port is
 # published; the only way in is the tunnel.
 #
-#   sudo env TAG=<12-character git sha> docker compose -f deploy/server/compose.yaml build api
 #   sudo env TAG=<12-character git sha> docker compose -f deploy/server/compose.yaml up -d --no-build
+#
+# deploy/server/release.sh does this (and builds the images with deploy/aws/docker-bake.hcl);
+# the `build` sections below let `docker compose build <service>` build the same images by hand.
 #
 # Run every compose command as root, in that form: the compose CLI reads env_file itself, and
 # the env files are 0600 root in a 0700 directory; `sudo` drops TAG, hence `sudo env TAG=...`.
@@ -46,6 +48,23 @@ x-awslogs: &awslogs
   mode: non-blocking
   max-buffer-size: 4m
   tag: "{{.Name}}/{{.ID}}"
+
+# The tools services (migrate, trigger): same hardening and log driver as the stack, no
+# restart, no healthcheck, no build (release.sh builds the image with bake). They log to the
+# api's group, which the instance profile may already write to.
+x-tools: &tools
+  <<: *common
+  restart: "no"
+  image: comp-migrate:${TAG:?set TAG to the 12-character git sha of the release}
+  pull_policy: never
+  profiles: [tools]
+  mem_limit: 4g
+  memswap_limit: 4g
+  logging:
+    driver: awslogs
+    options:
+      <<: *awslogs
+      awslogs-group: /comp/api
 
 services:
   api:
@@ -168,6 +187,23 @@ services:
       options:
         <<: *awslogs
         awslogs-group: /comp/cloudflared
+
+  # One-off tools, never started by `up` (profile tools): deploy/server/release.sh runs them
+  # with `docker compose --profile tools run --rm -T --no-deps <service> ...` (on-server/
+  # migrate.sh and trigger.sh). The image is target migrate of deploy/aws/Dockerfile, built
+  # by release.sh. They sit on compose's default network, away from the stack; the
+  # unhealthy-container timer skips one-off containers.
+  migrate:
+    <<: *tools
+    env_file:
+      - path: ${COMP_ENV_DIR:-/opt/comp/env}/migrate.env
+        format: raw
+
+  trigger:
+    <<: *tools
+    env_file:
+      - path: ${COMP_ENV_DIR:-/opt/comp/env}/trigger.env
+        format: raw
 
 # A private bridge with a fixed subnet (clear of the VPC and Docker's default 172.17/16).
 # Not `internal: true`: the containers need outbound access (Supabase, Upstash, Resend,

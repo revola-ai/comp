@@ -1,21 +1,23 @@
 # Comp on the tunnel server
 
 One ARM64 EC2 instance runs Comp with Docker Compose, reached only through a Cloudflare Tunnel (plan: `docs/plans/2026-10-07-server-tunnel-hosting.md`).
-This file describes the stack and its configuration; the operator runbook is added by the release and secrets tasks.
+This file describes the stack, its configuration and how to release it (Releasing); the secrets runbook is added by the secrets task.
 
 ## Files
 
 | Path | What it is |
 |---|---|
-| `compose.yaml` | The stack: `api`, `app`, `portal` and `cloudflared` on one private network |
+| `compose.yaml` | The stack: `api`, `app`, `portal` and `cloudflared` on one private network, plus the one-off tools `migrate` and `trigger` (profile `tools`) |
 | `env/<service>.keys` | Names of the secret keys each container gets from `comp/production/config` (never values) |
 | `env/<service>.public.env` | Committed non-secret values each container gets (URLs, pool sizes, cookie domain) |
 | `render-env.sh` | Writes `/opt/comp/env/<service>.env` from the secret and the public files |
 | `provision.sh`, `lib/provision-*.sh` | Creates the AWS resources of the server, one confirmed command at a time (see Provisioning) |
+| `release.sh`, `lib/release-*.sh` | Runs on a laptop: release, rollback, migrate, Trigger.dev deploy, status, logs and prune, through SSM Run Command (see Releasing) |
+| `on-server/*.sh`, `lib/server-*.sh` | The server side of `release.sh`, run as root by SSM |
 | `user-data.sh` | First-boot setup of the instance: Docker, the compose and buildx plugins, updates, swap, the unhealthy-container timer, the checkout |
 | `tests/*.test.sh` | Bash tests with a stubbed `aws`; run each with `bash deploy/server/tests/<name>.test.sh` |
-| `tests/fake_aws.py` | The stateful fake `aws` the provision tests put on `PATH` |
-| `tests/tty_run.py` | Runs `provision.sh` with a pseudo-terminal to type answers into, or with no terminal at all |
+| `tests/fake_*.py`, `tests/fake_git.sh` | Stateful fakes of `aws` (it runs SSM commands locally), `docker`, `git`, `curl` and `flock` |
+| `tests/tty_run.py` | Runs a script with a pseudo-terminal to type answers into, or with no terminal at all |
 
 ## The stack
 
@@ -31,17 +33,17 @@ Every compose command runs as root, because the compose CLI reads the env files 
 `sudo` drops `TAG` from the environment, so the form is always:
 
 ```bash
-sudo env TAG=<sha> docker compose -f deploy/server/compose.yaml build api
 sudo env TAG=<sha> docker compose -f deploy/server/compose.yaml up -d --no-build
 ```
 
-The three Comp images are built on the server from the repository root (`docker compose build <service>`, one at a time) and never pulled (`pull_policy: never`), so `docker compose up -d --no-build` with a tag that was never built fails instead of building whatever is checked out.
+The three Comp images are built on the server from the repository root, one at a time, and never pulled (`pull_policy: never`), so `docker compose up -d --no-build` with a tag that was never built fails instead of building whatever is checked out.
+`release.sh` builds them with `deploy/aws/docker-bake.hcl` (`REGISTRY` empty, so they are tagged `comp-<name>:<TAG>`); the `build` sections of `compose.yaml` build the same images by hand (`docker compose build <service>`).
 The `NEXT_PUBLIC_*` build arguments of `app` and `portal` equal `deploy/aws/public-env.ts` (`tests/compose.test.sh` checks).
 
 Healthchecks are liveness probes that never touch the database, so a database outage does not mark a container unhealthy.
 Docker restarts a container that exits (`restart: unless-stopped`), not one that turns unhealthy; health is what the release script waits for.
 For that gap the server runs `comp-restart-unhealthy.timer` (installed by `user-data.sh`): every minute it restarts each `comp` container whose healthcheck reports `unhealthy`, and logs each restart to journald (`journalctl -u comp-restart-unhealthy`).
-It leaves alone one-off `compose run` containers and any container started less than 5 minutes ago (still in its start period, or one a release is waiting on).
+It leaves alone one-off `compose run` containers (the tools) and any container started less than 5 minutes ago (still in its start period, or one a release is waiting on), so it never fights the `up --wait` of a release, which gives up after 10 minutes.
 
 The four containers together are limited to 5.25 GiB (swap included), which leaves about 10 GiB of the 16 GiB host for an image build (the Next.js builds use a 6 GiB heap) and the system.
 Every container drops all capabilities and runs with `no-new-privileges`.
@@ -65,7 +67,8 @@ It runs in `non-blocking` mode with a 4 MB buffer: a CloudWatch outage drops log
 ### The cloudflared image
 
 Cloudflare publishes `cloudflared` only on Docker Hub (not on ECR Public or GHCR, checked 2026-10-07), so the image comes from `docker.io`, pinned by the digest of its multi-architecture index (`2026.10.0`).
-The server pulls it only on first provision or a digest bump and keeps it cached (pruning never removes it), which stays far inside Docker Hub's anonymous pull limit even though the NAT gateway's address is shared.
+The server pulls it only on first provision or a digest bump and keeps it cached, which stays far inside Docker Hub's anonymous pull limit even though the NAT gateway's address is shared.
+Docker lists an image pulled by digest without a tag, so a plain `docker image prune` can delete it once its container is gone; `release.sh prune` removes only `comp-*` images and never runs `docker image prune`, so the pinned image stays even then (see Releasing).
 If a pull is ever rate-limited, wait and rerun.
 To update it, read the new index digest without pulling (`docker buildx imagetools inspect docker.io/cloudflare/cloudflared:<version>`) and change the tag and digest in `compose.yaml` together.
 The image's entrypoint is `cloudflared --no-autoupdate`; the stack runs `tunnel run`, which reads `TUNNEL_TOKEN` from `cloudflared.env`.
@@ -104,7 +107,10 @@ The lists follow the parked AWS design (`deploy/aws/secret-keys.ts` and `unset-k
 - cloudflared: `TUNNEL_TOKEN`.
 
 The app and portal never receive `INTERNAL_API_TOKEN`.
-`DATABASE_MIGRATION_URL` and the `TRIGGER_PROJECT_REF_*` keys stay in the secret for migrations and Trigger.dev deploys; no container reads them.
+- migrate (one-off, profile `tools`): `DATABASE_URL` (from `DATABASE_MIGRATION_URL`).
+- trigger (one-off, profile `tools`): `TRIGGER_ACCESS_TOKEN`, `TRIGGER_PROJECT_REF_API`, `TRIGGER_PROJECT_REF_APP`.
+
+No container of the stack reads `DATABASE_MIGRATION_URL`, `TRIGGER_ACCESS_TOKEN` or the `TRIGGER_PROJECT_REF_*` keys; only the one-off tools containers do.
 
 ## Connection budget
 
@@ -189,6 +195,91 @@ cloud-init runs `user-data.sh` once, as root (`sudo cloud-init status --long` re
 - A clone of `https://github.com/revola-ai/comp` in `/opt/comp/src`.
 - Last, a check for Docker Engine 25 or newer (healthcheck `start_interval`) and Compose 2.30 or newer (`format: raw`); on success it writes the versions to `/opt/comp/provisioned`.
 
+## Releasing
+
+`release.sh` runs on a laptop with AWS credentials for account `455986776194`, bash 4 or newer, `aws`, `git`, `python3` and `curl`:
+
+```bash
+deploy/server/release.sh release <sha>                     # build, check migrations, up, smoke checks
+deploy/server/release.sh rollback [<sha>]                  # back to an earlier release (default: the one before)
+deploy/server/release.sh migrate <sha>                     # apply the commit's migrations (type: migrate)
+deploy/server/release.sh trigger <sha> [--project api|app] # deploy Trigger.dev prod (type: trigger)
+deploy/server/release.sh status                            # tags, containers, last releases, disk
+deploy/server/release.sh logs <service>                    # prints the aws logs tail command
+deploy/server/release.sh logs --release <log>              # the last 500 lines of a step's log
+deploy/server/release.sh prune                             # remove old images (type: prune)
+```
+
+It refuses other accounts and an `AWS_REGION` or `AWS_DEFAULT_REGION` other than `us-east-2`, and works on the one running instance named `comp-server`.
+`migrate`, `trigger` and `prune` read their typed word from the terminal (`/dev/tty`), never from stdin, and refuse before any AWS call without one; `release` and `rollback` ask nothing (running them is the decision) but print what they will do first.
+It never uses SSH: every server step is one SSM Run Command (`AWS-RunShellScript`, an explicit execution timeout, 600 seconds for delivery) that runs as root.
+The command's text is `lib/server-common.sh` with `on-server/entry.sh` (or `on-server/status.sh`), so it works whatever the server's checkout holds; the work itself runs from `deploy/server/on-server/` of the checkout in `/opt/comp/src`.
+SSM parameters carry names, tags and SHAs only: the server reads the secret itself (`render-env.sh`) and no value appears in a command line, an SSM parameter, a log name or this script's output.
+
+A `<sha>` is 12 or 40 hex characters and must be on a branch of `origin` (`release.sh` runs `git fetch origin`, then `git branch -r --contains`), because the server fetches it from GitHub; anything else is refused before any AWS call; its first 12 characters are the image tag.
+
+Every step that may change something, on the server:
+
+- takes the server lock (`flock` on `/opt/comp/release.lock`, never waiting): release, rollback, migrate, trigger and prune run one at a time, and a second caller fails at once;
+- holds, for a release or rollback, a lease (`/opt/comp/release.lease`, 20 minutes) between bringing the tag up and recording it (while the laptop runs the smoke checks), so nothing starts in between; an expired lease is ignored;
+- with a SHA, fetches every branch of `origin` into `/opt/comp/src`, refuses local changes there and checks the SHA out detached;
+- writes its full output to `/opt/comp/logs/<utc>-<step>-<sha12>.log` (0600 in a 0700 directory); `release.sh` prints the last 200 lines (at most 20,000 bytes, because SSM keeps 24,000 characters) and the log's path.
+  When the output still arrives cut short, it says so and prints the `logs --release` command that fetches the full log in pages.
+- adds one line per attempt to `/opt/comp/releases.log`, `<utc> <action> <sha12> <ok|failed|rolled-back>`; the current tag is that of the last `ok` release or rollback.
+
+### release
+
+1. Builds `comp-api`, `comp-app`, `comp-portal` and the tools image `comp-migrate` at the tag, one at a time with `docker buildx bake -f deploy/aws/docker-bake.hcl --load <target>`, skipping images that exist, then renders the env files (`render-env.sh`).
+2. Runs `prisma migrate status` in the tools image against `DATABASE_MIGRATION_URL`.
+   Pending or failed migrations, or a status it cannot read, stop the release before any container changes; it prints the list and the `release.sh migrate <sha12>` command.
+3. `docker compose up -d --no-build --wait --wait-timeout 600` with the new tag (the release's checkout of `compose.yaml`).
+4. From the laptop: `https://api.comp.revola.ai/v1/health/ready`, `https://app.comp.revola.ai/api/health/live` and `https://portal.comp.revola.ai/api/health` must answer 200, and `https://app.comp.revola.ai/` a 302 to `<team>.cloudflareaccess.com` (Access is on); each is retried every 5 seconds, 24 times (about 2 minutes); then it is recorded `ok`.
+
+A failure after the containers changed (health or smoke) brings the previous `ok` tag back up the same way, smoke-checks it, and says which tag serves; the attempt is recorded `rolled-back`.
+After a first release there is nothing to go back to: the failed stack is stopped, the attempt recorded `failed`, and `release.sh` says the site is down.
+If the laptop is interrupted after the new tag came up, it keeps serving unrecorded; `status` shows the running images next to the recorded tag, and rerunning `release <sha>` (nothing to build) records it.
+
+### rollback
+
+`rollback` brings back the most recent `ok` tag other than the current one, or the given SHA's tag, with the same `up --wait`, smoke checks and recovery.
+It refuses a tag whose three images are gone (pruned) or that already serves.
+It does not build, migrate or check out: it uses the images as they were built and the server's current checkout of `compose.yaml` and env files, so compose changes since that release are not rolled back, and the database keeps any newer migrations.
+
+### migrate
+
+`migrate <sha>` checks the SHA out, builds `comp-migrate:<sha12>` if needed, and shows the migration status; only pending migrations lead to the question, and only the typed word `migrate` applies them.
+It then runs `prisma migrate deploy` in a one-off container (`docker compose --profile tools run --rm migrate`, which the unhealthy-container timer leaves alone) with `COMP_I_AM_TOUCHING_PROD=1`, and shows the status again; the guard in `packages/db/prisma.config.ts` still checks the target.
+Prisma gets `DATABASE_URL` from `migrate.env` (the secret's `DATABASE_MIGRATION_URL`, the session pooler or the direct host, never port 6543), and the container adds `sslmode=require`, `sslcert=/app/certs/supabase-ca.crt` and `sslaccept=strict` to it, so the schema engine verifies the chain and the host against the Supabase CA (it accepts any certificate otherwise).
+The tools containers can use up to 4 GiB each while they run, beside the stack's 5.25 GiB; the lock keeps them from overlapping an image build.
+
+### trigger
+
+`trigger <sha>` deploys the Trigger.dev tasks of `apps/api`, then `apps/app` (or only `--project api|app`) to their prod environments, after the typed word `trigger`.
+It runs `npx --yes trigger.dev@4.4.3 deploy --env prod` from `/repo/apps/<project>` in a one-off container of `comp-migrate:<sha12>`; the CLI bundles there and builds the deploy image remotely on Trigger.dev.
+`trigger.env` holds `TRIGGER_ACCESS_TOKEN` (a personal access token) and both project refs; the container sets `TRIGGER_PROJECT_REF` from `TRIGGER_PROJECT_REF_API` or `TRIGGER_PROJECT_REF_APP`, which overrides the upstream ref in `trigger.config.ts`; it refuses, before deploying anything, a ref that is still an upstream Comp AI project (`proj_zhioyrusqertqgafqgpj`, `proj_lhxjliiqgcdyqbgtucda`).
+
+The tasks' own env vars are set in the Trigger.dev dashboard (each project, Environment Variables, Production), not by `release.sh`.
+The lists below come from the static import closure of each project's task directories (the parked `revola/aws-infra` design, `deploy/aws/trigger-env-keys.ts`, run against this tree); a "secret" value is the key of `comp/production/config`, and `DATABASE_SSL_CA` and `NODE_EXTRA_CA_CERTS` are set by the CA build extension at deploy.
+
+| Variable | comp-api | comp-app |
+|---|---|---|
+| `DATABASE_URL`, `APP_AWS_ACCESS_KEY_ID`, `APP_AWS_SECRET_ACCESS_KEY`, `APP_AWS_ENDPOINT`, `APP_AWS_REGION`, `APP_AWS_BUCKET_NAME`, `OPENAI_API_KEY`, `RESEND_API_KEY`, `RESEND_FROM_DEFAULT`, `RESEND_FROM_SYSTEM`, `SERVICE_TOKEN_TRIGGER`, `UNSUBSCRIBE_SECRET` | secret | secret |
+| `ANTHROPIC_API_KEY`, `APP_AWS_KNOWLEDGE_BASE_BUCKET`, `APP_AWS_ORG_ASSETS_BUCKET`, `APP_AWS_QUESTIONNAIRE_UPLOAD_BUCKET` | secret | not set |
+| `AUTH_SECRET` (from `SECRET_KEY`), `ENCRYPTION_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `REVALIDATION_SECRET` | not set | secret |
+| `API_BASE_URL`, `API_URL`, `BASE_URL`, `BETTER_AUTH_URL`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_BETTER_AUTH_URL` | `https://api.comp.revola.ai` | `https://api.comp.revola.ai` |
+| `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_PORTAL_URL` | `https://app.comp.revola.ai`, `https://portal.comp.revola.ai` | the same |
+| `DATABASE_POOL_MAX`, `NODE_ENV` | `2`, `production` | the same |
+
+### status, logs
+
+`status` prints the current and previous tags, a lease if one is held, every container of the `comp` project with its image and health, the last 10 lines of `releases.log` and the disk use of `/`; it takes no lock and changes nothing.
+`logs <service>` prints `aws logs tail /comp/<service> --follow --region us-east-2` (it does not run it; the tools containers log to `/comp/api`), and `logs --release <log>` fetches the last 500 lines of a step's log, by name or as `/opt/comp/logs/<name>`, in pages of 15,000 bytes.
+
+### prune
+
+`prune` lists what it keeps and what it would remove, then asks for the typed word `prune`; it keeps the images of the current tag and the 3 most recent other `ok` tags (`rollback` needs them), the image of every container of the `comp` project, running or stopped, and the pinned `cloudflared` image, which is never a candidate (only `comp-api`, `comp-app`, `comp-portal` and `comp-migrate` images are removed), so it stays even when its container is gone.
+It then trims the build cache to 20 GB (`docker builder prune --keep-storage 20GB -f`) and never runs `docker image prune`, which can delete the digest-pinned `cloudflared` image (Docker lists it untagged).
+
 ## Tests
 
 ```bash
@@ -199,7 +290,11 @@ bash deploy/server/tests/provision.test.sh    # declined, confirmed and second r
 bash deploy/server/tests/provision-failures.test.sh   # refusals, partial and drifted accounts, aws errors
 bash deploy/server/tests/user-data.test.sh    # size limit, checksums, version gates, updates
 bash deploy/server/tests/user-data-units.test.sh   # restarter, reboot check, update window
+bash deploy/server/tests/release.test.sh      # pushed check, exact calls, migration gate, rollback on failure
+bash deploy/server/tests/rollback.test.sh     # rollback, lock, lease, account checks, status, logs
+bash deploy/server/tests/release-ops.test.sh  # migrate, trigger and prune with typed confirmations
 ```
 
 The render-env tests stub `aws` with a fake secret; the provision tests use the stateful fake `tests/fake_aws.py` and type their answers into a pseudo-terminal (`tests/tty_run.py`); the user-data tests source the script and stub `curl`, `docker` and the system tools, so nothing is installed or fetched.
+The release tests run laptop and server in one sandbox: the fake `aws` runs each SSM command locally with `COMP_ROOT` pointing at a temporary `/opt/comp`, and `docker`, `git`, `curl` and `flock` are fakes, so nothing is built, fetched or started.
 `compose.test.sh` needs Docker and Bun (it compares build arguments with `deploy/aws/public-env.ts`) and starts no container; the provision and user-data tests need `shellcheck` and `python3`.
