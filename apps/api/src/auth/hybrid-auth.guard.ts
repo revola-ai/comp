@@ -7,10 +7,8 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { db } from '@db';
-import type { Response } from 'express';
 import { AuthFailureLimiter } from '../throttle/auth-failure-limiter';
-import { reserveCredentialAttempt } from '../throttle/credential-attempt';
-import type { TrackableRequest } from '../throttle/identity-tracker';
+import { credentialAttemptTaker } from '../throttle/credential-attempt';
 import { authenticateApiKey } from './api-key-auth';
 import { ApiKeyService } from './api-key.service';
 import { auth } from './auth.server';
@@ -43,12 +41,10 @@ export class HybridAuthGuard implements CanActivate {
     // Credentials checked against the database (API keys, bearer tokens) and
     // service tokens that fail cost an attempt of the caller's verified client
     // IP bucket (429 once it is full); cookie-only sessions never do.
-    const takeAttempt = () =>
-      reserveCredentialAttempt({
-        limiter: this.attemptLimiter,
-        request: context.switchToHttp().getRequest<TrackableRequest>(),
-        response: () => context.switchToHttp().getResponse<Response>(),
-      });
+    const takeAttempt = credentialAttemptTaker({
+      limiter: this.attemptLimiter,
+      context,
+    });
 
     // Try API Key authentication first (for external customers)
     const apiKey = request.headers[API_KEY_HEADER] as string;

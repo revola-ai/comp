@@ -28,7 +28,9 @@ import { PermissionGuard } from './permission.guard';
   ],
   controllers: [AuthController],
   providers: [
-    // One instance for the whole app: HybridAuthGuard's per-IP attempt buckets.
+    // One instance for the whole app: the per-IP attempt buckets of
+    // HybridAuthGuard and PlatformAdminGuard (modules hosting either import
+    // AuthModule).
     AuthFailureLimiter,
     ApiKeyService,
     HybridAuthGuard,

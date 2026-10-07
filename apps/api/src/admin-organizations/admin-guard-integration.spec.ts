@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PlatformAdminGuard } from '../auth/platform-admin.guard';
+import { AuthFailureLimiter } from '../throttle/auth-failure-limiter';
 
 const mockGetSession = jest.fn();
 const mockFindUnique = jest.fn();
@@ -44,7 +45,7 @@ describe('PlatformAdminGuard — runtime rejection scenarios', () => {
   let guard: PlatformAdminGuard;
 
   beforeEach(() => {
-    guard = new PlatformAdminGuard();
+    guard = new PlatformAdminGuard(new AuthFailureLimiter());
     jest.clearAllMocks();
   });
 

@@ -12,9 +12,9 @@ import {
  * (@Throttle overrides per route). Public routes are limited by the global guard
  * on the verified client IP; all other routes by the interceptor, after
  * HybridAuthGuard, on the caller's identity. Rejected credentials never reach
- * the interceptor; HybridAuthGuard limits them itself, per verified client IP,
- * right before the database lookup (AuthFailureLimiter, provided by
- * AuthModule). Storage is in memory, which is correct for one task per
+ * the interceptor; HybridAuthGuard and PlatformAdminGuard limit them
+ * themselves, per verified client IP, right before the database lookup
+ * (AuthFailureLimiter, provided by AuthModule). Storage is in memory, which is correct for one task per
  * service; more tasks need a shared (Redis) store.
  */
 @Module({

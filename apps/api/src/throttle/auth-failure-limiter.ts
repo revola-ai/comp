@@ -16,8 +16,8 @@ export type AuthFailureReservation =
 /**
  * Fixed-window attempt count per key (a verified client IP bucket). An
  * attempt takes a slot before its credential is checked, so a burst is counted
- * before any lookup; HybridAuthGuard gives the slot back only when it accepts
- * the credential. A request that never finishes (client abort, crash) keeps
+ * before any lookup; the auth guards (HybridAuthGuard, PlatformAdminGuard) give
+ * the slot back only when they accept the credential. A request that never finishes (client abort, crash) keeps
  * its slot. In memory, like the Nest throttler storage: correct for one task
  * per service; more tasks need a shared store.
  */
