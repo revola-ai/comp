@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  type OnApplicationBootstrap,
 } from '@nestjs/common';
 import { db } from '@db';
 import { statement } from '@trycompai/auth';
@@ -14,19 +15,26 @@ import {
   extractKeyPrefix,
   findMatchingApiKey,
   hashApiKey,
+  reportLegacyApiKeys,
 } from './api-key-lookup';
 import {
   type ApiKeyValidationResult,
   apiKeyRejection,
-  LEGACY_KEY_SCAN_LIMIT,
   toValidationResult,
 } from './api-key-validation';
 
 export type { ApiKeyValidationResult } from './api-key-validation';
 
 @Injectable()
-export class ApiKeyService {
+export class ApiKeyService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ApiKeyService.name);
+
+  /** Reports active legacy keys once the API has started, without delaying it. */
+  onApplicationBootstrap(): void {
+    void reportLegacyApiKeys({
+      warn: (message) => this.logger.warn(message),
+    });
+  }
 
   private generateApiKey(): string {
     const apiKey = randomBytes(32).toString('hex');
@@ -180,13 +188,7 @@ export class ApiKeyService {
         return null;
       }
 
-      const match = await findMatchingApiKey({
-        apiKey,
-        onLegacyLimitReached: () =>
-          this.logger.warn(
-            `Legacy API key lookup hit its limit of ${LEGACY_KEY_SCAN_LIMIT} keys without a stored prefix`,
-          ),
-      });
+      const match = await findMatchingApiKey({ apiKey });
       if (!match) {
         this.logger.warn('Invalid or expired API key attempted');
         return null;

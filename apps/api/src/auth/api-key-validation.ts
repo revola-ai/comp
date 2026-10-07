@@ -19,12 +19,6 @@ export interface ApiKeyValidationResult {
 }
 
 /**
- * Upper bound on legacy keys (no stored prefix) read for one validation, so a
- * junk key costs one bounded, indexed query instead of a full-table scan.
- */
-export const LEGACY_KEY_SCAN_LIMIT = 100;
-
-/**
  * When `organizationOwned` shipped (migration 20261006063557). Keys created
  * before it may lack a recorded creator; any personal key created since has
  * one, so a creatorless personal key from after it is an orphan (its creator's
