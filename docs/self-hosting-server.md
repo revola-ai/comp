@@ -58,12 +58,19 @@ On the laptop that runs the scripts:
    It needs a Google OAuth client with the authorized JavaScript origin `https://<team>.cloudflareaccess.com` and the redirect URI `https://<team>.cloudflareaccess.com/cdn-cgi/access/callback` (`<team>` is the Zero Trust team name); "Test" on the login method succeeds.
 4. Zero Trust, Access, Applications, "Add an application", Self-hosted, twice: one for `app.comp.revola.ai` and one for `portal.comp.revola.ai`.
    Login method Google only; one policy, action Allow, include "Emails ending in" `@revola.ai`.
-5. Two more self-hosted applications, each with one policy of action Bypass that includes Everyone:
-   `app.comp.revola.ai` with path `api/health/live`, and `portal.comp.revola.ai` with path `api/health`.
-   They let the Route 53 health checks and the release smoke checks see the origin; both routes are liveness probes that return no data.
+5. Three more self-hosted applications, each with one policy of action Bypass that includes Everyone:
+
+   | Host | Path | Why |
+   |---|---|---|
+   | `app.comp.revola.ai` | `api/health/live` | The Route 53 health check and the release smoke checks; a liveness probe that returns no data |
+   | `portal.comp.revola.ai` | `api/health` | The same, for the portal |
+   | `app.comp.revola.ai` | `api/revalidate/path` | `comp-app` Trigger.dev tasks (risk and vendor mitigation) POST here to refresh cached pages; the route checks `REVALIDATION_SECRET` in constant time and revalidates only app-relative paths |
+
+   `apps/app/src/lib/machine-routes.ts` lists every app route that authenticates without a session (its test fails when one is missing); `/api/revalidate/path` is the only one any server or task calls.
+   The others (upstream QA, Retool and reporting tools, end-to-end test helpers, the email-preferences page) stay behind Access on purpose, and no server or task calls a portal route.
    The API host gets no Access application at all: Trigger.dev jobs, API keys and MCP clients must reach it.
 6. Put the token into the production-only env file of the main checkout, `deploy/server/.env.production.local` (gitignored by `.env*.local`), with an editor: a line `TUNNEL_TOKEN=<token>`.
-   Create the file first with `(umask 077 && touch deploy/server/.env.production.local)` so only you can read it.
+   Create the file first with `(umask 077 && mkdir -p deploy/server && touch deploy/server/.env.production.local)` so only you can read it.
 
 ## 4. Trigger.dev
 
@@ -75,7 +82,22 @@ On the laptop that runs the scripts:
 4. Each project's Production environment variables, from the table below.
 5. The Production concurrency limit: 1 for `comp-api` and 2 for `comp-app` (the connection budget counts on it).
 
-The production-only file then holds exactly `TUNNEL_TOKEN`, `TRIGGER_ACCESS_TOKEN`, `TRIGGER_SECRET_KEY_API` and `TRIGGER_SECRET_KEY_APP`; `push-secrets` refuses any other name in it.
+### Production service tokens
+
+`INTERNAL_API_TOKEN`, `COMP_FORWARDED_IP_TOKEN`, `SERVICE_TOKEN_TRIGGER` and `SERVICE_TOKEN_PORTAL` have production-only values, never the laptops' ones: the API accepts the forwarded client address from any caller holding `COMP_FORWARDED_IP_TOKEN`, so a laptop's value must not work on the public API.
+**Kyle runs**, in the main checkout, once (it adds only the names that are missing, and prints nothing):
+
+```bash
+(umask 077 && mkdir -p deploy/server && f=deploy/server/.env.production.local && touch "$f" &&
+  for name in INTERNAL_API_TOKEN COMP_FORWARDED_IP_TOKEN SERVICE_TOKEN_TRIGGER SERVICE_TOKEN_PORTAL; do
+    grep -q "^$name=" "$f" || printf '%s=%s\n' "$name" "$(openssl rand -hex 32)" >>"$f"
+  done)
+```
+
+Then copy `SERVICE_TOKEN_TRIGGER` from that file, with an editor, into both projects' Production env vars (table below): the API refuses task calls whose token differs.
+`push-secrets` refuses a production token equal to the same name's value in a laptop env file.
+
+The production-only file then holds exactly `TUNNEL_TOKEN`, `TRIGGER_ACCESS_TOKEN`, `TRIGGER_SECRET_KEY_API`, `TRIGGER_SECRET_KEY_APP` and the four service tokens; `push-secrets` refuses any other name in it.
 
 ### Trigger.dev prod env vars
 
@@ -111,7 +133,7 @@ bun deploy/server/push-secrets.ts --source <main checkout>
 
 It builds `comp/production/config` (Secrets Manager, `us-east-2`) for exactly the keys in `deploy/server/env/*.keys`, each copied from one file (`deploy/server/secrets/keys.ts`): the env files of `apps/api`, `apps/app`, `apps/portal` and `packages/db`, plus `deploy/server/.env.production.local`.
 The env files are parsed in memory; the output names keys and files, never values.
-It refuses, by key name: a database URL that is not the production database (`packages/db/production-target.json`), that does not parse or read back as written (percent-encode `/`, `?`, `#` and `@` in the password), or that uses port 6543; a service or forwarded-IP token under 32 characters; a value naming `localhost`, `127.0.0.1` or `host.docker.internal`; an empty value or one with a line break or NUL; a `tr_dev_` key; a value that disagrees with its copy in another env file; a linked worktree as `--source`; a changed `ENCRYPTION_KEY` or `SECRET_KEY` (they encrypt stored credentials and sign sessions, so they never change once set).
+It refuses, by key name: a production-only token equal to its laptop value; a database URL that is not the production database (`packages/db/production-target.json`), that does not parse or read back as written (percent-encode `/`, `?`, `#` and `@` in the password), or that uses port 6543; a service or forwarded-IP token under 32 characters; a value naming `localhost`, `127.0.0.1` or `host.docker.internal`; an empty value or one with a line break or NUL; a `tr_dev_` key; a value that disagrees with its copy in another env file; a linked worktree as `--source`; a changed `ENCRYPTION_KEY` or `SECRET_KEY` (they encrypt stored credentials and sign sessions, so they never change once set).
 
 Success, dry run: `comp/production/config does not exist yet; the push creates it`, `added (35): ...`, `dry run: nothing written`.
 Success, real run: it prints the `aws secretsmanager create-secret` command (default `aws/secretsmanager` key, tag `Project=comp`, the value from a 0600 temporary file), asks `Type push to write comp/production/config`, and after `push` prints `created comp/production/config version <id>`.
@@ -207,6 +229,7 @@ Once both are deployed, the laptop that ran the schedules with `COMP_RUN_SCHEDUL
 4. A policy regeneration on Trigger.dev prod: first make sure no laptop runs `trigger dev` for `comp-api`.
    Open a policy, regenerate it, and watch the `update-policy` run in the Trigger.dev dashboard (`comp-api`, Production, Runs) complete; the policy content changes.
 5. The rate-limit bucket comes only from the tunnel.
+   This proves the `CF-Connecting-IP` path only; the other way to choose a bucket, `X-Forwarded-For` with `COMP_FORWARDED_IP_TOKEN`, is closed by that token being production-only (step 4), which this check does not observe.
    Public routes are limited per visitor IP and answer with `x-ratelimit-remaining`; a forged `CF-Connecting-IP` that chose the bucket would show a fresh bucket (`99`) for each new value.
    From the laptop (Cloudflare replaces a client's `CF-Connecting-IP` with the real address at the edge):
 
@@ -223,4 +246,17 @@ Once both are deployed, the laptop that ran the schedules with `COMP_RUN_SCHEDUL
    ```
 
    Pass: in each run the second number is lower than the first (one bucket, your address or the app container's), never `99` twice.
-6. Alarms: the Route 53 health checks (console, Route 53, Health checks) turn healthy, and the alarm emails stop with an OK message for each of `comp-api-health`, `comp-app-health` and `comp-portal-health`.
+6. Revalidation reaches the app through its bypass.
+   From the main checkout, a wrong secret must reach the route (`401`; a `302` to `cloudflareaccess.com` means the bypass is missing), and the real one must revalidate (`200 {"revalidated":true}`); the script reads the secret from `apps/app/.env` and prints only the answers:
+
+   ```bash
+   bun -e 'import { parse } from "dotenv"; import { readFileSync } from "node:fs";
+   const { REVALIDATION_SECRET: secret } = parse(readFileSync("apps/app/.env"));
+   for (const body of [{ path: "/", secret: "wrong" }, { path: "/", secret }]) {
+     const r = await fetch("https://app.comp.revola.ai/api/revalidate/path", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), redirect: "manual" });
+     console.log(r.status, (await r.text()).slice(0, 80));
+   }'
+   ```
+
+   Then regenerate a risk's mitigation in the app: the `generate-risk-mitigation` run (`comp-app`, Production, Runs) logs `Revalidated risk path` without `Failed to revalidate`, and the risk page shows the new mitigation.
+7. Alarms: the Route 53 health checks (console, Route 53, Health checks) turn healthy, and the alarm emails stop with an OK message for each of `comp-api-health`, `comp-app-health` and `comp-portal-health`.

@@ -2,8 +2,11 @@
 
 Running Comp once it is live (`docs/self-hosting-server.md` takes it there).
 Every command runs on a laptop with the prerequisites of that runbook (AWS CLI on account `455986776194`, bash 4, Bun, a terminal); `deploy/server/README.md` describes what each one does in detail.
+Every step that changes AWS, Cloudflare or Trigger.dev is marked **Kyle runs**; status and logs only read.
 
 ## Release
+
+**Kyle runs**:
 
 ```bash
 deploy/server/release.sh release <sha>
@@ -18,6 +21,8 @@ Releasing the SHA that already serves again is how a changed secret reaches the 
 
 ## Rollback
 
+**Kyle runs**:
+
 ```bash
 deploy/server/release.sh rollback            # one step back in the serving history
 deploy/server/release.sh rollback <sha>      # a specific earlier release whose images still exist
@@ -26,6 +31,8 @@ deploy/server/release.sh rollback <sha>      # a specific earlier release whose 
 A rollback uses the images as they were built and does not undo migrations, so a release whose migration is not backward compatible cannot be rolled back past it.
 
 ## Migrate
+
+**Kyle runs**:
 
 ```bash
 deploy/server/release.sh migrate <sha>
@@ -36,13 +43,15 @@ Migrations are authored on a laptop against the local `comp_dev` database (`bun 
 
 ## Trigger.dev
 
+**Kyle runs**:
+
 ```bash
 deploy/server/release.sh trigger <sha>                  # both projects
 deploy/server/release.sh trigger <sha> --project api    # or app
 ```
 
 After the typed word `trigger` it deploys the task code to the prod environments.
-Env vars of the tasks live in the Trigger.dev dashboard (`docs/self-hosting-server.md`, Trigger.dev prod env vars); a change there applies to new runs without a deploy.
+Env vars of the tasks live in the Trigger.dev dashboard (**Kyle runs** any change there) (`docs/self-hosting-server.md`, Trigger.dev prod env vars); a change there applies to new runs without a deploy.
 
 ## Status and logs
 
@@ -56,6 +65,8 @@ The containers log to CloudWatch (`/comp/api`, `/comp/app`, `/comp/portal`, `/co
 A shell on the server is `aws ssm start-session --target <instance-id> --region us-east-2`; there is no SSH.
 
 ## Adding a user
+
+**Kyle runs** the Cloudflare and Comp changes below.
 
 - Someone with a `@revola.ai` address: nothing to change in Cloudflare (the Access policy allows the domain) or in the API (`AUTH_ALLOWED_EMAIL_DOMAINS=revola.ai` in `deploy/server/env/api.public.env`).
   Invite them from the organization in Comp; they sign in with Google.
@@ -73,6 +84,8 @@ Comp itself is patched by releasing a newer commit; the `cloudflared` image by b
 
 ## Prune
 
+**Kyle runs**:
+
 ```bash
 deploy/server/release.sh prune
 ```
@@ -82,6 +95,8 @@ It lists what it keeps (the serving tag, the 3 most recent other ok tags, the de
 
 ## Changing a secret
 
+**Kyle runs** each step.
+
 1. Change the value in the one env file `push-secrets` reads it from (`deploy/server/secrets/keys.ts` names it), in the main checkout, and in every other env file that holds a copy (`push-secrets` refuses copies that disagree).
 2. `bun deploy/server/push-secrets.ts --source <main checkout> --dry-run`, then without `--dry-run`; the diff names the changed keys.
 3. Release the serving SHA again (Release above), so the containers get the new value.
@@ -89,8 +104,15 @@ It lists what it keeps (the serving tag, the 3 most recent other ok tags, the de
 
 ### Rotating a service token
 
-`SERVICE_TOKEN_TRIGGER`, `SERVICE_TOKEN_PORTAL`, `INTERNAL_API_TOKEN` and `COMP_FORWARDED_IP_TOKEN` are shared by production and the laptops, which use the same database.
-Generate a new value with `openssl rand -base64 48` into the source env file and its copies (step 1), push it, release the serving SHA, set `SERVICE_TOKEN_TRIGGER` in both Trigger.dev projects when it is that one, and tell the other developers to update their env files.
+`INTERNAL_API_TOKEN`, `COMP_FORWARDED_IP_TOKEN`, `SERVICE_TOKEN_TRIGGER` and `SERVICE_TOKEN_PORTAL` live only in `deploy/server/.env.production.local`; the laptops have their own values, so a rotation touches no laptop.
+**Kyle runs**, in the main checkout, with `name` set to the token to rotate (it replaces that one line and prints nothing):
+
+```bash
+(umask 077 && name=SERVICE_TOKEN_PORTAL && f=deploy/server/.env.production.local &&
+  { grep -v "^$name=" "$f"; printf '%s=%s\n' "$name" "$(openssl rand -hex 32)"; } >"$f.new" && mv -f "$f.new" "$f")
+```
+
+Then push it (steps 2 and 3 above) and, for `SERVICE_TOKEN_TRIGGER`, copy the new value with an editor into both Trigger.dev projects' Production env vars.
 Between the release and the Trigger.dev change, tasks calling the API with the old token are refused; do it in a quiet moment.
 
 `ENCRYPTION_KEY` and `SECRET_KEY` never rotate this way: the first encrypts stored integration credentials and the second signs every session, and `push-secrets` refuses a change to either.
@@ -99,8 +121,10 @@ Between the release and the Trigger.dev change, tasks calling the API with the o
 
 Nothing on the server needs a backup: the database, files and Redis are hosted (Supabase, Upstash), the secret is in Secrets Manager, the logs are in CloudWatch, and the images are rebuilt from git.
 
+**Kyle runs** each step.
+
 1. If the instance still exists but is broken, terminate it (turn off its termination protection first).
-2. **Kyle runs** `deploy/server/provision.sh --alert-email <address>` again: it leaves the existing role, security group, log groups, health checks and alarms alone and creates a new instance.
+2. `deploy/server/provision.sh --alert-email <address>` again: it leaves the existing role, security group, log groups, health checks and alarms alone and creates a new instance.
 3. If any env value changed since the last push, run `push-secrets` first: it is the source of truth for `comp/production/config`.
 4. `deploy/server/release.sh release <sha>` with the last good SHA (the release history lived on the old server, so the new one starts with no rollback target).
 5. Run the acceptance checks in `docs/self-hosting-server.md`.

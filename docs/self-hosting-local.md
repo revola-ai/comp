@@ -159,6 +159,7 @@ Until the hosted deployment exists, run `trigger dev` locally for the jobs you s
 `ENCRYPTION_KEY` must be identical on every machine: it encrypts integration credentials stored in the shared database, so a colleague with a different key cannot read credentials someone else saved.
 `UNSUBSCRIBE_SECRET` must be identical on every machine and in production as well: it signs the unsubscribe links in emails and the one-click `List-Unsubscribe` header, and a link a laptop signed is opened on the production hosts and verified there.
 Share `SECRET_KEY` too (it is also `AUTH_SECRET` in `apps/app` and `BETTER_AUTH_SECRET` in `apps/portal`) so auth behaves the same everywhere; `INTERNAL_API_TOKEN` (API only, never set in `apps/app` or `apps/portal`), `COMP_FORWARDED_IP_TOKEN` (the same value in the API, app and portal) and the `SERVICE_TOKEN_*` values only connect one person's own API and app and can stay per machine.
+Production has its own values of these four in `deploy/server/.env.production.local`, and `push-secrets` refuses a production value equal to a laptop's (`docs/self-hosting-server.md`, step 4).
 
 `scripts/local-env-init.sh` never generates `UNSUBSCRIBE_SECRET`: it writes a commented `# UNSUBSCRIBE_SECRET=FILL_ME_SHARED` line in `apps/api/.env` and `apps/app/.env`; replace it with the shared value from the password manager in both files.
 An env file written before 2026-10-06 holds a per-laptop generated value instead; replace that with the shared value too, or links that laptop sends fail verification in production with `Invalid token`.
