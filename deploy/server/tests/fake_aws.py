@@ -19,6 +19,8 @@ Knobs (environment):
                                /bin/sh and COMP_ROOT=<this> (the server's /opt/comp)
   FAKE_SSM_TRUNCATE            keep this many characters of a command's output (SSM keeps 24000)
   FAKE_SSM_PENDING_POLLS       get-command-invocation answers InProgress this many times first
+  FAKE_SSM_END                 "<n>:<Status>:<StatusDetails>:<ResponseCode>": command n (from 0)
+                               ends that way instead, with no output (timed out, cancelled...)
 Nothing here talks to AWS.
 """
 import json
@@ -190,11 +192,14 @@ if (service, operation) == ('ssm', 'get-command-invocation'):
     command['polls'] += 1
     pending = command['polls'] <= int(os.environ.get('FAKE_SSM_PENDING_POLLS', '1'))
     status = 'InProgress' if pending else ('Success' if command['code'] == 0 else 'Failed')
+    details, code = status, -1 if pending else command['code']
+    stdout, stderr = ('', '') if pending else (command['stdout'], command['stderr'])
+    end = os.environ.get('FAKE_SSM_END', '').split(':')
+    if not pending and len(end) == 4 and required_opt('--command-id') == f'fake-command-{end[0]}':
+        status, details, code, stdout, stderr = end[1], end[2], int(end[3]), '', ''
     out(json.dumps({
-        'Status': status, 'StatusDetails': status,
-        'ResponseCode': -1 if pending else command['code'],
-        'StandardOutputContent': '' if pending else command['stdout'],
-        'StandardErrorContent': '' if pending else command['stderr'],
+        'Status': status, 'StatusDetails': details, 'ResponseCode': code,
+        'StandardOutputContent': stdout, 'StandardErrorContent': stderr,
     }))
 
 if service == 'logs':

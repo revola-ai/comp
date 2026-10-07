@@ -87,8 +87,9 @@ check "api TRIGGER_SECRET_KEY is the api project key" \
 check "app TRIGGER_SECRET_KEY is the app project key" \
   test "$(value_of "$OUT/app.env" TRIGGER_SECRET_KEY)" = "$(fake_value TRIGGER_SECRET_KEY_APP)"
 check "migrate DATABASE_URL is the migration URL" \
-  test "$(value_of "$OUT/migrate.env" DATABASE_URL)" = "$(fake_value DATABASE_MIGRATION_URL)"
-for name in DATABASE_MIGRATION_URL TRIGGER_ACCESS_TOKEN TRIGGER_PROJECT_REF_API TRIGGER_PROJECT_REF_APP; do
+  test "$(value_of "$OUT/migrate.env" DATABASE_URL)" = "$MIGRATION_URL"
+check "only the tools get DATABASE_MIGRATION_URL" bash -c "! grep -lF '$MIGRATION_URL' '$OUT'/{api,app,portal,cloudflared}.env"
+for name in TRIGGER_ACCESS_TOKEN TRIGGER_PROJECT_REF_API TRIGGER_PROJECT_REF_APP; do
   check "only the tools get $name" bash -c "! grep -l '$(fake_value "$name")' '$OUT'/{api,app,portal,cloudflared}.env"
 done
 check "no value is printed" bash -c "! grep -q fakesecret '$TMP/ok.log'"

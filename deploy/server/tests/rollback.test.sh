@@ -26,13 +26,46 @@ check "rollback: reads the tags, then up, then finish (3 SSM commands)" test "$(
 check "rollback: never checks out or builds" bash -c "! grep -qE 'checkout|fetch' '$FAKE_GIT_LOG' && ! grep -q bake '$FAKE_DOCKER_LOG'"
 check "rollback: no migration check" bash -c "! grep -q 'run --rm' '$FAKE_DOCKER_LOG'"
 check "rollback: smoke-checked" test -s "$FAKE_CURL_LOG"
-check "rollback: up step allows 20 minutes" test "$(ssm_call 2 timeout)" = 1200
+check "rollback: up step allows 30 minutes (two 600 s waits and render)" test "$(ssm_call 2 timeout)" = 1800
 no_secret "rollback" "$TMP/back.out"
 
+# The serving history is a stack: release pushes, rollback pops back to its tag.
 : >"$FAKE_DOCKER_LOG"
 release_sh "$TMP/back2.out" rollback
-check "second rollback: goes back to the release before (from $TAG_A to $TAG_B)" \
-  test "$(container_changes)" = "TAG=$TAG_B $COMPOSE_ARGV $UP"
+check "second rollback: goes on to the release before ($TAG_A to $TAG_D), never back to $TAG_B" \
+  test "$(container_changes)" = "TAG=$TAG_D $COMPOSE_ARGV $UP"
+check "second rollback: says so first" grep -qF "Rolling back from $TAG_A to $TAG_D" "$TMP/back2.out"
+release_sh "$TMP/back3.out" rollback
+check "third rollback: nothing below $TAG_D, refused" grep -qF "no earlier ok release" "$TMP/back3.out"
+check "third rollback: no container changed" test "$(serving)" = "comp-api:$TAG_D"
+
+reset_server
+released "$TAG_D" "$TAG_A" "$TAG_B"
+release_sh "$TMP/stack1.out" rollback >/dev/null
+release_sh "$TMP/stack2.out" release "$SHA_B"
+check "release after a rollback: serving $TAG_B again" test "$(last_record)" = "release $TAG_B ok"
+: >"$FAKE_DOCKER_LOG"
+release_sh "$TMP/stack3.out" rollback
+check "release after a rollback, then rollback: back to $TAG_A" \
+  test "$(container_changes)" = "TAG=$TAG_A $COMPOSE_ARGV $UP"
+: >"$FAKE_DOCKER_LOG"
+release_sh "$TMP/stack4.out" rollback
+check "and again: on to $TAG_D" test "$(container_changes)" = "TAG=$TAG_D $COMPOSE_ARGV $UP"
+
+reset_server
+released "$TAG_D" "$TAG_A" "$TAG_B"
+release_sh "$TMP/explicit-first.out" rollback "$TAG_D" >/dev/null
+: >"$FAKE_DOCKER_LOG"
+release_sh "$TMP/explicit-then.out" rollback
+check "rollback <sha> pops everything above it: a default rollback then has nothing below" \
+  grep -qF "no earlier ok release" "$TMP/explicit-then.out"
+check "rollback <sha> then default: no container changed" test -z "$(container_changes)"
+
+reset_server
+release_sh "$TMP/empty.out" rollback
+check "no release at all: refused" test "$?" -ne 0
+check "no release at all: says so" grep -qF "no earlier ok release" "$TMP/empty.out"
+check "no release at all: one read-only SSM command" test "$(ssm_sends)" -eq 1
 
 reset_server
 released "$TAG_D" "$TAG_A" "$TAG_B"
@@ -106,21 +139,22 @@ check "expired lease: ignored" test "$(last_record)" = "rollback $TAG_D ok"
 entry() { COMP_ROOT="$SERVER" bash "$SERVER_DIR/on-server/entry.sh" "$@" >"$TMP/entry.out" 2>&1; }
 reset_server
 released "$TAG_A"
-entry 20261007T120000Z-finish-"$TAG_B".log 20261007T115900Z-release-"$TAG_B" own - release finish release "$TAG_B"
+entry 20261007T120000Z-finish-"$TAG_B".log 20261007T115900Z-release-"$TAG_B"-0123abcd own - release finish release "$TAG_B"
 check "lapsed lease: refused with 75" test "$?" -eq 75
 check "lapsed lease: says the run no longer holds the server" grep -qF "no longer holds the server" "$TMP/entry.out"
 check "lapsed lease: records nothing" test "$(last_record)" = "release $TAG_A ok"
 check "lapsed lease: ends with the meta block" test "$(tail -n 1 "$TMP/entry.out")" = "comp-end: 75"
-for bad in "../../env/api.env 20261007T120000Z-release-$TAG_B new - release up release $TAG_B" \
-  "20261007T120000Z-release-$TAG_B.log 20261007T120000Z-release-$TAG_B new main release up release $TAG_B" \
-  "20261007T120000Z-release-$TAG_B.log 20261007T120000Z-release-$TAG_B new - ../x"; do
+for bad in "../../env/api.env 20261007T120000Z-release-$TAG_B-0123abcd new - release up release $TAG_B" \
+  "20261007T120000Z-release-$TAG_B.log 20261007T120000Z-release-$TAG_B-0123abcd new main release up release $TAG_B" \
+  "20261007T120000Z-release-$TAG_B.log 20261007T120000Z-release-$TAG_B-0123abcd new - ../x" \
+  "20261007T120000Z-release-$TAG_B.log 20261007T120000Z-release-$TAG_B new - release up release $TAG_B"; do
   # shellcheck disable=SC2086 # one word per argument
   entry $bad
   check "entry refuses: $bad" test "$?" -eq 2
 done
 check "entry refusals: nothing ran" test ! -s "$FAKE_DOCKER_LOG"
 printf 'stale\n' >"$SERVER/logs/20261007T120000Z-release-$TAG_B.log"
-entry 20261007T120000Z-release-"$TAG_B".log 20261007T120000Z-release-"$TAG_B" new - release up rollback "$TAG_B"
+entry 20261007T120000Z-release-"$TAG_B".log 20261007T120000Z-release-"$TAG_B"-0123abcd new - release up rollback "$TAG_B"
 check "entry never overwrites a log" test "$(cat "$SERVER/logs/20261007T120000Z-release-$TAG_B.log")" = stale
 
 # ---------------------------------------------------------------- account and instance checks

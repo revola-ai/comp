@@ -50,11 +50,15 @@ x-awslogs: &awslogs
   tag: "{{.Name}}/{{.ID}}"
 
 # The tools services (migrate, trigger): same hardening and log driver as the stack, no
-# restart, no healthcheck, no build (release.sh builds the image with bake). They log to the
-# api's group, which the instance profile may already write to.
+# restart, no healthcheck, no build (release.sh builds the image with bake). They run as node
+# with HOME on a tmpfs at /tmp (npx and bunx caches), and log to the api's group, which the
+# instance profile may already write to.
 x-tools: &tools
   <<: *common
   restart: "no"
+  user: node
+  tmpfs:
+    - /tmp:exec,mode=1777
   image: comp-migrate:${TAG:?set TAG to the 12-character git sha of the release}
   pull_policy: never
   profiles: [tools]

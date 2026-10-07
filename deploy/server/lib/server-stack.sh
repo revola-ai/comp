@@ -10,9 +10,10 @@ BAKE_FILE=deploy/aws/docker-bake.hcl # relative to REPO, where bake runs
 # sslmode=require (TLS or no connection), sslcert=<the CA> (the root it verifies against) and
 # sslaccept=strict (check the chain and the host). Without them it accepts any certificate.
 # Runs inside the tools container, where DATABASE_URL is the migration URL (migrate.env);
-# neither value ever appears in a command line.
+# neither value ever appears in a command line. Node's own URL error quotes its input (the
+# password included), so a malformed URL is reported by name only.
 # shellcheck disable=SC2016 # expanded by the container's shell
-VERIFIED_URL='url="$(node -e '"'"'const u = new URL(process.env.DATABASE_URL); u.searchParams.delete("sslrootcert"); u.searchParams.set("sslmode","require"); u.searchParams.set("sslcert",process.env.DATABASE_SSL_CA); u.searchParams.set("sslaccept","strict"); process.stdout.write(u.toString())'"'"')" && export DATABASE_URL="$url" && '
+VERIFIED_URL='url="$(node -e '"'"'let u; try { u = new URL(process.env.DATABASE_URL); } catch { console.error("DATABASE_URL in migrate.env is not a valid URL"); process.exit(1); } u.searchParams.delete("sslrootcert"); u.searchParams.set("sslmode","require"); u.searchParams.set("sslcert",process.env.DATABASE_SSL_CA); u.searchParams.set("sslaccept","strict"); process.stdout.write(u.toString())'"'"')" && export DATABASE_URL="$url" && '
 
 # compose <tag> <compose args...>: compose of this checkout with TAG=<tag>, as root.
 compose() {

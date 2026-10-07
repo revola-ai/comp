@@ -26,8 +26,13 @@ for bad in "$SHA_C:not on any origin branch" "$TAG_C:not on any origin branch" \
   check "release $sha: no AWS call at all" test ! -s "$FAKE_AWS_LOG"
 done
 check "refusals: no docker call" test ! -s "$FAKE_DOCKER_LOG"
-check "refusals: the laptop fetches origin before deciding" \
-  has_line "$FAKE_GIT_LOG" "git -C $ROOT fetch --quiet origin"
+check "refusals: the laptop fetches origin, pruning deleted branches, before deciding" \
+  has_line "$FAKE_GIT_LOG" "git -C $ROOT fetch --prune --quiet origin"
+: >"$FAKE_AWS_LOG"
+FAKE_GIT_STALE="$SHA_D" release_sh "$TMP/stale.out" release "$SHA_D"
+check "only on a deleted branch: refused" test "$?" -ne 0
+check "only on a deleted branch: says why" grep -qF "not on any origin branch" "$TMP/stale.out"
+check "only on a deleted branch: no AWS call" test ! -s "$FAKE_AWS_LOG"
 check "refusals: the pushed check asks origin's branches" \
   has_line "$FAKE_GIT_LOG" "git -C $ROOT branch -r --contains $SHA_C"
 AWS_REGION=eu-west-1 release_sh "$TMP/region.out" release "$SHA_B"
@@ -49,9 +54,9 @@ check "release: send-command shape" grep -qE "^aws ssm send-command --instance-i
 check "release: builds may take 2 hours" test "$(ssm_call 1 timeout)" = 7200
 check "release: delivery timeout 600 s" test "$(ssm_call 1 delivery)" = 600
 check "release: step 1 runs release up from the checkout of the full SHA" grep -qE \
-  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B new $SHA_B release up release $TAG_B\$" <<<"$(ssm_call 1 args)"
+  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} new $SHA_B release up release $TAG_B\$" <<<"$(ssm_call 1 args)"
 check "release: step 2 records it under the same run" grep -qE \
-  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B own - release finish release $TAG_B\$" <<<"$(ssm_call 2 args)"
+  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} own - release finish release $TAG_B\$" <<<"$(ssm_call 2 args)"
 check "release: polls each command until it ends" test "$(grep -c "^aws ssm get-command-invocation --command-id fake-command-[01] --instance-id $INSTANCE --output json --region us-east-2\$" "$FAKE_AWS_LOG")" -eq 4
 check "release: the server fetches every branch" \
   has_line "$FAKE_GIT_LOG" "git -C $SERVER/src fetch --quiet origin +refs/heads/*:refs/remotes/origin/*"
@@ -77,12 +82,13 @@ check "release: serves the new tag" test "$(serving)" = "comp-api:$TAG_B"
 check "release: recorded ok" test "$(last_record)" = "release $TAG_B ok"
 check "release: releases nothing else" test "$(wc -l <"$SERVER/releases.log")" -eq 2
 check "release: no lease left" test ! -e "$SERVER/release.lease"
+run_one="$(ssm_call 1 args | cut -d' ' -f2)"
 check "release: env files for the stack and the tools" test "$(files_in "$SERVER/env")" = \
   "api.env app.env cloudflared.env migrate.env portal.env trigger.env"
 check "release: migrate.env holds only DATABASE_URL (the migration URL)" \
   test "$(names_of "$SERVER/env/migrate.env")" = DATABASE_URL
 check "release: migrate.env is the secret's DATABASE_MIGRATION_URL" \
-  test "$(value_of "$SERVER/env/migrate.env" DATABASE_URL)" = "$(fake_value DATABASE_MIGRATION_URL)"
+  test "$(value_of "$SERVER/env/migrate.env" DATABASE_URL)" = "$MIGRATION_URL"
 check "release: logs directory 0700" test "$(mode_of "$SERVER/logs")" = 700
 check "release: one log per step, 0600, named <utc>-<step>-<sha12>.log" bash -c "
   cd '$SERVER/logs' && [[ \$(ls | wc -l) -eq 2 ]] && for f in *; do
@@ -96,6 +102,7 @@ no_secret "release" "$TMP/ok.out"
 release_sh "$TMP/again.out" release "$SHA_B"
 check "release again: exits zero" test "$?" -eq 0
 check "release again: builds nothing already built" bash -c "! grep -q 'buildx bake' '$FAKE_DOCKER_LOG'"
+check "release again: a new run id (random suffix)" test "$(ssm_call 3 args | cut -d' ' -f2)" != "$run_one"
 
 # ---------------------------------------------------------------- the migration gate
 for state in pending failed unreachable; do
@@ -110,6 +117,7 @@ for state in pending failed unreachable; do
   check "gate $state: recorded as failed" test "$(last_record)" = "release $TAG_B failed"
   check "gate $state: one SSM command" test "$(ssm_sends)" -eq 1
   check "gate $state: no smoke check" test ! -s "$FAKE_CURL_LOG"
+  check "gate $state: says no container changed" grep -qF "before any container changed" "$TMP/gate-$state.out"
 done
 check "gate pending: lists the pending migration" grep -qF 20261001000000_add_widget "$TMP/gate-pending.out"
 check "gate pending: prints the migrate command" grep -qF "deploy/server/release.sh migrate $TAG_B" "$TMP/gate-pending.out"
@@ -124,6 +132,35 @@ check "failed build: refused" test "$?" -ne 0
 check "failed build: no container changed" test -z "$(container_changes)"
 check "failed build: stops at the failed target" bash -c "! grep -q -- '--load portal' '$FAKE_DOCKER_LOG'"
 check "failed build: recorded as failed" test "$(last_record)" = "release $TAG_B failed"
+check "failed build: says no container changed" grep -qF "before any container changed" "$TMP/build.out"
+
+reset_server
+released "$TAG_A"
+write_fixture "$TMP/secret.json" --set DATABASE_MIGRATION_URL "postgresql://postgres.ref:fakesecret#pw@pooler:5432/postgres"
+release_sh "$TMP/badurl.out" release "$SHA_B"
+check "malformed migration URL: refused at the gate" test "$(last_record)" = "release $TAG_B failed"
+check "malformed migration URL: says so without the URL" \
+  grep -qF "DATABASE_URL in migrate.env is not a valid URL" "$SERVER"/logs/*-release-"$TAG_B".log
+no_secret "malformed migration URL" "$TMP/badurl.out"
+
+# ---------------------------------------------------------------- the up step ends abnormally
+for ending in "TimedOut:ExecutionTimedOut:-1" "Cancelled:Cancelled:-1" "Failed:Undeliverable:-1" \
+  "Failed:Terminated:-1" "Failed:Failed:9"; do
+  reset_server
+  released "$TAG_A"
+  FAKE_SSM_END="0:$ending" release_sh "$TMP/ending.out" release "$SHA_B"
+  check "up ends $ending: exits non-zero" test "$?" -ne 0
+  check "up ends $ending: the serving state is unknown" grep -qF "serving state is unknown" "$TMP/ending.out"
+  check "up ends $ending: prints the status command" grep -qF "deploy/server/release.sh status" "$TMP/ending.out"
+  check "up ends $ending: never claims no container changed" bash -c "! grep -qF 'before any container changed' '$TMP/ending.out'"
+  check "up ends $ending: no smoke check, no finish" test "$(ssm_sends):$(wc -c <"$FAKE_CURL_LOG" | tr -d ' ')" = "1:0"
+done
+reset_server
+released "$TAG_A"
+FAKE_SSM_TRUNCATE=40 FAKE_DOCKER_FAIL_BUILD=api release_sh "$TMP/cut-fail.out" release "$SHA_B"
+check "cut output of a failed up: the serving state is unknown" grep -qF "serving state is unknown" "$TMP/cut-fail.out"
+check "cut output of a failed up: never claims no container changed" \
+  bash -c "! grep -qF 'before any container changed' '$TMP/cut-fail.out'"
 
 reset_server
 released "$TAG_A"
@@ -152,7 +189,7 @@ released "$TAG_A"
 FAKE_CURL_BAD_TAG="$TAG_B" release_sh "$TMP/smoke.out" release "$SHA_B"
 check "failed smoke: exits non-zero" test "$?" -ne 0
 check "failed smoke: second SSM command reverts under the same run" grep -qE \
-  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B own - release revert release $TAG_B\$" <<<"$(ssm_call 2 args)"
+  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} own - release revert release $TAG_B\$" <<<"$(ssm_call 2 args)"
 check "failed smoke: the new tag went up, then the previous one" test "$(container_changes)" = "$(printf '%s\n' \
   "TAG=$TAG_B $COMPOSE_ARGV up -d --no-build --wait --wait-timeout 600" \
   "TAG=$TAG_A $COMPOSE_ARGV up -d --no-build --wait --wait-timeout 600")"

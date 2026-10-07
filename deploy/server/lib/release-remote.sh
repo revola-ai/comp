@@ -11,6 +11,8 @@
 
 INSTANCE_ID=""
 REMOTE_CODE=0    # the step's exit status (1 when SSM itself failed)
+REMOTE_STATUS="" # how SSM says the command ended (Success, Failed, TimedOut, Cancelled...)
+REMOTE_ENDED=""  # set when the server's end marker (comp-end) arrived
 REMOTE_LOG=""    # the server's log of the last step, when it reported one
 REMOTE_QUIET=""  # set: keep the step's output to itself (paging through a log)
 DELIVERY_SECONDS=600
@@ -33,16 +35,17 @@ require_local() {
 }
 
 # resolve_pushed <sha>: FULL_SHA and TAG for a 12- or 40-character SHA that some origin branch
-# contains (after git fetch origin); anything else stops before any AWS call.
+# contains (after git fetch --prune origin, so a deleted branch no longer counts); anything
+# else stops before any AWS call.
 resolve_pushed() {
   [[ "$1" =~ ^[0-9a-f]{12}$|^[0-9a-f]{40}$ ]] || die "'$1' is not a 12- or 40-character git SHA"
-  git -C "$REPO_ROOT" fetch --quiet origin || die "git fetch origin failed"
+  git -C "$REPO_ROOT" fetch --prune --quiet origin || die "git fetch --prune origin failed"
   FULL_SHA="$(git -C "$REPO_ROOT" rev-parse --verify --quiet "$1^{commit}")" ||
     die "$1 is not a commit in this repository (after git fetch origin)"
   local branches
   branches="$(git -C "$REPO_ROOT" branch -r --contains "$FULL_SHA")" || die "git branch -r failed"
   grep -qE '^[[:space:]]*origin/' <<<"$branches" ||
-    die "$FULL_SHA is not on any origin branch; push it first (the server fetches it from GitHub)"
+    die "$FULL_SHA is not on any origin branch (a deleted branch does not count); push it first (the server fetches it from GitHub)"
   TAG="${FULL_SHA:0:12}"
 }
 
@@ -64,8 +67,17 @@ connect() {
   esac
 }
 
-step_name() { # step_name <step> [tag]: "<utc>-<step>[-<tag>]", the name of a run and of a log
+step_name() { # step_name <step> [tag]: "<utc>-<step>[-<tag>]", the name of a step's log
   printf '%s-%s%s' "$(date -u +%Y%m%dT%H%M%SZ)" "$1" "${2:+-$2}"
+}
+
+# run_id <step> [tag]: the step name and 8 random hex characters; the server's lease names the
+# run, so two operators starting in the same second never share one.
+run_id() {
+  local random
+  random="$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
+  [[ "$random" =~ ^[0-9a-f]{8}$ ]] || die "could not read /dev/urandom"
+  printf '%s-%s' "$(step_name "$@")" "$random"
 }
 
 # ssm_parameters <timeout> <entry|status> <args...>: the send-command parameters. The script
@@ -90,7 +102,7 @@ PY
 # remote <comment> <timeout-seconds> <entry|status> <args...>: runs one server step and waits
 # for it; sets REMOTE_CODE and REMOTE_LOG and keeps its comp-result lines for result_of.
 remote() {
-  local comment="$1" timeout="$2" kind="$3" parameters id polls=0 max status code
+  local comment="$1" timeout="$2" kind="$3" parameters id polls=0 max status code details
   shift 3
   parameters="$(ssm_parameters "$timeout" "$kind" "$@")"
   capture aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript \
@@ -107,22 +119,26 @@ remote() {
       [[ "$ERR" == *InvocationDoesNotExist* ]] && continue
       die "could not read SSM command $id: $ERR"
     fi
-    read -r status code < <(printf '%s' "$OUT" | python3 -c '
+    read -r status code details < <(printf '%s' "$OUT" | python3 -c '
 import json, sys
 answer = json.load(sys.stdin)
 open(sys.argv[1], "w").write(answer.get("StandardOutputContent") or "")
 open(sys.argv[2], "w").write(answer.get("StandardErrorContent") or "")
-print(answer.get("Status", "Unknown"), answer.get("ResponseCode", -1))' "$WORK/out" "$WORK/err")
+print(answer.get("Status", "Unknown"), answer.get("ResponseCode", -1), answer.get("StatusDetails", "-"))' "$WORK/out" "$WORK/err")
     case "$status" in
       Pending | InProgress | Delayed | Cancelling) continue ;;
     esac
     break
   done
+  REMOTE_STATUS="$status"
   split_output
   case "$status" in
     Success) REMOTE_CODE=0 ;;
-    Failed) REMOTE_CODE="$code" ;;
-    *) REMOTE_CODE=1; echo "SSM command $id ended $status (not run to completion)." ;;
+    Failed)
+      REMOTE_CODE="$code"
+      [[ "$details" == Failed ]] || echo "SSM command $id ended Failed ($details); the server step may not have run to completion."
+      ;;
+    *) REMOTE_CODE=1; echo "SSM command $id ended $status ($details); the server step may not have run to completion." ;;
   esac
   [[ "$REMOTE_CODE" -ne 0 || "$status" == Success ]] || REMOTE_CODE=1
 }
@@ -130,11 +146,12 @@ print(answer.get("Status", "Unknown"), answer.get("ResponseCode", -1))' "$WORK/o
 # split_output: prints the step's own output and keeps its meta lines in $WORK/meta.
 split_output() {
   : >"$WORK/meta"
-  REMOTE_LOG=""
+  REMOTE_LOG="" REMOTE_ENDED=""
   if grep -qx comp-meta-begin "$WORK/out"; then
     [[ -n "$REMOTE_QUIET" ]] || awk '/^comp-meta-begin$/ { exit } !/^comp-result: / { print }' "$WORK/out"
     awk 'after { print } /^comp-meta-begin$/ { after = 1 }' "$WORK/out" >"$WORK/meta"
     REMOTE_LOG="$(sed -n 's/^comp-log: //p' "$WORK/meta")"
+    grep -q '^comp-end: ' "$WORK/meta" && REMOTE_ENDED=1
   else
     cat "$WORK/out"
     echo
@@ -148,6 +165,11 @@ split_output() {
 }
 
 result_of() { sed -n "s/^comp-result: $1=//p" "$WORK/meta" | tail -n 1; } # result_of <key>
+
+# unchanged: true only when the step ended normally and the server said it changed nothing.
+unchanged() {
+  [[ "$REMOTE_STATUS" =~ ^(Success|Failed)$ && -n "$REMOTE_ENDED" && "$(result_of changed)" == no ]]
+}
 
 # step <step> <timeout> <run-id> <new|own> <sha|-> <script> [args...]: a server step through
 # on-server/entry.sh, with its log named after <step> and the run's tag; prints where the log is.

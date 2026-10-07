@@ -12,6 +12,8 @@ failures=0
 # A value with every character an env file could mangle: $, quotes, " #", braces.
 TRICKY_VALUE="postgresql://u:fakesecret\$p'a\"ss #x \${HOME}@pooler:5432/db?sslmode=verify-full"
 
+# The migration URL must parse as a URL (the tools container rewrites it); still fake.
+MIGRATION_URL="postgresql://postgres.fakeref:fakesecret-migration@pooler.example:5432/postgres"
 # Every key of comp/production/config the services read (names only).
 FIXTURE_KEYS=(
   DATABASE_URL APP_AWS_ENDPOINT APP_AWS_REGION APP_AWS_ACCESS_KEY_ID APP_AWS_SECRET_ACCESS_KEY
@@ -51,14 +53,15 @@ fake_value() { printf 'fakesecret-%s-value' "$1"; }
 write_fixture() {
   local file="$1"
   shift
-  python3 - "$file" "$TRICKY_VALUE" "${FIXTURE_KEYS[@]}" -- "$@" <<'PY'
+  python3 - "$file" "$TRICKY_VALUE" "$MIGRATION_URL" "${FIXTURE_KEYS[@]}" -- "$@" <<'PY'
 import json, sys
-file, tricky = sys.argv[1], sys.argv[2]
-rest = sys.argv[3:]
+file, tricky, migration = sys.argv[1], sys.argv[2], sys.argv[3]
+rest = sys.argv[4:]
 split = rest.index('--')
 keys, edits = rest[:split], rest[split + 1:]
 secret = {key: f'fakesecret-{key}-value' for key in keys}
 secret['DATABASE_URL'] = tricky
+secret['DATABASE_MIGRATION_URL'] = migration
 i = 0
 while i < len(edits):
     if edits[i] == '--drop':

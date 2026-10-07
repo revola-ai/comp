@@ -48,8 +48,9 @@ reset_server() {
   : >"$FAKE_GIT_LOG"
   : >"$FAKE_CURL_LOG"
   printf '%s\n' "$SHA_A" >"$FAKE_GIT_HEAD"
+  rm -f "$FAKE_GIT_HEAD.pruned"
   unset FAKE_DOCKER_FAIL_UP FAKE_DOCKER_FAIL_BUILD FAKE_DOCKER_FAIL_TRIGGER FAKE_CURL_BAD_TAG \
-    FAKE_CURL_NO_ACCESS FAKE_GIT_DIRTY FAKE_SSM_TRUNCATE FAKE_AWS_ACCOUNT
+    FAKE_CURL_NO_ACCESS FAKE_GIT_DIRTY FAKE_SSM_TRUNCATE FAKE_AWS_ACCOUNT FAKE_SSM_END FAKE_GIT_STALE
 }
 
 docker_state() { # docker_state <python statements over `s`>: edits the fake docker state

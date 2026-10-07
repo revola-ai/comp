@@ -103,7 +103,10 @@ check "trigger: no ref or token on any command line" \
   bash -c "! grep -qE 'fakesecret|TRIGGER_ACCESS_TOKEN=' '$FAKE_DOCKER_LOG' '$FAKE_AWS_LOG'"
 check "trigger: trigger.env holds the token and both refs" \
   test "$(names_of "$SERVER/env/trigger.env" | tr '\n' ' ')" = "TRIGGER_ACCESS_TOKEN TRIGGER_PROJECT_REF_API TRIGGER_PROJECT_REF_APP "
-check "trigger: lists the Trigger dashboard env vars in the README" grep -qF "SERVICE_TOKEN_TRIGGER" "$SERVER_DIR/README.md"
+check "trigger: the Trigger dashboard env vars are documented" grep -qF "SERVICE_TOKEN_TRIGGER" "$ROOT/docs/self-hosting-server.md"
+check "trigger: the app project gets no BETTER_AUTH_URL" \
+  bash -c "grep -F 'BETTER_AUTH_URL' '$ROOT/docs/self-hosting-server.md' | grep -qF '| not set |'"
+check "README points at the Trigger dashboard list" grep -qF "docs/self-hosting-server.md" "$SERVER_DIR/README.md"
 check "trigger: no container of the stack changed" test -z "$(container_changes)"
 check "trigger: recorded" test "$(last_record)" = "trigger $TAG_B ok"
 no_secret "trigger" "$TMP/trigger.out"

@@ -17,6 +17,7 @@ Nothing here runs a container.
 import json
 import os
 import shlex
+import subprocess
 import sys
 from typing import NoReturn
 
@@ -105,11 +106,12 @@ def run(profiles: list[str], args: list[str]) -> NoReturn:
         else:
             workdir = args[1]
         args = args[2:]
-    service, command = args[0], ' '.join(args[1:])
+    service, argv_in, command = args[0], args[1:], ' '.join(args[1:])
     if f'comp-migrate:{tag()}' not in state['images']:
         fail(f'Error response from daemon: No such image: comp-migrate:{tag()}')
     env_file(service)
     if service == 'migrate':
+        verified_url(argv_in)
         migrate(command, env)
     if service == 'trigger':
         project = workdir.rsplit('/', 1)[-1]
@@ -119,6 +121,22 @@ def run(profiles: list[str], args: list[str]) -> NoReturn:
             fail(f'Error: deploy of {project} failed (fake)')
         done(f'Successfully deployed version 20261007.1 of {project} (fake)')
     fail(f'fake docker: unknown tools service {service}')
+
+
+def verified_url(argv_in: list[str]) -> None:
+    """Runs the container's own URL rewrite (everything before `exec bunx`) with real node and
+    the rendered migrate.env, as the container would; its stderr is what compose would show."""
+    if argv_in[:2] != ['sh', '-c'] or 'exec bunx prisma' not in argv_in[2]:
+        fail(f'fake docker: migrate runs sh -c "<url rewrite> exec bunx prisma ...", got {argv_in}')
+    path = os.path.join(os.environ.get('COMP_ENV_DIR', '/opt/comp/env'), 'migrate.env')
+    with open(path) as handle:
+        values = dict(line.split('=', 1) for line in handle.read().splitlines() if '=' in line)
+    check = argv_in[2].split('exec bunx prisma')[0] + \
+        'case "$DATABASE_URL" in *sslaccept=strict*) ;; *) exit 3 ;; esac'
+    run = subprocess.run(['sh', '-c', check], capture_output=True, text=True,
+                         env={**os.environ, **values, 'DATABASE_SSL_CA': '/app/certs/supabase-ca.crt'})
+    if run.returncode != 0:
+        fail(run.stderr + run.stdout)
 
 
 def migrate(command: str, env: dict[str, str]) -> NoReturn:

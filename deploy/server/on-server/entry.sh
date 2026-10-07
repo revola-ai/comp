@@ -15,7 +15,8 @@
 # 5. Runs deploy/server/on-server/<script>.sh [args...] from the checkout, with COMP_RUN_ID.
 # 6. Prints the end of the log (200 lines, at most 20000 bytes: SSM keeps 24000 characters),
 #    then the lines release.sh reads (see `meta`), and exits with the script's status.
-# Exit 75: the lock or the lease belongs to another run; nothing was done.
+# Exit 75: the lock or the lease belongs to another run; nothing was done. Whenever a step
+# stops before changing anything, its meta block says so: comp-result: changed=no.
 if [[ "$(type -t meta)" != function ]]; then
   # shellcheck source=deploy/server/lib/server-common.sh
   source "$(dirname "${BASH_SOURCE[0]}")/../lib/server-common.sh"
@@ -23,9 +24,11 @@ fi
 set -uo pipefail
 umask 077
 
-refuse() { # refuse <status> <message>: before the log exists
+refuse() { # refuse <status> <message>: before the log exists, so before any change
   echo "release.sh on the server: $2"
-  meta "$1"
+  echo comp-meta-begin
+  result "changed=no"
+  echo "comp-end: $1"
   exit "$1"
 }
 
@@ -35,7 +38,7 @@ fi
 log_name="$1" run_id="$2" lease_mode="$3" sha="$4" script="$5"
 shift 5
 [[ "$log_name" == *.log && "${log_name%.log}" =~ $STEP_NAME_RE ]] || refuse 2 "bad log name '$log_name'"
-[[ "$run_id" =~ $STEP_NAME_RE ]] || refuse 2 "bad run id '$run_id'"
+[[ "$run_id" =~ $RUN_ID_RE ]] || refuse 2 "bad run id '$run_id'"
 [[ "$lease_mode" == new || "$lease_mode" == own ]] || refuse 2 "bad lease mode '$lease_mode'"
 [[ "$sha" == - || "$sha" =~ ^[0-9a-f]{40}$ ]] || refuse 2 "bad sha '$sha'"
 [[ "$script" =~ ^[a-z]+$ ]] || refuse 2 "bad script name '$script'"
@@ -76,12 +79,14 @@ checkout() { # checkout <sha>: the full checkout at <sha>, or a refusal
 
 run_step() {
   echo "== $script $* (run $run_id, $(utc_now))"
-  if [[ "$sha" != - ]]; then
-    checkout "$sha" || return 1
+  if [[ "$sha" != - ]] && ! checkout "$sha"; then
+    result "changed=no"
+    return 1
   fi
   local path="$COMP_SRC/deploy/server/on-server/$script.sh"
   if [[ ! -f "$path" ]]; then
     echo "$COMP_SRC has no deploy/server/on-server/$script.sh; release a commit that has it first"
+    result "changed=no"
     return 1
   fi
   cd "$COMP_SRC" && COMP_RUN_ID="$run_id" bash "$path" "$@"

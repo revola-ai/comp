@@ -79,6 +79,7 @@ bring_up() {
 
 failed_before_change() { # failed_before_change <status> <message>
   echo "$2"
+  result "changed=no"
   echo "No container was changed; still serving ${current:-nothing}."
   record "$action" "$tag" failed
   exit "$1"

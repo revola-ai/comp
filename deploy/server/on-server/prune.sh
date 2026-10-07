@@ -25,7 +25,7 @@ KEEP_TAGS=4 # the current tag and the last 3 others
 # container of the project. Fails when docker cannot be read.
 removable() {
   local keep in_use images ref
-  keep="$(ok_tags | sed -n "1,${KEEP_TAGS}p")"
+  keep="$(recent_ok_tags | sed -n "1,${KEEP_TAGS}p")"
   in_use="$(docker ps --all --filter label=com.docker.compose.project=comp --format '{{.Image}}')" || return 1
   images="$(docker image ls --format '{{.Repository}}:{{.Tag}}')" || return 1
   while read -r ref; do
@@ -40,7 +40,7 @@ plan() {
   local remove tunnel ref
   remove="$(removable)" || { echo "could not list the images or containers"; return 1; }
   tunnel="$(grep -oE 'docker\.io/cloudflare/cloudflared:[^@[:space:]]+@sha256:[0-9a-f]{64}' "$COMPOSE_FILE" | head -n 1)"
-  echo "Keeping the tags of the current release and the last 3 others: $(ok_tags | sed -n "1,${KEEP_TAGS}p" | tr '\n' ' ')"
+  echo "Keeping the tags of the current release and the last 3 others: $(recent_ok_tags | sed -n "1,${KEEP_TAGS}p" | tr '\n' ' ')"
   echo "Keeping the images of the comp containers: $(docker ps --all --filter label=com.docker.compose.project=comp --format '{{.Image}}' | tr '\n' ' ')"
   echo "Keeping the pinned cloudflared image: ${tunnel:-(not found in compose.yaml)}"
   if [[ -n "$remove" ]]; then

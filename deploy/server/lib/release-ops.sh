@@ -22,7 +22,7 @@ cmd_migrate() {
   resolve_pushed "$1"
   connect
   local run
-  run="$(step_name migrate "$TAG")"
+  run="$(run_id migrate "$TAG")"
   echo "Checking the migrations of $TAG against the production database (nothing is applied yet)."
   step migrate-status "$TOOLS_SECONDS" "$run" new "$FULL_SHA" migrate status "$TAG"
   [[ "$REMOTE_CODE" -eq 0 ]] || die "reading the migration status failed (above)"
@@ -59,7 +59,7 @@ cmd_trigger() {
   if ! confirmed trigger "Type trigger to deploy: "; then
     die "Not deployed."
   fi
-  run="$(step_name trigger "$TAG")"
+  run="$(run_id trigger "$TAG")"
   step trigger "$TOOLS_SECONDS" "$run" new "$FULL_SHA" trigger "$TAG" "${projects[@]}"
   [[ "$REMOTE_CODE" -eq 0 ]] || die "the Trigger.dev deploy failed (above)"
 }
@@ -71,7 +71,7 @@ cmd_prune() {
   connect
   TAG=""
   local run remove
-  run="$(step_name prune)"
+  run="$(run_id prune)"
   step prune-plan "$PRUNE_SECONDS" "$run" new - prune plan
   [[ "$REMOTE_CODE" -eq 0 ]] || die "could not list the images (above)"
   remove="$(result_of remove)"

@@ -6,7 +6,7 @@
 
 SMOKE_TRIES=24 # each check, 5 seconds apart: about 2 minutes
 SMOKE_PAUSE=5
-UP_SECONDS=1200      # compose up --wait (600 s) and a possible restore
+UP_SECONDS=1800      # render, compose up --wait (600 s) and a restore's up --wait (600 s)
 RELEASE_SECONDS=7200 # builds of up to four images, then up
 
 # smoke_one <url> <200|access>: retries until the URL answers 200, or for "access" a 302 to
@@ -53,26 +53,35 @@ after_restore() {
       fi
       ;;
     5:*) echo "THE SITE IS DOWN: $TAG failed and there was no earlier release to bring back." ;;
-    *) echo "$TAG failed and the server could not say what serves now; check deploy/server/release.sh status." ;;
+    *) unknown_state "$TAG failed" ;;
   esac
   exit 1
+}
+
+unknown_state() { # unknown_state <what happened>: the step's outcome cannot be trusted
+  echo "$1, and the serving state is unknown: the server did not report how the step ended."
+  echo "Check what serves now with: deploy/server/release.sh status"
 }
 
 # bring_up <action>: the up step of $TAG (release or rollback), the smoke checks, then finish
 # or revert under the same run.
 bring_up() {
   local action="$1" run sha="-" timeout="$UP_SECONDS"
-  run="$(step_name "$action" "$TAG")"
+  run="$(run_id "$action" "$TAG")"
   if [[ "$action" == release ]]; then
     sha="$FULL_SHA" timeout="$RELEASE_SECONDS"
   fi
   step "$action" "$timeout" "$run" new "$sha" release up "$action" "$TAG"
-  case "$REMOTE_CODE" in
-    0) ;;
-    3) die "$action of $TAG refused before any container changed (migrations, above)" ;;
-    4 | 5 | 6) after_restore ;;
-    *) die "$action of $TAG failed before any container changed (above)" ;;
-  esac
+  if [[ "$REMOTE_STATUS" != Success ]] || [[ "$REMOTE_CODE" -ne 0 ]]; then
+    if unchanged; then
+      die "$action of $TAG stopped before any container changed (above); still serving the earlier release"
+    fi
+    case "$REMOTE_STATUS:$REMOTE_CODE:$REMOTE_ENDED" in
+      Failed:[456]:1) after_restore ;;
+    esac
+    unknown_state "The $action step of $TAG did not end normally"
+    exit 1
+  fi
   if smoke "$TAG"; then
     step finish "$UP_SECONDS" "$run" own - release finish "$action" "$TAG"
     [[ "$REMOTE_CODE" -eq 0 ]] ||

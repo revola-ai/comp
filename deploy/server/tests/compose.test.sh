@@ -160,6 +160,8 @@ for name in ('migrate', 'trigger'):
           and options.get('mode') == 'non-blocking' and options.get('awslogs-create-group') == 'false')
     check(f'{name}: memory limited', int(service.get('mem_limit') or 0) > 0)
     check(f'{name}: no healthcheck', not service.get('healthcheck'))
+    check(f'{name}: runs as node, not root', service.get('user') == 'node')
+    check(f'{name}: HOME is a tmpfs at /tmp', any(str(t).split(':')[0] == '/tmp' for t in service.get('tmpfs', [])))
     check(f'{name}: environment is exactly its env file',
           sorted(service.get('environment', {})) == env_names(f'{tmp}/env/{name}.env'))
 print('\n'.join(results))

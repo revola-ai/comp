@@ -201,7 +201,7 @@ cloud-init runs `user-data.sh` once, as root (`sudo cloud-init status --long` re
 
 ```bash
 deploy/server/release.sh release <sha>                     # build, check migrations, up, smoke checks
-deploy/server/release.sh rollback [<sha>]                  # back to an earlier release (default: the one before)
+deploy/server/release.sh rollback [<sha>]                  # back one step in the serving history (or to <sha>)
 deploy/server/release.sh migrate <sha>                     # apply the commit's migrations (type: migrate)
 deploy/server/release.sh trigger <sha> [--project api|app] # deploy Trigger.dev prod (type: trigger)
 deploy/server/release.sh status                            # tags, containers, last releases, disk
@@ -216,7 +216,7 @@ It never uses SSH: every server step is one SSM Run Command (`AWS-RunShellScript
 The command's text is `lib/server-common.sh` with `on-server/entry.sh` (or `on-server/status.sh`), so it works whatever the server's checkout holds; the work itself runs from `deploy/server/on-server/` of the checkout in `/opt/comp/src`.
 SSM parameters carry names, tags and SHAs only: the server reads the secret itself (`render-env.sh`) and no value appears in a command line, an SSM parameter, a log name or this script's output.
 
-A `<sha>` is 12 or 40 hex characters and must be on a branch of `origin` (`release.sh` runs `git fetch origin`, then `git branch -r --contains`), because the server fetches it from GitHub; anything else is refused before any AWS call; its first 12 characters are the image tag.
+A `<sha>` is 12 or 40 hex characters and must be on a branch of `origin` (`release.sh` runs `git fetch --prune origin`, then `git branch -r --contains`, so a deleted branch does not count), because the server fetches it from GitHub; anything else is refused before any AWS call; its first 12 characters are the image tag.
 
 Every step that may change something, on the server:
 
@@ -225,7 +225,7 @@ Every step that may change something, on the server:
 - with a SHA, fetches every branch of `origin` into `/opt/comp/src`, refuses local changes there and checks the SHA out detached;
 - writes its full output to `/opt/comp/logs/<utc>-<step>-<sha12>.log` (0600 in a 0700 directory); `release.sh` prints the last 200 lines (at most 20,000 bytes, because SSM keeps 24,000 characters) and the log's path.
   When the output still arrives cut short, it says so and prints the `logs --release` command that fetches the full log in pages.
-- adds one line per attempt to `/opt/comp/releases.log`, `<utc> <action> <sha12> <ok|failed|rolled-back>`; the current tag is that of the last `ok` release or rollback.
+- adds one line per attempt to `/opt/comp/releases.log`, `<utc> <action> <sha12> <ok|failed|rolled-back>`; the current tag is the top of the serving history (see rollback).
 
 ### release
 
@@ -237,11 +237,14 @@ Every step that may change something, on the server:
 
 A failure after the containers changed (health or smoke) brings the previous `ok` tag back up the same way, smoke-checks it, and says which tag serves; the attempt is recorded `rolled-back`.
 After a first release there is nothing to go back to: the failed stack is stopped, the attempt recorded `failed`, and `release.sh` says the site is down.
+A refused release (build or migration gate) changes no container but leaves `/opt/comp/src` at the new SHA and the env files rendered from it; the next step starts from there.
+When SSM reports the up step timed out, cancelled, undeliverable or terminated, or its output lacks the end marker, `release.sh` says the serving state is unknown and prints `deploy/server/release.sh status`.
 If the laptop is interrupted after the new tag came up, it keeps serving unrecorded; `status` shows the running images next to the recorded tag, and rerunning `release <sha>` (nothing to build) records it.
 
 ### rollback
 
-`rollback` brings back the most recent `ok` tag other than the current one, or the given SHA's tag, with the same `up --wait`, smoke checks and recovery.
+`releases.log`'s ok lines form a serving history, a stack: `release X` pushes X, `rollback X` pops back to X; the current tag is the top.
+`rollback` brings back the entry below the top (so rolling back twice walks further back, never forward), or the given SHA's tag, with the same `up --wait`, smoke checks and recovery.
 It refuses a tag whose three images are gone (pruned) or that already serves.
 It does not build, migrate or check out: it uses the images as they were built and the server's current checkout of `compose.yaml` and env files, so compose changes since that release are not rolled back, and the database keeps any newer migrations.
 
@@ -250,25 +253,15 @@ It does not build, migrate or check out: it uses the images as they were built a
 `migrate <sha>` checks the SHA out, builds `comp-migrate:<sha12>` if needed, and shows the migration status; only pending migrations lead to the question, and only the typed word `migrate` applies them.
 It then runs `prisma migrate deploy` in a one-off container (`docker compose --profile tools run --rm migrate`, which the unhealthy-container timer leaves alone) with `COMP_I_AM_TOUCHING_PROD=1`, and shows the status again; the guard in `packages/db/prisma.config.ts` still checks the target.
 Prisma gets `DATABASE_URL` from `migrate.env` (the secret's `DATABASE_MIGRATION_URL`, the session pooler or the direct host, never port 6543), and the container adds `sslmode=require`, `sslcert=/app/certs/supabase-ca.crt` and `sslaccept=strict` to it, so the schema engine verifies the chain and the host against the Supabase CA (it accepts any certificate otherwise).
-The tools containers can use up to 4 GiB each while they run, beside the stack's 5.25 GiB; the lock keeps them from overlapping an image build.
+The tools containers run as `node` with `HOME` on a tmpfs at `/tmp`, and can use up to 4 GiB each while they run, beside the stack's 5.25 GiB; the lock keeps them from overlapping an image build.
 
 ### trigger
 
 `trigger <sha>` deploys the Trigger.dev tasks of `apps/api`, then `apps/app` (or only `--project api|app`) to their prod environments, after the typed word `trigger`.
 It runs `npx --yes trigger.dev@4.4.3 deploy --env prod` from `/repo/apps/<project>` in a one-off container of `comp-migrate:<sha12>`; the CLI bundles there and builds the deploy image remotely on Trigger.dev.
-`trigger.env` holds `TRIGGER_ACCESS_TOKEN` (a personal access token) and both project refs; the container sets `TRIGGER_PROJECT_REF` from `TRIGGER_PROJECT_REF_API` or `TRIGGER_PROJECT_REF_APP`, which overrides the upstream ref in `trigger.config.ts`; it refuses, before deploying anything, a ref that is still an upstream Comp AI project (`proj_zhioyrusqertqgafqgpj`, `proj_lhxjliiqgcdyqbgtucda`).
+`trigger.env` holds `TRIGGER_ACCESS_TOKEN` (a personal access token) and both project refs, which must be in `comp/production/config` before the first `release` (render-env refuses missing keys); the container sets `TRIGGER_PROJECT_REF` from `TRIGGER_PROJECT_REF_API` or `TRIGGER_PROJECT_REF_APP`, which overrides the upstream ref in `trigger.config.ts`; it refuses, before deploying anything, a ref that is still an upstream Comp AI project (`proj_zhioyrusqertqgafqgpj`, `proj_lhxjliiqgcdyqbgtucda`).
 
-The tasks' own env vars are set in the Trigger.dev dashboard (each project, Environment Variables, Production), not by `release.sh`.
-The lists below come from the static import closure of each project's task directories (the parked `revola/aws-infra` design, `deploy/aws/trigger-env-keys.ts`, run against this tree); a "secret" value is the key of `comp/production/config`, and `DATABASE_SSL_CA` and `NODE_EXTRA_CA_CERTS` are set by the CA build extension at deploy.
-
-| Variable | comp-api | comp-app |
-|---|---|---|
-| `DATABASE_URL`, `APP_AWS_ACCESS_KEY_ID`, `APP_AWS_SECRET_ACCESS_KEY`, `APP_AWS_ENDPOINT`, `APP_AWS_REGION`, `APP_AWS_BUCKET_NAME`, `OPENAI_API_KEY`, `RESEND_API_KEY`, `RESEND_FROM_DEFAULT`, `RESEND_FROM_SYSTEM`, `SERVICE_TOKEN_TRIGGER`, `UNSUBSCRIBE_SECRET` | secret | secret |
-| `ANTHROPIC_API_KEY`, `APP_AWS_KNOWLEDGE_BASE_BUCKET`, `APP_AWS_ORG_ASSETS_BUCKET`, `APP_AWS_QUESTIONNAIRE_UPLOAD_BUCKET` | secret | not set |
-| `AUTH_SECRET` (from `SECRET_KEY`), `ENCRYPTION_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `REVALIDATION_SECRET` | not set | secret |
-| `API_BASE_URL`, `API_URL`, `BASE_URL`, `BETTER_AUTH_URL`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_BETTER_AUTH_URL` | `https://api.comp.revola.ai` | `https://api.comp.revola.ai` |
-| `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_PORTAL_URL` | `https://app.comp.revola.ai`, `https://portal.comp.revola.ai` | the same |
-| `DATABASE_POOL_MAX`, `NODE_ENV` | `2`, `production` | the same |
+The tasks' own env vars are set in the Trigger.dev dashboard (each project, Environment Variables, Production), not by `release.sh`; the list per project is in `docs/self-hosting-server.md`.
 
 ### status, logs
 

@@ -16,6 +16,8 @@ RELEASE_LEASE="$COMP_ROOT/release.lease"
 LEASE_SECONDS=1200 # how long a release waits between its steps for the laptop's smoke checks
 # <utc>-<step>[-<sha12>]: the name of a step's log and of a run.
 STEP_NAME_RE='^[0-9]{8}T[0-9]{6}Z-[a-z]+(-[a-z]+)?(-[0-9a-f]{12})?$'
+# A run: the name of its first step and 8 random hex characters, unique per operator.
+RUN_ID_RE='^[0-9]{8}T[0-9]{6}Z-[a-z]+(-[0-9a-f]{12})?-[0-9a-f]{8}$'
 TAG_RE='^[0-9a-f]{12}$'
 STACK_IMAGES=(api app portal)
 
@@ -26,15 +28,30 @@ utc_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # record <action> <sha12> <outcome>: one line per attempt in releases.log.
 record() { printf '%s %s %s %s\n' "$(utc_now)" "$1" "$2" "$3" >>"$RELEASES_LOG"; }
 
-# ok_tags: the tags of ok release and rollback lines, newest first, each once. The first is
-# the current tag; the second the one before it.
-ok_tags() {
+# serving_stack: the serving history, top (the current tag) first. Read from the ok lines of
+# releases.log in order: `release X ok` pushes X (unless X is on top already), `rollback X ok`
+# pops until X is on top (pushing X when it is not in the stack). So a default rollback goes
+# to the entry below the top, and rolling back twice walks further back, never forward.
+serving_stack() {
+  [[ -f "$RELEASES_LOG" ]] || return 0
+  awk '$4 != "ok" || $3 !~ /^[0-9a-f]+$/ { next }
+    $2 == "release" { if (n == 0 || stack[n - 1] != $3) stack[n++] = $3 }
+    $2 == "rollback" {
+      for (i = n - 1; i >= 0 && stack[i] != $3; i--) ;
+      if (i < 0) stack[n++] = $3; else n = i + 1
+    }
+    END { for (i = n - 1; i >= 0; i--) print stack[i] }' "$RELEASES_LOG"
+}
+current_tag() { serving_stack | sed -n 1p; }
+previous_tag() { serving_stack | sed -n 2p; }
+
+# recent_ok_tags: the tags of ok release and rollback lines, newest first, each once (prune
+# keeps the first four: the current tag, which is always the newest, and 3 others).
+recent_ok_tags() {
   [[ -f "$RELEASES_LOG" ]] || return 0
   awk '($2 == "release" || $2 == "rollback") && $4 == "ok" && $3 ~ /^[0-9a-f]+$/ { tags[n++] = $3 }
     END { for (i = n - 1; i >= 0; i--) if (!seen[tags[i]]++) print tags[i] }' "$RELEASES_LOG"
 }
-current_tag() { ok_tags | sed -n 1p; }
-previous_tag() { ok_tags | sed -n 2p; }
 
 # lease_read: LEASE_HOLDER (a run id), LEASE_EXPIRES (epoch seconds) and LEASE_WHAT from the
 # lease a release holds between its steps; lease_live is true while it has not expired.
