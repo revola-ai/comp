@@ -41,7 +41,7 @@ function buildContext(
   } as unknown as ExecutionContext;
 }
 
-describe('PlatformAdminGuard — runtime rejection scenarios', () => {
+describe('PlatformAdminGuard - runtime rejection scenarios', () => {
   let guard: PlatformAdminGuard;
 
   beforeEach(() => {
