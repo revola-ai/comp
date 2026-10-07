@@ -1,11 +1,27 @@
 name: Device Agent Release
 
+# Revola fork: manual only. Upstream released on every push touching the agent and
+# pointed it at upstream's portal and API; here a release needs this deployment's URLs
+# as inputs and fails fast unless they are https URLs on a revola.ai host.
 on:
   workflow_dispatch:
-  push:
-    branches: ['**']
-    paths:
-      - 'packages/device-agent/**'
+    inputs:
+      portal_url:
+        description: 'Employee portal URL of this deployment (for example https://portal.comp.revola.ai)'
+        required: true
+        type: string
+      api_url:
+        description: 'API URL of this deployment (for example https://api.comp.revola.ai)'
+        required: true
+        type: string
+      channel:
+        description: 'Release channel'
+        required: true
+        type: choice
+        default: staging
+        options:
+          - staging
+          - production
 
 permissions:
   contents: write
@@ -32,6 +48,10 @@ jobs:
 
       - name: Compute next version
         id: version
+        env:
+          PORTAL_URL: ${{ inputs.portal_url }}
+          API_URL: ${{ inputs.api_url }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           # Get the latest production tag (only match clean semver tags like device-agent-v1.0.0)
           LATEST_TAG=$(git tag -l 'device-agent-v*' --sort=-v:refname | grep -E '^device-agent-v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
@@ -46,20 +66,25 @@ jobs:
             NEXT_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
           fi
 
-          BRANCH="${GITHUB_REF_NAME}"
+          # Inputs arrive through env, never interpolated into the script.
+          for NAME in PORTAL_URL API_URL; do
+            VALUE="${!NAME}"
+            if ! [[ "$VALUE" =~ ^https://([a-z0-9-]+\.)+revola\.ai/?$ ]]; then
+              echo "::error::$NAME must be an https URL on a revola.ai host for this fork's device agent."
+              exit 1
+            fi
+          done
+          PORTAL_URL="${PORTAL_URL%/}"
+          API_URL="${API_URL%/}"
 
-          if [ "$BRANCH" = "release" ]; then
+          if [ "$CHANNEL" = "production" ]; then
             TAG_NAME="device-agent-v${NEXT_VERSION}"
             IS_PRERELEASE="false"
-            PORTAL_URL="https://portal.trycomp.ai"
-            API_URL="https://api.trycomp.ai"
             RELEASE_NAME="Device Agent v${NEXT_VERSION}"
             S3_ENV="production"
           else
             TAG_NAME="device-agent-v${NEXT_VERSION}-staging.${GITHUB_RUN_NUMBER}"
             IS_PRERELEASE="true"
-            PORTAL_URL="https://portal.staging.trycomp.ai"
-            API_URL="https://api.staging.trycomp.ai"
             RELEASE_NAME="Device Agent v${NEXT_VERSION} (Staging #${GITHUB_RUN_NUMBER})"
             S3_ENV="staging"
           fi
