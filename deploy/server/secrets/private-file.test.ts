@@ -22,6 +22,22 @@ describe('withPrivateFile', () => {
     expect(existsSync(dirname(seen))).toBe(false);
   });
 
+  test('listens for SIGINT, SIGTERM and SIGHUP only while the file exists', async () => {
+    const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
+    const before = signals.map((signal) => process.listenerCount(signal));
+    const during = await withPrivateFile({
+      prefix: 'push-secrets-test-',
+      contents: 'fakesecret',
+      work: async () => signals.map((signal) => process.listenerCount(signal)),
+    });
+    expect(during).toEqual(before.map((count) => count + 1));
+    expect(signals.map((signal) => process.listenerCount(signal))).toEqual(before);
+    await expect(
+      withPrivateFile({ prefix: 'push-secrets-test-', contents: 'fakesecret', work: async () => Promise.reject(new Error('boom')) }),
+    ).rejects.toThrow('boom');
+    expect(signals.map((signal) => process.listenerCount(signal))).toEqual(before);
+  });
+
   test('removes them when the work throws', async () => {
     let seen = '';
     const failing = withPrivateFile({

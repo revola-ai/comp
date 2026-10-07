@@ -1,7 +1,18 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { type CliRun, makeSandbox, runCli, type Sandbox, seedSecret, type Terminal } from './testing/cli-harness.ts';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { z } from 'zod';
+import {
+  type CliRun,
+  makeSandbox,
+  readFake,
+  runCli,
+  runPiped,
+  type Sandbox,
+  seedSecret,
+  startCli,
+  type Terminal,
+} from './testing/cli-harness.ts';
 import {
   expectedSecret,
   expectNoValues,
@@ -195,6 +206,53 @@ describe('push-secrets', () => {
     expect(run.code).toBe(1);
     expect(run.output).toContain('is a linked git worktree');
     expect(run.calls).toEqual([]);
+  });
+
+  const blockedSchema = z.object({ pid: z.number(), ppid: z.number(), path: z.string() });
+
+  async function waitForBlocked(file: string): Promise<z.infer<typeof blockedSchema>> {
+    for (let tries = 0; tries < 300; tries++) {
+      if (existsSync(file)) return blockedSchema.parse(JSON.parse(readFileSync(file, 'utf8')));
+      await Bun.sleep(100);
+    }
+    throw new Error('the fake aws never blocked');
+  }
+
+  test.each([
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+    ['SIGHUP', 129],
+  ] as const)('%s while aws holds the payload removes it and exits %d', async (signal, expected) => {
+    const { sandbox, checkout } = setup();
+    const run = startCli({
+      sandbox,
+      args: ['--source', checkout],
+      terminal: PUSH,
+      env: { FAKE_AWS_BLOCK: 'secretsmanager create-secret' },
+    });
+    const blocked = await waitForBlocked(`${sandbox.state}.blocked`);
+    expect(existsSync(blocked.path)).toBe(true);
+    process.kill(blocked.ppid, signal);
+    const code = await run.exited;
+    try {
+      process.kill(blocked.pid, 'SIGKILL');
+    } catch {
+      // The fake aws already went down with the terminal.
+    }
+    expect(code).toBe(expected);
+    expect(existsSync(dirname(blocked.path))).toBe(false);
+    expectNoValues(run.output());
+    expect(readFake({ sandbox }).state.secret).toBeNull();
+  }, 60_000);
+
+  test('refusals go to stderr and the plan to stdout', () => {
+    const { sandbox, checkout } = setup(sources({ prod: { TUNNEL_TOKEN: '' } }));
+    const run = runPiped({ sandbox, args: ['--source', checkout, '--dry-run'] });
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain('error: TUNNEL_TOKEN not found in deploy/server/.env.production.local');
+    expect(run.stdout).toContain('source: ');
+    expect(run.stdout).not.toContain('error:');
+    expectNoValues(run.stdout + run.stderr);
   });
 
   test('a missing --source or an unknown flag prints the usage', () => {

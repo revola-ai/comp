@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parse as parseDotenv } from 'dotenv';
 import { type SecretKeySpec, SOURCE_FILES } from './keys.ts';
@@ -32,13 +32,15 @@ export function loadSources({
 
 /** Refuses a linked git worktree (its env files name its own database) or a non-checkout. */
 export function sourceCheckoutProblem({ sourceDir }: { sourceDir: string }): string | undefined {
+  const notCheckout = `${sourceDir} is not a git checkout; pass the main checkout of the repository`;
+  if (!existsSync(sourceDir) || !statSync(sourceDir).isDirectory()) return notCheckout;
   const result = Bun.spawnSync(
     ['git', 'rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'],
     { cwd: sourceDir, stdout: 'pipe', stderr: 'pipe' },
   );
   const [gitDir, commonDir] = `${result.stdout}`.trim().split('\n');
   if (result.exitCode !== 0 || !gitDir || !commonDir) {
-    return `${sourceDir} is not a git checkout; pass the main checkout of the repository`;
+    return notCheckout;
   }
   if (resolve(gitDir) !== resolve(commonDir)) {
     return `${sourceDir} is a linked git worktree; push from the main checkout, whose env files hold the shared values`;

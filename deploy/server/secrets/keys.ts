@@ -84,12 +84,13 @@ export const SECRET_KEYS: Readonly<Record<string, SecretKeySpec>> = Object.freez
   OPENAI_API_KEY: { file: API },
   ANTHROPIC_API_KEY: { file: API },
   GOOGLE_GENERATIVE_AI_API_KEY: { file: APP },
-  // Service-to-service tokens (each at least 32 characters). The parked design reads them from
-  // apps/api/.env, which laptops and production share (they share one database too).
-  INTERNAL_API_TOKEN: { file: API },
-  COMP_FORWARDED_IP_TOKEN: { file: API },
-  SERVICE_TOKEN_TRIGGER: { file: API },
-  SERVICE_TOKEN_PORTAL: { file: API },
+  // Service-to-service tokens (each at least 32 characters), production-only: the API trusts the
+  // forwarded-IP token's X-Forwarded-For from any peer, so a laptop's value must never work on the
+  // public API. The laptop stack never calls the production API, so separate values cost nothing.
+  INTERNAL_API_TOKEN: { file: PROD },
+  COMP_FORWARDED_IP_TOKEN: { file: PROD },
+  SERVICE_TOKEN_TRIGGER: { file: PROD },
+  SERVICE_TOKEN_PORTAL: { file: PROD },
   REVALIDATION_SECRET: { file: APP },
   // The penetration-test module refuses to boot without it.
   MACED_API_KEY: { file: API },

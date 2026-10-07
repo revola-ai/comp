@@ -27,6 +27,14 @@ export function token(name: string): string {
   return `${MARKER}-${name}-`.padEnd(40, 'x');
 }
 
+/** The laptops' own service tokens; production holds different ones. */
+export const LAPTOP_TOKENS: Readonly<Record<string, string>> = {
+  INTERNAL_API_TOKEN: token('internal'),
+  COMP_FORWARDED_IP_TOKEN: token('forwarded'),
+  SERVICE_TOKEN_TRIGGER: token('trigger'),
+  SERVICE_TOKEN_PORTAL: token('portal'),
+};
+
 export const API_REF = 'proj_fakesecretapi0000000';
 export const APP_REF = 'proj_fakesecretapp0000000';
 
@@ -52,15 +60,12 @@ export const API_ENV: Readonly<Record<string, string>> = {
   UNSUBSCRIBE_SECRET: `${MARKER}-unsubscribe`,
   OPENAI_API_KEY: `${MARKER}-openai`,
   ANTHROPIC_API_KEY: `${MARKER}-anthropic`,
-  INTERNAL_API_TOKEN: token('internal'),
-  COMP_FORWARDED_IP_TOKEN: token('forwarded'),
-  SERVICE_TOKEN_TRIGGER: token('trigger'),
-  SERVICE_TOKEN_PORTAL: token('portal'),
   MACED_API_KEY: `${MARKER}-maced`,
   TRIGGER_PROJECT_REF: API_REF,
-  // Laptop-only values push-secrets never reads.
+  // Laptop-only values push-secrets never reads (production has its own tokens).
   TRIGGER_SECRET_KEY: `tr_dev_${MARKER}api`,
   BETTER_AUTH_URL: 'http://localhost:3333',
+  ...LAPTOP_TOKENS,
 };
 
 export const APP_ENV: Readonly<Record<string, string>> = {
@@ -84,6 +89,10 @@ export const DB_ENV: Readonly<Record<string, string>> = {
 };
 
 export const PROD_ENV: Readonly<Record<string, string>> = {
+  INTERNAL_API_TOKEN: token('prod-internal'),
+  COMP_FORWARDED_IP_TOKEN: token('prod-forwarded'),
+  SERVICE_TOKEN_TRIGGER: token('prod-trigger'),
+  SERVICE_TOKEN_PORTAL: token('prod-portal'),
   TUNNEL_TOKEN: `${MARKER}-tunnel-token`,
   TRIGGER_ACCESS_TOKEN: `tr_pat_${MARKER}access`,
   TRIGGER_SECRET_KEY_API: `tr_prod_${MARKER}api`,
@@ -114,7 +123,7 @@ export function sources(overrides: Overrides = {}): FixtureFiles {
 export function expectedSecret(): Record<string, string> {
   const api = without({
     record: API_ENV,
-    keys: ['TRIGGER_PROJECT_REF', 'TRIGGER_SECRET_KEY', 'BETTER_AUTH_URL'],
+    keys: ['TRIGGER_PROJECT_REF', 'TRIGGER_SECRET_KEY', 'BETTER_AUTH_URL', ...Object.keys(LAPTOP_TOKENS)],
   });
   return {
     ...api,

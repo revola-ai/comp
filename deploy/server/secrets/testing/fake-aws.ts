@@ -15,6 +15,8 @@ import { z } from 'zod';
 // Knobs (environment):
 //   FAKE_AWS_ACCOUNT   the account get-caller-identity reports (default 455986776194)
 //   FAKE_AWS_DENY      "<service> <operation>" that fails with AccessDeniedException
+//   FAKE_AWS_BLOCK     "<service> <operation>" that, once it has read its paramfile, writes
+//                      {pid, ppid, path} to $FAKE_AWS_STATE.blocked and never returns
 
 const stateSchema = z.object({
   secret: z
@@ -84,7 +86,14 @@ function readParamFile(operation: string): string {
     fileMode: statSync(path).mode & 0o777,
     dirMode: statSync(dirname(path)).mode & 0o777,
   });
-  return readFileSync(path, 'utf8');
+  const contents = readFileSync(path, 'utf8');
+  if (process.env.FAKE_AWS_BLOCK === `${argv[0]} ${operation}`) {
+    writeFileSync(`${env.FAKE_AWS_STATE}.blocked`, JSON.stringify({ pid: process.pid, ppid: process.ppid, path }));
+    // Sleeps (at most 10 minutes) until a signal ends this process; it has no handlers.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 600_000);
+    process.exit(255);
+  }
+  return contents;
 }
 
 const [service, operation] = argv;

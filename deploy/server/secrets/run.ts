@@ -24,6 +24,8 @@ export type PushOptions = Readonly<{
   store: SecretStore;
   run: AwsRunner;
   log: Log;
+  /** Refusals and errors (stderr in the CLI). */
+  logError: Log;
   env: Readonly<Record<string, string | undefined>>;
   keysDir: string;
   secretKeys: Readonly<Record<string, SecretKeySpec>>;
@@ -41,8 +43,8 @@ function redact({ text, values }: { text: string; values: readonly string[] }): 
     .reduce((result, value) => result.replaceAll(value, '<a secret value>'), text);
 }
 
-function refuse({ log, problems }: { log: Log; problems: readonly string[] }): number {
-  for (const problem of problems) log(`error: ${problem}`);
+function refuse({ logError, problems }: { logError: Log; problems: readonly string[] }): number {
+  for (const problem of problems) logError(`error: ${problem}`);
   return 1;
 }
 
@@ -56,16 +58,16 @@ async function diffAndWrite({
   options: PushOptions;
   desired: Readonly<Record<string, string>>;
 }): Promise<number> {
-  const { store, run, log, terminal } = options;
+  const { store, run, log, logError, terminal } = options;
   const account = await accountProblem({ run });
-  if (account) return refuse({ log, problems: [account] });
+  if (account) return refuse({ logError, problems: [account] });
   const state = await store.read();
   const create = state.kind === 'absent';
   log(`${SECRET_ID} (account ${ACCOUNT_ID}, ${REGION}):`);
   if (create) log(`  ${SECRET_ID} does not exist yet; the push creates it`);
   const plan = planPush({ desired, current: state.kind === 'present' ? state.values : undefined });
   for (const line of formatPlan({ plan })) log(`  ${line}`);
-  if (plan.problems.length > 0) return refuse({ log, problems: plan.problems });
+  if (plan.problems.length > 0) return refuse({ logError, problems: plan.problems });
   const unchanged = plan.added.length + plan.changed.length + plan.removed.length === 0;
   if (state.kind === 'present' && unchanged) {
     log('no changes');
@@ -75,7 +77,7 @@ async function diffAndWrite({
     log('dry run: nothing written');
     return 0;
   }
-  if (!terminal) return refuse({ log, problems: [NO_TERMINAL] });
+  if (!terminal) return refuse({ logError, problems: [NO_TERMINAL] });
   log('the write runs:');
   log(`  ${store.describeWrite({ create })}`);
   const answer = terminal.ask(`Type ${CONFIRM_WORD} to write ${SECRET_ID}: `);
@@ -90,17 +92,17 @@ async function diffAndWrite({
 }
 
 export async function runPush(options: PushOptions): Promise<number> {
-  const { sourceDir, log } = options;
+  const { sourceDir, log, logError } = options;
   log(`source: ${sourceDir}`);
   const local = [regionProblem({ env: options.env }), sourceCheckoutProblem({ sourceDir })].filter(
     (problem): problem is string => problem !== undefined,
   );
-  if (local.length > 0) return refuse({ log, problems: local });
+  if (local.length > 0) return refuse({ logError, problems: local });
   const tableProblems = keyTableProblems({
     union: readKeyUnion({ keysDir: options.keysDir }),
     secretKeys: options.secretKeys,
   });
-  if (tableProblems.length > 0) return refuse({ log, problems: tableProblems });
+  if (tableProblems.length > 0) return refuse({ logError, problems: tableProblems });
   const loaded = loadSources({ sourceDir, secretKeys: options.secretKeys });
   const resolved = resolveDesired({
     secretKeys: options.secretKeys,
@@ -109,11 +111,11 @@ export async function runPush(options: PushOptions): Promise<number> {
   });
   for (const note of [...loaded.notes, ...resolved.notes]) log(`note: ${note}`);
   const inputProblems = [...loaded.problems, ...resolved.problems];
-  if (inputProblems.length > 0) return refuse({ log, problems: inputProblems });
+  if (inputProblems.length > 0) return refuse({ logError, problems: inputProblems });
   try {
     return await diffAndWrite({ options, desired: resolved.values });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return refuse({ log, problems: [redact({ text: message, values: Object.values(resolved.values) })] });
+    return refuse({ logError, problems: [redact({ text: message, values: Object.values(resolved.values) })] });
   }
 }

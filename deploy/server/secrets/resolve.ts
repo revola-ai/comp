@@ -10,7 +10,10 @@ export type SourceValues = Partial<Record<SourceFile, Readonly<Record<string, st
 
 type Location = Readonly<{ file: SourceFile; name: string }>;
 
-/** Other places the same value lives, which must agree with the source. */
+/**
+ * Other places the same value lives, which must agree with the source. A production-only key
+ * has no companions: a laptop file holding the same name holds the laptop's own value.
+ */
 function companions({
   spec,
   name,
@@ -21,12 +24,12 @@ function companions({
   sources: SourceValues;
 }): Location[] {
   const files = Object.keys(sources).filter(isSourceFile);
-  const sameName = spec.fileSpecific
-    ? []
-    : files
-        .filter((file) => file !== spec.file && !spec.differsIn?.includes(file))
-        .map((file) => ({ file, name }));
-  return [...sameName, ...(spec.aliases ?? [])];
+  const aliases = spec.aliases ?? [];
+  if (spec.fileSpecific || spec.file === PRODUCTION_ONLY_FILE) return [...aliases];
+  const sameName = files
+    .filter((file) => file !== spec.file && !spec.differsIn?.includes(file))
+    .map((file) => ({ file, name }));
+  return [...sameName, ...aliases];
 }
 
 /** The production-only file may hold only the keys read from it (a typo is caught here). */
@@ -49,6 +52,29 @@ function productionFileProblems({
   return [
     `${PRODUCTION_ONLY_FILE} holds ${unread.join(', ')}, which push-secrets does not read from it; remove them`,
   ];
+}
+
+/** A production-only value must differ from the laptops' value of the same name (names only). */
+function laptopCopyProblems({
+  key,
+  spec,
+  name,
+  value,
+  sources,
+}: {
+  key: string;
+  spec: SecretKeySpec;
+  name: string;
+  value: string;
+  sources: SourceValues;
+}): string[] {
+  if (spec.file !== PRODUCTION_ONLY_FILE) return [];
+  return Object.keys(sources)
+    .filter(isSourceFile)
+    .filter((file) => file !== PRODUCTION_ONLY_FILE && sources[file]?.[name] === value)
+    .map(
+      (file) => `${key} in ${PRODUCTION_ONLY_FILE} equals its value in ${file}; production needs its own value`,
+    );
 }
 
 function resolveKey({
@@ -81,6 +107,7 @@ function resolveKey({
     const suffix = place.name === name ? '' : ` (${place.name})`;
     return `${key} disagrees between ${spec.file} and ${place.file}${suffix}`;
   });
+  problems.push(...laptopCopyProblems({ key, spec, name, value, sources }));
   problems.push(...valueProblems({ key, value, target }));
   return problems.length === 0 ? { value, problems, notes } : { problems, notes };
 }

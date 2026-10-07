@@ -54,6 +54,7 @@ describe('runPush', () => {
       return script(args);
     };
     const lines: string[] = [];
+    const errorLines: string[] = [];
     const terminal: Terminal = { ask: () => typed, close: () => undefined };
     const code = await runPush({
       sourceDir: sourceDir ?? makeCheckout({ files, roots }),
@@ -62,14 +63,18 @@ describe('runPush', () => {
       store: awsSecretStore({ run }),
       run,
       log: (line) => lines.push(line),
+      logError: (line) => errorLines.push(line),
       env: {},
       keysDir,
       secretKeys: SECRET_KEYS,
       target: TARGET,
     });
     const output = lines.join('\n');
+    const errors = errorLines.join('\n');
     expectNoValues(output);
-    return { code, output, calls };
+    expectNoValues(errors);
+    expect(output).not.toContain('error:');
+    return { code, output, errors, calls };
   }
 
   function byOperation(handlers: Record<string, Script>): Script {
@@ -84,17 +89,17 @@ describe('runPush', () => {
     const keysDir = mkdtempSync(join(tmpdir(), 'push-secrets-keys-'));
     roots.push(keysDir);
     writeFileSync(join(keysDir, 'api.keys'), `${Object.keys(SECRET_KEYS).join('\n')}\nBRAND_NEW_KEY\n`);
-    const { code, output, calls } = await push({ keysDir, script: ACCOUNT });
+    const { code, errors, calls } = await push({ keysDir, script: ACCOUNT });
     expect(code).toBe(1);
-    expect(output).toContain('error: BRAND_NEW_KEY is in env/*.keys but has no source in secrets/keys.ts');
+    expect(errors).toContain('error: BRAND_NEW_KEY is in env/*.keys but has no source in secrets/keys.ts');
     expect(calls).toEqual([]);
   });
 
   test('a missing production-only file is named', async () => {
     const files = without({ record: sources(), keys: ['deploy/server/.env.production.local'] });
-    const { code, output, calls } = await push({ files, script: ACCOUNT });
+    const { code, errors, calls } = await push({ files, script: ACCOUNT });
     expect(code).toBe(1);
-    expect(output).toContain('error: deploy/server/.env.production.local not found under ');
+    expect(errors).toContain('error: deploy/server/.env.production.local not found under ');
     expect(calls).toEqual([]);
   });
 
@@ -115,9 +120,17 @@ describe('runPush', () => {
   test('a source that is not a git checkout is refused', async () => {
     const plain = mkdtempSync(join(tmpdir(), 'push-secrets-plain-'));
     roots.push(plain);
-    const { code, output, calls } = await push({ sourceDir: plain, script: ACCOUNT });
+    const { code, errors, calls } = await push({ sourceDir: plain, script: ACCOUNT });
     expect(code).toBe(1);
-    expect(output).toContain('is not a git checkout; pass the main checkout of the repository');
+    expect(errors).toContain('is not a git checkout; pass the main checkout of the repository');
+    expect(calls).toEqual([]);
+  });
+
+  test('a source directory that does not exist is refused, not a crash', async () => {
+    const missing = join(tmpdir(), 'push-secrets-missing-source-does-not-exist');
+    const { code, errors, calls } = await push({ sourceDir: missing, script: ACCOUNT });
+    expect(code).toBe(1);
+    expect(errors).toBe(`error: ${missing} is not a git checkout; pass the main checkout of the repository`);
     expect(calls).toEqual([]);
   });
 
@@ -130,9 +143,9 @@ describe('runPush', () => {
         stderr: 'An error occurred (AccessDeniedException) when calling the GetSecretValue operation: denied',
       }),
     });
-    const { code, output, calls } = await push({ script });
+    const { code, errors, calls } = await push({ script });
     expect(code).toBe(1);
-    expect(output).toContain('error: aws secretsmanager get-secret-value failed: An error occurred (AccessDeniedException)');
+    expect(errors).toContain('error: aws secretsmanager get-secret-value failed: An error occurred (AccessDeniedException)');
     expect(calls.map((call) => call[1])).toEqual(['get-caller-identity', 'get-secret-value']);
   });
 
@@ -146,9 +159,9 @@ describe('runPush', () => {
         stderr: `An error occurred (ValidationException): bad value ${API_ENV.OPENAI_API_KEY}`,
       }),
     });
-    const { code, output } = await push({ script });
+    const { code, errors } = await push({ script });
     expect(code).toBe(1);
-    expect(output).toContain('bad value <a secret value>');
+    expect(errors).toContain('bad value <a secret value>');
   });
 
   test('every call names the region and none carries a value', async () => {

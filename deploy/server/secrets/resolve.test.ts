@@ -7,6 +7,8 @@ import {
   expectedSecret,
   expectNoValues,
   type FixtureFiles,
+  LAPTOP_TOKENS,
+  PROD_ENV,
   MIGRATION_URL,
   RUNTIME_URL,
   sources,
@@ -78,10 +80,10 @@ describe('resolveDesired', () => {
 
   test('value refusals carry through, naming the key', () => {
     const files = sources({
-      api: { DATABASE_URL: DEV_URL, SERVICE_TOKEN_PORTAL: 'fakesecret-short' },
+      api: { DATABASE_URL: DEV_URL },
       app: { DATABASE_URL: DEV_URL },
       portal: { DATABASE_URL: DEV_URL },
-      prod: { TRIGGER_SECRET_KEY_API: 'tr_dev_fakesecret' },
+      prod: { SERVICE_TOKEN_PORTAL: 'fakesecret-short', TRIGGER_SECRET_KEY_API: 'tr_dev_fakesecret' },
     });
     expect(resolve(files).problems).toEqual([
       'DATABASE_URL does not name the production database (packages/db/production-target.json)',
@@ -104,6 +106,20 @@ describe('resolveDesired', () => {
     const files = sources({ prod: { TRIGGER_SECRET_KEY_APP: 'tr_prod_fakesecretapi' } });
     expect(resolve(files).problems).toEqual([
       'TRIGGER_SECRET_KEY_API and TRIGGER_SECRET_KEY_APP are the same key; each Trigger.dev project has its own prod key',
+    ]);
+  });
+
+  test.each(Object.keys(LAPTOP_TOKENS))('%s in production must differ from the laptop value', (key) => {
+    const files = sources({ prod: { [key]: LAPTOP_TOKENS[key] ?? '' } });
+    expect(resolve(files).problems).toEqual([
+      `${key} in deploy/server/.env.production.local equals its value in apps/api/.env; production needs its own value`,
+    ]);
+  });
+
+  test('a laptop copy in another env file is compared too', () => {
+    const files = sources({ portal: { SERVICE_TOKEN_PORTAL: PROD_ENV.SERVICE_TOKEN_PORTAL ?? '' } });
+    expect(resolve(files).problems).toEqual([
+      'SERVICE_TOKEN_PORTAL in deploy/server/.env.production.local equals its value in apps/portal/.env; production needs its own value',
     ]);
   });
 

@@ -64,6 +64,7 @@ export async function main({
       store: awsSecretStore({ run: spawnAws }),
       run: spawnAws,
       log: (line) => console.log(line),
+      logError: (line) => console.error(line),
       env: process.env,
       keysDir: KEYS_DIR,
       secretKeys: SECRET_KEYS,

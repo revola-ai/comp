@@ -77,6 +77,10 @@ describe('the key table', () => {
       .map(([key]) => key)
       .sort();
     expect(fromProd).toEqual([
+      'COMP_FORWARDED_IP_TOKEN',
+      'INTERNAL_API_TOKEN',
+      'SERVICE_TOKEN_PORTAL',
+      'SERVICE_TOKEN_TRIGGER',
       'TRIGGER_ACCESS_TOKEN',
       'TRIGGER_SECRET_KEY_API',
       'TRIGGER_SECRET_KEY_APP',

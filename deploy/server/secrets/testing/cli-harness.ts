@@ -37,6 +37,43 @@ export type Terminal = { typed: string } | 'none';
 
 export type CliRun = Readonly<{ code: number; output: string; calls: string[][]; state: FakeAwsState }>;
 
+function cliEnv({ sandbox, env }: { sandbox: Sandbox; env: Record<string, string> }): Record<string, string> {
+  const inherited = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] =>
+        entry[0] !== 'AWS_REGION' && entry[0] !== 'AWS_DEFAULT_REGION' && entry[1] !== undefined,
+    ),
+  );
+  return {
+    ...inherited,
+    PATH: `${sandbox.bin}:${process.env.PATH ?? ''}`,
+    FAKE_AWS_LOG: sandbox.log,
+    FAKE_AWS_STATE: sandbox.state,
+    TTY_RUN_TIMEOUT: '60',
+    ...env,
+  };
+}
+
+function ttyCommand({ sandbox, args, terminal, stdin }: { sandbox: Sandbox; args: string[]; terminal: Terminal; stdin: string }): string[] {
+  const mode = terminal === 'none' ? ['--no-tty'] : ['--typed', terminal.typed];
+  const out = join(sandbox.root, 'output.txt');
+  return ['python3', TTY_RUN, ...mode, '--stdin', stdin, '--out', out, '--', process.execPath, CLI, ...args];
+}
+
+/** The aws calls and the fake's state after a run. */
+export function readFake({ sandbox }: { sandbox: Sandbox }): { calls: string[][]; state: FakeAwsState } {
+  const calls = existsSync(sandbox.log)
+    ? readFileSync(sandbox.log, 'utf8')
+        .split('\n')
+        .filter((line) => line.length > 0)
+        .map((line): string[] => JSON.parse(line))
+    : [];
+  const state: FakeAwsState = existsSync(sandbox.state)
+    ? JSON.parse(readFileSync(sandbox.state, 'utf8'))
+    : { secret: null, writes: [] };
+  return { calls, state };
+}
+
 export function runCli({
   sandbox,
   args,
@@ -50,34 +87,42 @@ export function runCli({
   stdin?: string;
   env?: Record<string, string>;
 }): CliRun {
-  const out = join(sandbox.root, 'output.txt');
-  const mode = terminal === 'none' ? ['--no-tty'] : ['--typed', terminal.typed];
-  const inherited = Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => name !== 'AWS_REGION' && name !== 'AWS_DEFAULT_REGION'),
-  );
-  const result = Bun.spawnSync(
-    ['python3', TTY_RUN, ...mode, '--stdin', stdin, '--out', out, '--', process.execPath, CLI, ...args],
-    {
-      env: {
-        ...inherited,
-        PATH: `${sandbox.bin}:${process.env.PATH ?? ''}`,
-        FAKE_AWS_LOG: sandbox.log,
-        FAKE_AWS_STATE: sandbox.state,
-        TTY_RUN_TIMEOUT: '60',
-        ...env,
-      },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-  );
-  const calls = existsSync(sandbox.log)
-    ? readFileSync(sandbox.log, 'utf8')
-        .split('\n')
-        .filter((line) => line.length > 0)
-        .map((line): string[] => JSON.parse(line))
-    : [];
-  const state: FakeAwsState = existsSync(sandbox.state)
-    ? JSON.parse(readFileSync(sandbox.state, 'utf8'))
-    : { secret: null, writes: [] };
-  return { code: result.exitCode, output: readFileSync(out, 'utf8'), calls, state };
+  const result = Bun.spawnSync(ttyCommand({ sandbox, args, terminal, stdin }), {
+    env: cliEnv({ sandbox, env }),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const output = readFileSync(join(sandbox.root, 'output.txt'), 'utf8');
+  return { code: result.exitCode, output, ...readFake({ sandbox }) };
+}
+
+/** Starts a run in the background (for signalling it); `exited` resolves to its status. */
+export function startCli({
+  sandbox,
+  args,
+  terminal,
+  env = {},
+}: {
+  sandbox: Sandbox;
+  args: string[];
+  terminal: Terminal;
+  env?: Record<string, string>;
+}): { exited: Promise<number>; output: () => string } {
+  const child = Bun.spawn(ttyCommand({ sandbox, args, terminal, stdin: '' }), {
+    env: cliEnv({ sandbox, env }),
+    stdout: 'ignore',
+    stderr: 'ignore',
+  });
+  return { exited: child.exited, output: () => readFileSync(join(sandbox.root, 'output.txt'), 'utf8') };
+}
+
+/** A --dry-run (no terminal needed) with stdout and stderr kept apart. */
+export function runPiped({ sandbox, args }: { sandbox: Sandbox; args: string[] }): { code: number; stdout: string; stderr: string } {
+  const result = Bun.spawnSync([process.execPath, CLI, ...args], {
+    env: cliEnv({ sandbox, env: {} }),
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  return { code: result.exitCode, stdout: `${result.stdout}`, stderr: `${result.stderr}` };
 }
