@@ -195,8 +195,9 @@ export type ReadinessProbe = (options: { timeoutMs: number }) => Promise<unknown
  * that arrives while a probe is outstanding waits on that same probe (with its own
  * timeout) and never starts another, so an outage cannot pile up probes or
  * connections. The probe gets the deadline of the check that starts it and must
- * settle by then on its own (createDatabaseReadinessCheck's probe closes its
- * connection at the deadline); the next probe starts once it has settled.
+ * settle shortly after on its own (createDatabaseReadinessCheck's probe closes its
+ * connection at the deadline, or within a second of a successful query, and
+ * settles only once it is closed); the next probe starts once it has settled.
  */
 export function createReadinessCheck({ probe }: { probe: ReadinessProbe }): ReadinessCheck {
   let inFlight: Promise<unknown> | undefined;

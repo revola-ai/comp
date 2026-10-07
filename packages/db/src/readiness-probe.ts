@@ -58,21 +58,38 @@ function asProbeError(error: unknown): unknown {
 // After a successful probe, a server that does not close on Terminate gets this long.
 const CLOSE_GRACE_MS = 1000;
 
-function closeGracefully(client: Client): void {
-  const force = setTimeout(() => client.connection.stream.destroy(), CLOSE_GRACE_MS);
-  force.unref();
-  const done = () => clearTimeout(force);
-  client.end().then(done, done);
+/**
+ * Sends Terminate and resolves once the connection's socket has closed; a server
+ * that has not closed it after CLOSE_GRACE_MS has the socket destroyed instead.
+ * `client.end()` resolves on the socket's close event, which a destroy also
+ * emits, so it always settles.
+ */
+async function closeGracefully({
+  client,
+  destroy,
+}: {
+  client: Client;
+  destroy: () => void;
+}): Promise<void> {
+  const force = setTimeout(destroy, CLOSE_GRACE_MS);
+  try {
+    await client.end();
+  } finally {
+    clearTimeout(force);
+  }
 }
 
 /**
  * Runs `SELECT 1` on a dedicated connection that exists only for this probe, with one
  * deadline (`timeoutMs`) for connecting and querying together. At the deadline, or
- * on any error, the connection's socket is destroyed and the probe rejects at once
- * (a timeout as `readinessTimeoutError`, which readinessReason reports as `timeout`).
- * The query also carries the deadline as its transaction's statement_timeout, so
- * the server abandons it too. pg's own connect and query timeouts are set to the
- * same deadline as a second bound.
+ * on any error, the connection's socket is destroyed (its descriptor closes at once)
+ * and the probe rejects (a timeout as `readinessTimeoutError`, which readinessReason
+ * reports as `timeout`). The query also carries the deadline as its transaction's
+ * statement_timeout, so the server abandons it too. pg's own connect and query
+ * timeouts are set to the same deadline as a second bound. After a successful query
+ * the probe resolves only once the connection is closed (Terminate, or a destroy
+ * after CLOSE_GRACE_MS), so it settles within `timeoutMs + CLOSE_GRACE_MS` and the
+ * single-flight check never has two probe connections open.
  */
 export async function probeDatabase({
   connectionString,
@@ -89,7 +106,13 @@ export async function probeDatabase({
   // A failure is reported through the promises below; pg also emits it as an
   // 'error' event, which must not go unhandled (that would crash the process).
   client.on('error', () => undefined);
-  const destroy = () => client.connection.stream.destroy();
+  // The TCP socket, captured before any TLS upgrade replaces `connection.stream`
+  // with a TLS socket on top of it; destroying both leaves nothing open.
+  const socket = client.connection.stream;
+  const destroy = () => {
+    client.connection.stream.destroy();
+    socket.destroy();
+  };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
@@ -109,7 +132,7 @@ export async function probeDatabase({
   } finally {
     clearTimeout(timer);
   }
-  closeGracefully(client);
+  await closeGracefully({ client, destroy });
 }
 
 /**

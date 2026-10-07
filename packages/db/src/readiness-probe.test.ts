@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import type { AddressInfo } from 'node:net';
 import { createServer, type Socket } from 'node:net';
-import { createDatabaseReadinessCheck } from './readiness-probe';
+import { createDatabaseReadinessCheck, probeDatabase } from './readiness-probe';
 
 // Throwaway local servers stand in for the database: one that accepts TCP and
 // never answers (a stalled pooler), and one that speaks just enough of the
 // Postgres protocol. Nothing here connects to a real database.
 
-type Behaviour = 'stall' | 'stall-after-startup' | 'answer' | 'reject-password';
+type Behaviour =
+  'stall' | 'stall-after-startup' | 'answer' | 'answer-ignore-terminate' | 'reject-password';
 
 const TIMEOUT_MS = 200;
 
@@ -33,6 +34,7 @@ type FakeDatabase = {
   connections: () => number;
   open: () => number;
   received: () => string;
+  poke: () => void;
   close: () => Promise<void>;
 };
 
@@ -48,7 +50,9 @@ async function fakeDatabase({
   const sockets = new Set<Socket>();
   let connections = 0;
   let received = '';
-  const server = createServer((socket) => {
+  // Ignoring Terminate includes the client's half-close that follows it.
+  const allowHalfOpen = behaviour === 'answer-ignore-terminate';
+  const server = createServer({ allowHalfOpen }, (socket) => {
     connections += 1;
     sockets.add(socket);
     let started = false;
@@ -64,8 +68,9 @@ async function fakeDatabase({
         setTimeout(() => socket.write(reply), startupDelayMs);
         return;
       }
-      if (chunk[0] === 'X'.charCodeAt(0)) socket.end();
-      if (chunk[0] === 'Q'.charCodeAt(0) && behaviour === 'answer') {
+      const answers = behaviour === 'answer' || behaviour === 'answer-ignore-terminate';
+      if (chunk[0] === 'X'.charCodeAt(0) && behaviour !== 'answer-ignore-terminate') socket.end();
+      if (chunk[0] === 'Q'.charCodeAt(0) && answers) {
         socket.write(Buffer.concat([SELECT_DONE, SELECT_DONE, READY]));
       }
     });
@@ -77,6 +82,11 @@ async function fakeDatabase({
     connections: () => connections,
     open: () => sockets.size,
     received: () => received,
+    // A write to a connection the client has closed draws a reset, which closes
+    // the server's side too.
+    poke: () => {
+      for (const socket of sockets) socket.write('N');
+    },
     close: () =>
       new Promise<void>((resolve) => {
         for (const socket of sockets) socket.destroy();
@@ -104,6 +114,24 @@ describe('createDatabaseReadinessCheck (dedicated short-lived client)', () => {
   it('answers ok from a database that answers SELECT 1, and closes its connection', async () => {
     const db = await fakeDatabase({ behaviour: 'answer' });
     expect(await checkFor(db.url)({ timeoutMs: TIMEOUT_MS })).toEqual({ status: 'ok' });
+    await wait(50);
+    expect(db.open()).toBe(0);
+  });
+
+  it('settles only after the server has closed the connection on Terminate', async () => {
+    const db = await fakeDatabase({ behaviour: 'answer' });
+    await probeDatabase({ connectionString: db.url, ssl: false, timeoutMs: TIMEOUT_MS });
+    // The server closes when it reads Terminate ('X', length 4), so the probe has
+    // seen that close before it settles: never two probe connections at once.
+    expect(db.received().endsWith('X\0\0\0\x04')).toBe(true);
+  });
+
+  it('settles only once the connection is closed when the server ignores Terminate (one-second fallback)', async () => {
+    const db = await fakeDatabase({ behaviour: 'answer-ignore-terminate' });
+    const started = Date.now();
+    await probeDatabase({ connectionString: db.url, ssl: false, timeoutMs: TIMEOUT_MS });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(950);
+    db.poke();
     await wait(50);
     expect(db.open()).toBe(0);
   });
