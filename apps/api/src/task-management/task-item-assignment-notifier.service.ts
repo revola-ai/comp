@@ -94,7 +94,7 @@ export class TaskItemAssignmentNotifierService {
       }
 
       // Skip notifications for platform admins unless this is an internal org
-      // (where platform admins are real members) — the single participation rule.
+      // (where platform admins are real members) - the single participation rule.
       if (
         !isOrgParticipant(assigneeUser.role, {
           orgIsInternal: organization?.isInternal ?? false,

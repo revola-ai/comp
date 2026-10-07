@@ -152,7 +152,7 @@ interface OwnershipLineage {
 /**
  * The subset of a create request needed to faithfully re-run a scan. Stored on
  * the ownership row so an auto-retry reconstructs the request from our own DB.
- * `additionalContext` here is the caller's original free-text briefing only —
+ * `additionalContext` here is the caller's original free-text briefing only -
  * on retry it is passed back through `resolveAdditionalContext`, which re-adds
  * the target's finding-context notes. `webhookUrl` is excluded (re-resolved to
  * our endpoint).
@@ -240,7 +240,7 @@ export class SecurityPenetrationTestsService {
       const errName = error?.constructor?.name ?? typeof error;
       const errMessage = error instanceof Error ? error.message : String(error);
       this.logger.error(
-        `Transport failure calling Maced (${context}): ${errName} — ${errMessage}`,
+        `Transport failure calling Maced (${context}): ${errName} - ${errMessage}`,
       );
       throw new HttpException(
         {
@@ -283,7 +283,7 @@ export class SecurityPenetrationTestsService {
     }
 
     // Collapse each lineage to its active (highest-numbered) attempt so the
-    // customer sees one entry per scan — retries never appear as separate rows.
+    // customer sees one entry per scan - retries never appear as separate rows.
     const activeByRoot = new Map<
       string,
       { providerRunId: string; attemptNumber: number; retryable: boolean }
@@ -312,7 +312,7 @@ export class SecurityPenetrationTestsService {
     for (const [rootRunId, active] of activeByRoot) {
       const report = reportById.get(active.providerRunId);
       // The provider may not know a just-created run yet, or may have pruned
-      // it — skip rather than surface a half-populated row.
+      // it - skip rather than surface a half-populated row.
       if (!report) continue;
       result.push(
         this.collapseRun(report, {
@@ -387,7 +387,7 @@ export class SecurityPenetrationTestsService {
       ) {
         // Record the blocked attempt so support / compliance can answer
         // "did the user try to scan without an allowance?". Best-
-        // effort — never let an audit-log failure hide the 402 from the
+        // effort - never let an audit-log failure hide the 402 from the
         // user.
         const response = error.getResponse();
         const reason = getPaymentRequiredCode(response);
@@ -409,7 +409,7 @@ export class SecurityPenetrationTestsService {
     }
 
     // Public repos only. We deliberately do NOT auto-attach the org's
-    // GitHub OAuth token — that would silently share Comp customer creds
+    // GitHub OAuth token - that would silently share Comp customer creds
     // with a third-party vendor. Private-repo support belongs behind an
     // explicit, scoped credential mechanism (e.g., GitHub App installation
     // tokens), not a quiet OAuth-token forward.
@@ -427,7 +427,7 @@ export class SecurityPenetrationTestsService {
         : {}),
       ...(payload.checks ? { checks: payload.checks } : {}),
       ...(additionalContext ? { additionalContext } : {}),
-      // Attribution metadata — Maced persists this verbatim and returns it on
+      // Attribution metadata - Maced persists this verbatim and returns it on
       // list/get. Gives us a second source of truth for the org↔run mapping
       // (our `security_penetration_test_runs` table is the primary one) so
       // ownership can be reconstructed from Maced if our DB ever drifts.
@@ -441,7 +441,7 @@ export class SecurityPenetrationTestsService {
 
     // For an auto-retry, use a deterministic idempotency key tied to the parent
     // run so concurrent duplicate `pentest.failed` webhooks dedupe AT THE
-    // PROVIDER — both create calls return the same run instead of launching two
+    // PROVIDER - both create calls return the same run instead of launching two
     // scans (one of which would be orphaned). User-initiated creates pass none.
     const idempotencyKey = lineage.retryOfProviderRunId
       ? `retry:${lineage.retryOfProviderRunId}`
@@ -511,7 +511,7 @@ export class SecurityPenetrationTestsService {
     );
     if (!ownershipPersisted) {
       // We debited and Maced created the run, but our DB rejected the
-      // ownership row 3x. Refund — the user can't see the run, so they
+      // ownership row 3x. Refund - the user can't see the run, so they
       // shouldn't pay for it. The Maced run is orphaned (no
       // ownership) but Maced has the `compOrganizationId` metadata if
       // support ever needs to clean it up.
@@ -537,7 +537,7 @@ export class SecurityPenetrationTestsService {
       );
     }
 
-    // Maced's POST /v1/pentests returns only { id, status } — backfill the
+    // Maced's POST /v1/pentests returns only { id, status } - backfill the
     // rest from the user's payload so the return shape honors its type and
     // the frontend renders real values before the first GET /:id poll
     // hydrates the full run detail.
@@ -572,7 +572,7 @@ export class SecurityPenetrationTestsService {
    *
    * The notes lookup is best-effort: a DB failure (transient outage, or
    * the table missing mid-deploy before the migration runs) must never
-   * block creating a pentest — the run proceeds with whatever context
+   * block creating a pentest - the run proceeds with whatever context
    * the caller typed, and the miss is logged.
    */
   private async resolveAdditionalContext(
@@ -630,7 +630,7 @@ export class SecurityPenetrationTestsService {
     id: string,
   ): Promise<PentestProgress> {
     // Resolve via the shared helper so progress reports the SAME collapsed,
-    // grace-based status as getReport — the two endpoints can never contradict
+    // grace-based status as getReport - the two endpoints can never contradict
     // each other for the same run (a failed non-final attempt reads as
     // in-progress within the grace window, and as failed once it elapses).
     const { run, activeProviderRunId } = await this.getReportResolved(
@@ -675,7 +675,7 @@ export class SecurityPenetrationTestsService {
       () => this.macedClient.pentests.events(activeProviderRunId),
       `fetching penetration test events ${activeProviderRunId}`,
     );
-    // Filter at the API layer (defense in depth) — a UI-only filter
+    // Filter at the API layer (defense in depth) - a UI-only filter
     // would leave Maced-internal tool names (`mcp__maced-helper__*`)
     // and any "Maced" prose mentions visible in the raw HTTP response,
     // i.e. accessible via DevTools / curl / a custom client. By
@@ -739,7 +739,7 @@ export class SecurityPenetrationTestsService {
       try {
         buffer = await appendContextNotesToPdf({ pdfBytes: original, notes });
       } catch (error) {
-        // The appendix is additive — a malformed/unparseable provider PDF
+        // The appendix is additive - a malformed/unparseable provider PDF
         // must never break the download. Serve the original bytes.
         this.logger.error(
           `Unable to append context notes to PDF for run ${id}: ${
@@ -801,7 +801,7 @@ export class SecurityPenetrationTestsService {
     const secret = process.env.MACED_WEBHOOK_SIGNING_SECRET;
     if (!secret) {
       this.logger.error(
-        'MACED_WEBHOOK_SIGNING_SECRET is not configured — rejecting webhook',
+        'MACED_WEBHOOK_SIGNING_SECRET is not configured - rejecting webhook',
       );
       throw new HttpException(
         { error: 'Webhook signing secret not configured on server' },
@@ -826,7 +826,7 @@ export class SecurityPenetrationTestsService {
       throw error;
     }
 
-    // event is a proper discriminated union — narrow on event.type to access
+    // event is a proper discriminated union - narrow on event.type to access
     // event-specific data shape. See @maced/api-client WebhookEvent.
     const issueId =
       event.type === 'issue.created' || event.type === 'issue.status_changed'
@@ -840,20 +840,20 @@ export class SecurityPenetrationTestsService {
 
     // Refund the credit on terminal failure events. The user paid for a
     // run that didn't deliver value, so they shouldn't lose the credit.
-    // Idempotent via the run row's `creditRefundedAt` column — webhook
+    // Idempotent via the run row's `creditRefundedAt` column - webhook
     // redelivery cannot double-credit. If the refund transaction fails
     // (e.g. transient DB blip), the error propagates so this handler
-    // returns 5xx and Maced redelivers the webhook — without that, the
+    // returns 5xx and Maced redelivers the webhook - without that, the
     // customer would silently lose their credit.
     if (event.type === 'pentest.failed' || event.type === 'pentest.cancelled') {
       await this.refundOnTerminalFailure(event.data.pentestId, event.type);
     }
 
     // Auto-retry transient failures so customers never see intermediate
-    // failures. Only `pentest.failed` — a `pentest.cancelled` is a deliberate
+    // failures. Only `pentest.failed` - a `pentest.cancelled` is a deliberate
     // stop (staff cancels a run and it's refunded) and must never be re-run.
     // If spawning the retry fails, `maybeAutoRetry` releases its claim and
-    // rethrows so this handler returns non-2xx and Maced redelivers — the
+    // rethrows so this handler returns non-2xx and Maced redelivers - the
     // refund above is idempotent (`creditRefundedAt`), so redelivery safely
     // re-attempts only the retry rather than dropping it.
     if (event.type === 'pentest.failed') {
@@ -887,7 +887,7 @@ export class SecurityPenetrationTestsService {
 
   /**
    * Look up the run's owning org and write a `pentest_completed` audit
-   * row. Quiet on orphan runs (no ownership row → can't attribute) —
+   * row. Quiet on orphan runs (no ownership row → can't attribute) -
    * those are rare race-condition artifacts and don't represent
    * customer-visible state.
    */
@@ -898,7 +898,7 @@ export class SecurityPenetrationTestsService {
     durationMs: number;
     agentCount: number;
   }): Promise<void> {
-    // Atomic claim — only the first webhook delivery for this run gets
+    // Atomic claim - only the first webhook delivery for this run gets
     // count: 1 back. Subsequent redeliveries see `completed_audit_at`
     // already set and bail out before writing a duplicate audit row.
     const claimed = await db.securityPenetrationTestRun.updateMany({
@@ -934,7 +934,7 @@ export class SecurityPenetrationTestsService {
       organizationId: run.organizationId,
       action: 'pentest_completed',
       runId: data.pentestId,
-      description: `Pentest completed for ${data.targetUrl} — ${data.issueCount} finding${data.issueCount === 1 ? '' : 's'}, ${this.formatDurationMs(data.durationMs)}`,
+      description: `Pentest completed for ${data.targetUrl} - ${data.issueCount} finding${data.issueCount === 1 ? '' : 's'}, ${this.formatDurationMs(data.durationMs)}`,
       metadata: {
         targetUrl: data.targetUrl,
         issueCount: data.issueCount,
@@ -948,7 +948,7 @@ export class SecurityPenetrationTestsService {
    * Atomically marks the run as refunded and credits the org's wallet.
    * The conditional `where: { creditRefundedAt: null }` ensures the
    * second delivery of the same event sees the marker and short-circuits
-   * — the wallet stays correct even if Maced retries the webhook.
+   * - the wallet stays correct even if Maced retries the webhook.
    */
   private async refundOnTerminalFailure(
     providerRunId: string,
@@ -957,10 +957,10 @@ export class SecurityPenetrationTestsService {
     // Wrap claim + refund in a single transaction so a refund failure
     // rolls back the claim. Without this, a transient DB blip on the
     // wallet write would leave `creditRefundedAt` set with no actual
-    // refund, and webhook redelivery would short-circuit forever — the
+    // refund, and webhook redelivery would short-circuit forever - the
     // customer never gets their credit back.
     //
-    // Errors are NOT swallowed here — they propagate to handleWebhook
+    // Errors are NOT swallowed here - they propagate to handleWebhook
     // → Maced sees 5xx → redelivers the webhook. On the redelivery
     // the rolled-back `creditRefundedAt` is null again, so the claim
     // re-fires and the refund is retried.
@@ -972,7 +972,7 @@ export class SecurityPenetrationTestsService {
 
       if (claimed.count === 0) {
         // Either we don't own this run (orphan from a fast-click race
-        // — ownership row never persisted) OR the credit has already
+        // - ownership row never persisted) OR the credit has already
         // been refunded. Either way: do nothing further.
         this.logger.log(
           `[Webhook] ${eventType} refund skipped run=${providerRunId} (no ownership row or already refunded)`,
@@ -1028,7 +1028,7 @@ export class SecurityPenetrationTestsService {
    *
    * Cancellation is a DISTINCT marker (`retryBlockedAt`, set lineage-wide), so a
    * late `pentest.failed` for a cancelled scan is always blocked here regardless
-   * of arrival order — it can't be confused with a spawn claim.
+   * of arrival order - it can't be confused with a spawn claim.
    *
    * Returns (without rethrowing) when a retry legitimately shouldn't happen:
    * orphan run, exhausted lineage, cancelled lineage, an existing child, or
@@ -1046,7 +1046,7 @@ export class SecurityPenetrationTestsService {
     });
     if (!row) {
       this.logger.log(
-        `[Retry] skip run=${failedProviderRunId} (no ownership row — orphan)`,
+        `[Retry] skip run=${failedProviderRunId} (no ownership row - orphan)`,
       );
       return;
     }
@@ -1072,7 +1072,7 @@ export class SecurityPenetrationTestsService {
     }
 
     // Idempotency: if a retry child already exists, an earlier delivery already
-    // spawned it — nothing to do.
+    // spawned it - nothing to do.
     const existingChild = await db.securityPenetrationTestRun.findFirst({
       where: { retryOfProviderRunId: failedProviderRunId },
       select: { providerRunId: true },
@@ -1124,12 +1124,12 @@ export class SecurityPenetrationTestsService {
 
   /**
    * Marks a whole lineage as cancelled (via the distinct `retryBlockedAt`
-   * marker) so no `pentest.failed` — for the cancelled run or any sibling — can
+   * marker) so no `pentest.failed` - for the cancelled run or any sibling - can
    * spawn a retry of a deliberately stopped scan, regardless of webhook arrival
    * order. Best-effort.
    *
    * Stops NEW retries; a retry already in flight when the cancel arrives is not
-   * force-cancelled at the provider (bounded — it is refunded and only wastes
+   * force-cancelled at the provider (bounded - it is refunded and only wastes
    * compute).
    *
    * Errors are NOT swallowed: if recording the block fails, it propagates so the
@@ -1169,7 +1169,7 @@ export class SecurityPenetrationTestsService {
   private mapMacedRunToSecurityPenetrationTest(
     report: Pentest | PentestWithProgress | PentestCreated,
   ): SecurityPenetrationTest {
-    // PentestCreated only has { id, status } — the backfill in createReport
+    // PentestCreated only has { id, status } - the backfill in createReport
     // already handles that case directly. Here we handle the full run shapes
     // returned by list/get.
     if (!('targetUrl' in report)) {
@@ -1211,8 +1211,8 @@ export class SecurityPenetrationTestsService {
   /**
    * Maps a provider run into a customer-facing run for a lineage: applies the
    * collapsed status (masking a failed non-final attempt as in-progress),
-   * pins the id to the stable lineage root, and — only when a genuine, final
-   * failure is revealed — replaces the raw provider error with a clean,
+   * pins the id to the stable lineage root, and - only when a genuine, final
+   * failure is revealed - replaces the raw provider error with a clean,
    * white-labeled message. The active (highest) attempt is authoritative
    * because we only ever retry `failed` runs.
    */
@@ -1323,7 +1323,7 @@ export class SecurityPenetrationTestsService {
     if (Array.isArray(raw.checks)) {
       // Preserve the original selection faithfully: assign the validated array
       // whenever checks were stored, including an explicit empty selection
-      // (`[]`) — omitting it would let the provider fall back to its default
+      // (`[]`) - omitting it would let the provider fall back to its default
       // check set. Stale entries (e.g. a check enum value removed between
       // deploys) are filtered out rather than dropping the whole selection.
       dto.checks = raw.checks.filter((check): check is PentestCheck =>
@@ -1508,7 +1508,7 @@ export class SecurityPenetrationTestsService {
   /**
    * Refund a credit, swallowing any error so the caller's primary failure
    * path remains intact. The original error has already been logged by
-   * the caller — losing the refund would be unfortunate but should never
+   * the caller - losing the refund would be unfortunate but should never
    * promote into a different failure mode for the user.
    */
   private async refundQuietly(

@@ -72,7 +72,7 @@ export const taskSchedule = schedules.task({
           },
         },
         // Include App Automations (IntegrationCheckRun) - get all runs to group by checkId.
-        // CS-166: exclude runs from disconnected connections — their historical
+        // CS-166: exclude runs from disconnected connections - their historical
         // "failed" state must not drive scheduled status changes.
         integrationCheckRuns: {
           where: { connection: { status: { not: 'disconnected' } } },
@@ -208,7 +208,7 @@ export const taskSchedule = schedules.task({
         }>,
         task: (typeof allUpdatedTasks)[number],
       ) => {
-        // Exclude platform admins (Comp AI staff) unless the org is internal —
+        // Exclude platform admins (Comp AI staff) unless the org is internal -
         // the single participation rule (no per-member owner carve-out).
         const orgIsInternal = task.organization?.isInternal ?? false;
         for (const entry of members) {

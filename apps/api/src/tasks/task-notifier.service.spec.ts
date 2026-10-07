@@ -390,7 +390,7 @@ describe('TaskNotifierService', () => {
 
   const memberWhere = () => mockDb.member.findMany.mock.calls[0][0].where;
 
-  describe('notifyAutomationFailures — participant filter', () => {
+  describe('notifyAutomationFailures - participant filter', () => {
     it('excludes platform admins for a customer org (isInternal false)', async () => {
       mockDb.organization.findUnique.mockResolvedValue({
         name: 'Acme',
@@ -439,7 +439,7 @@ describe('TaskNotifierService', () => {
     });
   });
 
-  describe('notifyBulkAutomationFailures — participant filter', () => {
+  describe('notifyBulkAutomationFailures - participant filter', () => {
     const bulkParams = {
       organizationId: 'org_1',
       tasks: [

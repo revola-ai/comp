@@ -482,7 +482,7 @@ describe('policyAcknowledgmentDigest', () => {
 
   it('rolls up across orgs by email when the same person has multiple User records (schema allows duplicate emails)', async () => {
     // Regression: User.email is not @unique in the Prisma schema, so one
-    // person can end up with multiple user rows — typically when they get
+    // person can end up with multiple user rows - typically when they get
     // invited to separate orgs through different flows. Keying the rollup
     // on user.id split those duplicates into one email each. Rollup must
     // collapse by normalized email instead.
@@ -529,7 +529,7 @@ describe('policyAcknowledgmentDigest', () => {
             id: 'mem_2',
             department: 'hr',
             user: {
-              // Different user row, same email — Alice was re-invited under
+              // Different user row, same email - Alice was re-invited under
               // a separate user record.
               id: 'usr_alice_second',
               name: 'Alice',

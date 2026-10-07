@@ -76,7 +76,7 @@ async function getCustomDomains(): Promise<Set<string>> {
     console.error('[CORS] Redis cache read failed, falling back to DB:', error);
   }
 
-  // Cache miss or Redis unavailable — query DB
+  // Cache miss or Redis unavailable - query DB
   try {
     const trusts = await db.trust.findMany({
       where: {
@@ -97,7 +97,7 @@ async function getCustomDomains(): Promise<Set<string>> {
         ex: CORS_DOMAINS_CACHE_TTL_SECONDS,
       });
     } catch {
-      // Redis unavailable — continue without caching
+      // Redis unavailable - continue without caching
     }
 
     return new Set(domains);
@@ -166,7 +166,7 @@ assertEdgeSecrets({ env: process.env });
 // "Sign in with Google" instead of pasting an API key.
 //
 // Gram's OAuth Proxy registers as a single static client and handles Dynamic
-// Client Registration toward MCP clients on our behalf — so we keep public DCR
+// Client Registration toward MCP clients on our behalf - so we keep public DCR
 // off for now and register Gram as a trusted client. Configured via env so the
 // secret isn't committed and the plugin is inert in envs where hosted MCP isn't
 // set up yet.
@@ -183,7 +183,7 @@ const gramMcpClient =
         redirectUrls: [process.env.GRAM_OAUTH_REDIRECT_URI],
         metadata: null,
         // First-party client: Gram is Comp AI's own hosted MCP, so the user's
-        // login (Sign in with Google) IS the authorization — no separate consent
+        // login (Sign in with Google) IS the authorization - no separate consent
         // screen is needed. This also avoids having to build a consent page UI.
         skipConsent: true,
       }
@@ -251,7 +251,7 @@ export const auth = betterAuth({
   baseURL: process.env.BASE_URL || 'http://localhost:3333',
   trustedOrigins: getBetterAuthTrustedOrigins(),
   emailAndPassword: {
-    // Not used — apps sign in via magic link, email OTP, and OAuth.
+    // Not used - apps sign in via magic link, email OTP, and OAuth.
     enabled: false,
   },
   emailVerification: {
@@ -402,7 +402,7 @@ export const auth = betterAuth({
 
           if (!userOrg) {
             console.error(
-              '[Auth] SECURITY: Admin action blocked — no organization could be resolved for admin user',
+              '[Auth] SECURITY: Admin action blocked - no organization could be resolved for admin user',
               { userId, path: ctx.path },
             );
             throw new Error(

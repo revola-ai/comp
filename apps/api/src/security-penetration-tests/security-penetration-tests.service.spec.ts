@@ -191,7 +191,7 @@ describe('SecurityPenetrationTestsService', () => {
       }),
     });
     mockedDb.secret.update.mockResolvedValue({});
-    // Default: no GitHub integration connected — getGithubTokenForOrg returns null
+    // Default: no GitHub integration connected - getGithubTokenForOrg returns null
     mockedDb.integrationProvider.findUnique.mockResolvedValue(null);
     mockedDb.integrationConnection.findFirst.mockResolvedValue(null);
     mockCredentialVaultService.getDecryptedCredentials.mockResolvedValue(null);
@@ -323,7 +323,7 @@ describe('SecurityPenetrationTestsService', () => {
       }),
     );
     // e.g. transient outage, or the table missing mid-deploy before the
-    // migration has run — must never block pentest creation.
+    // migration has run - must never block pentest creation.
     mockedDb.securityPenetrationTestFindingContext.findMany.mockRejectedValue(
       new Error('relation does not exist'),
     );
@@ -348,7 +348,7 @@ describe('SecurityPenetrationTestsService', () => {
       {
         issueTitle: 'appConfiguration read access',
         context:
-          'Accepted by design — collection holds non-secret bootstrap config.',
+          'Accepted by design - collection holds non-secret bootstrap config.',
       },
       {
         issueTitle: 'Unverified email access',
@@ -357,7 +357,7 @@ describe('SecurityPenetrationTestsService', () => {
     ]);
 
     await service.createReport('org_123', {
-      // Mixed-case host + trailing slash — the stored-notes lookup must
+      // Mixed-case host + trailing slash - the stored-notes lookup must
       // normalize before matching rows keyed by canonical target URL.
       targetUrl: 'https://App.example.com/',
       additionalContext: 'Focus on the three previously reported findings.',
@@ -813,10 +813,10 @@ describe('SecurityPenetrationTestsService', () => {
     ).rejects.toThrow(HttpException);
   });
 
-  // TODO(phase-5): webhook tests removed — handleWebhook now verifies HMAC
+  // TODO(phase-5): webhook tests removed - handleWebhook now verifies HMAC
   // via @maced/api-client verifyMacedWebhook. Rewrite: valid signature → ok,
   // invalid/missing signature → ForbiddenException, unknown run → warn+ok.
-  // Also rewrite the MACED_API_KEY missing test — new behavior throws at
+  // Also rewrite the MACED_API_KEY missing test - new behavior throws at
   // service construction, not on first request.
 
   it('fetches report output as binary payload', async () => {
@@ -1495,7 +1495,7 @@ describe('SecurityPenetrationTestsService', () => {
             createdAt: recent,
             updatedAt: recent,
             error:
-              'Sandbox container deleted by Daytona infrastructure — backup/restore race condition',
+              'Sandbox container deleted by Daytona infrastructure - backup/restore race condition',
           }),
           { status: 200 },
         ),
@@ -1516,7 +1516,7 @@ describe('SecurityPenetrationTestsService', () => {
         rootRunId: 'run_orig',
       });
       const recent = new Date().toISOString();
-      // getReportResolved.get() then progress() — two provider calls.
+      // getReportResolved.get() then progress() - two provider calls.
       fetchMock
         .mockResolvedValueOnce(
           new Response(

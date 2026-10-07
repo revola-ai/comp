@@ -11,7 +11,7 @@ const NOTIFIABLE_ROLES = ['owner', 'admin'];
 
 /**
  * Checks domain config via the Vercel API. Returns null when Vercel is not
- * configured on this server (dev/self-host) — callers should skip the check.
+ * configured on this server (dev/self-host) - callers should skip the check.
  */
 async function isDomainMisconfigured(domain: string): Promise<boolean | null> {
   const teamId = process.env.VERCEL_TEAM_ID;
@@ -45,7 +45,7 @@ async function isDomainMisconfigured(domain: string): Promise<boolean | null> {
  * Daily health check for Trust Portal custom domains.
  *
  * Iterates all orgs with a verified custom domain, re-checks Vercel's
- * `misconfigured` flag, and — when a domain is broken — marks it unverified
+ * `misconfigured` flag, and - when a domain is broken - marks it unverified
  * in the DB and emails the org's admin/owner members so they can act.
  *
  * Runs at 6:00 AM UTC daily.
@@ -92,7 +92,7 @@ export const checkDomainHealthSchedule = schedules.task({
 
     if (!vercelConfigured) {
       logger.info(
-        'Skipping domain health check — Vercel not configured on this server',
+        'Skipping domain health check - Vercel not configured on this server',
       );
       return { checked: 0, misconfigured: 0, notified: 0 };
     }
@@ -104,7 +104,7 @@ export const checkDomainHealthSchedule = schedules.task({
         const broken = await isDomainMisconfigured(domain);
 
         if (broken === null) {
-          logger.warn(`Skipping domain ${domain} — Vercel API request failed`);
+          logger.warn(`Skipping domain ${domain} - Vercel API request failed`);
           return { misconfigured: 0, notified: 0 };
         }
 

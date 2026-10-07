@@ -19,14 +19,14 @@ import {
   type DigestMember,
 } from './policy-acknowledgment-digest-helpers';
 
-// Skip orgs that look abandoned — same threshold weekly-task-reminder uses so
+// Skip orgs that look abandoned - same threshold weekly-task-reminder uses so
 // we don't keep hitting dead addresses and burning domain reputation.
 const ORG_INACTIVITY_DAYS = 90;
 
 interface RollupEntry {
   email: string;
   userName: string;
-  // First org (in iteration order) a policy was added for this user — used
+  // First org (in iteration order) a policy was added for this user - used
   // as the x-organization-id header when sending. The body lists all orgs.
   primaryOrgId: string;
   orgs: PolicyAcknowledgmentDigestOrg[];
@@ -102,13 +102,13 @@ export const policyAcknowledgmentDigest = schedules.task({
 
     let orgsProcessed = 0;
     // Per-org drops from the unsubscribe filter. A user opted-out in 2 orgs
-    // counts 2 — same semantic as the pre-rollup implementation.
+    // counts 2 - same semantic as the pre-rollup implementation.
     let orgsSkippedUnsubscribed = 0;
 
     // Rollup across orgs, keyed by normalized email so one person = one
     // email even when they hold separate member records in multiple
     // organizations. Keyed on email (not user.id) because User.email is
-    // not @unique in the schema — the same person can end up with multiple
+    // not @unique in the schema - the same person can end up with multiple
     // user rows, typically when invited to separate orgs through different
     // flows, and keying on user.id split those duplicates into one email each.
     const rollup = new Map<string, RollupEntry>();

@@ -139,7 +139,7 @@ export const policySchedule = schedules.task({
         }>,
         policy: (typeof overduePolicies)[number],
       ) => {
-        // Exclude platform admins (Comp AI staff) unless the org is internal —
+        // Exclude platform admins (Comp AI staff) unless the org is internal -
         // the single participation rule (no per-member owner carve-out).
         const orgIsInternal = policy.organization?.isInternal ?? false;
         for (const entry of members) {

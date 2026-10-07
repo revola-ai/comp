@@ -514,7 +514,7 @@ describe('PeopleInviteService', () => {
           data: { role: 'admin,employee' },
         }),
       );
-      // An already-active member is upgraded directly — no re-invitation, no email.
+      // An already-active member is upgraded directly - no re-invitation, no email.
       expect(mockDb.invitation.create).not.toHaveBeenCalled();
       expect(mockTriggerEmail).not.toHaveBeenCalled();
     });
@@ -661,7 +661,7 @@ describe('PeopleInviteService', () => {
         ],
       });
 
-      // A portal email was requested but the send failed — the member is still
+      // A portal email was requested but the send failed - the member is still
       // added and emailSent: false signals the UI to offer a resend.
       expect(results[0].success).toBe(true);
       expect(results[0].emailSent).toBe(false);

@@ -52,7 +52,7 @@ export class PeopleInviteService {
     );
 
     // Invitation records require a valid inviter user (FK to User). API-key auth
-    // has no caller user, so fall back to an org owner/admin — but only resolve
+    // has no caller user, so fall back to an org owner/admin - but only resolve
     // it lazily, when an invitation is actually created and after the role check
     // passes, so role errors aren't masked by inviter-resolution errors.
     let cachedInviterId: string | undefined;
@@ -627,7 +627,7 @@ export class PeopleInviteService {
     organizationId: string,
     apiKey?: { isApiKey?: boolean; apiKeyScopes?: string[] },
   ): Promise<Set<string>> {
-    // API key auth has no member role — derive member actions from the key's
+    // API key auth has no member role - derive member actions from the key's
     // scopes instead. This mirrors the PermissionGuard's scope model so a key
     // with full member management (or legacy full-access) can assign any role,
     // while a key scoped to only `member:create` stays restricted.
