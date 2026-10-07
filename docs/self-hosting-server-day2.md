@@ -24,10 +24,11 @@ If that release fails its checks, it says so: only the env files changed, so the
 
 ### Interrupted releases
 
-Ctrl-C (or a closed terminal) during `release` or `rollback` is safe.
-Before the up step was sent, `release.sh` cancels what runs on the server and says nothing changed only when the server confirms it; otherwise it says the state is unknown (run `status`).
-After the up step was sent, it waits for the step in flight to end, then brings the previous release back (after a first release, it stops the stack) and says what serves.
-A second Ctrl-C leaves at once.
+Ctrl-C (or a closed terminal) during any `release.sh` command is safe.
+It cancels only a step that only reads (status, logs, the migration status, the prune plan); a migration, a Trigger.dev deploy, prune's removal and a release's up step are never cut short: it waits for the step to end and reports it.
+After a release's or rollback's up step was sent, it then brings the previous release back (after a first release, it stops the stack) and says what serves.
+A second Ctrl-C leaves at once and says what still runs on the server (`status`, and the step's `logs --release <log>` command).
+Leaving while the up step runs lets the server finish it, and the new tag may then serve unverified under a 20-minute lease: run `status`, then `unlock`, then release (or roll back to) the SHA that should serve.
 
 A laptop that went to sleep or lost the network sends no signal: its lease holds the server for up to 20 minutes, and every other command is refused meanwhile.
 **Kyle runs**, once that laptop's `release.sh` has stopped:
@@ -111,7 +112,8 @@ Comp itself is patched by releasing a newer commit; the `cloudflared` image by b
 deploy/server/release.sh prune
 ```
 
-A release prunes by itself when `/` ends above 70% used, and `status` prints a `WARNING` line above 70%; run `prune` when it does.
+A release prunes by itself, for at most 10 minutes, when `/` ends above 70% used; if that fails or times out, the release still stands and `release.sh` says so.
+`status` prints a `WARNING` line above 70%; run `prune` when it does.
 It lists what it keeps (the serving tag, the 3 most recent other ok tags, the default rollback target, every image a container uses, the pinned `cloudflared` image) and what it would remove, then asks for the typed word `prune`.
 
 ## Changing a secret

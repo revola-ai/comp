@@ -222,7 +222,7 @@ The command's text is `lib/server-common.sh` with `on-server/entry.sh` (or `on-s
 SSM parameters carry names, tags and SHAs only: the server reads the secret itself (`render-env.sh`) and no value appears in a command line, an SSM parameter, a log name or this script's output.
 
 A `<sha>` is 12 or 40 hex characters and must be on a branch of the fork `revola-ai/comp`, because the server fetches it from there; anything else is refused before any AWS call, and its first 12 characters are the image tag.
-`release.sh` decides this against the fork's URL, never a remote name (in a checkout of upstream, `origin` is `trycompai/comp`): it fetches `https://github.com/revola-ai/comp` with `--prune` into `refs/comp-release/*` and needs a ref there to contain the SHA, so a deleted branch does not count; push with `git push revola <branch>`.
+`release.sh` decides this against the fork's URL, never a remote name (in a checkout of upstream, `origin` is `trycompai/comp`): it fetches the branches of `https://github.com/revola-ai/comp` with `--prune --no-tags` into `refs/comp-release/*` and needs a ref there to contain the SHA, so a deleted branch does not count; push with `git push revola <branch>`.
 
 Every step that may change something, on the server:
 
@@ -250,9 +250,10 @@ After a first release there is nothing to go back to: the failed stack is stoppe
 A refused release changes no container but leaves `/opt/comp/src` at the new SHA: after a build failure the env files are still those of the previous render, after a migration-gate refusal they are re-rendered from the new SHA.
 When SSM reports the up step timed out, cancelled, undeliverable or terminated, or its output lacks the end marker, `release.sh` says the serving state is unknown and prints `deploy/server/release.sh status`.
 Interrupted (Ctrl-C, `SIGTERM`, a closed terminal), `release.sh` cleans up before it exits.
-Before a release or rollback sent its up step, it cancels the SSM command in flight (`aws ssm cancel-command`) and says nothing changed only when the server confirms it; otherwise it says the state is unknown and prints the `status` command.
-Once the up step was sent it never cancels a step (the up step may be replacing containers): it waits for the step in flight to end, then runs the revert step, which brings the previous tag back (or stops the stack after a first release), and reports what serves; a release already recorded stays released.
-A second interrupt leaves at once.
+It cancels (`aws ssm cancel-command`) only a step that only reads (`status`, `logs`, the migration status, the prune plan); every other step (`migrate`, `trigger`, prune's removal, the up step) is never cut short, so a migration cannot stay half applied: it waits for the step to end and reports it, saying nothing changed only when the server confirms it.
+Once a release or rollback sent its up step, it then runs the revert step, which brings the previous tag back (or stops the stack after a first release), and reports what serves; a release already recorded stays released.
+A second interrupt leaves at once and says what keeps running (with the `logs --release` command of a step).
+Leaving while the up step runs lets the server finish it: the new tag may then serve unverified under the 20-minute lease, so run `status`, then `unlock`, then release (or roll back to) the SHA that should serve.
 A laptop that stops without a signal (sleep, a dropped network) leaves the lease for up to 20 minutes, and the tag it brought up serving unrecorded: free the lease with `unlock`, then release the SHA that should serve.
 
 ### rollback
@@ -286,7 +287,7 @@ The tasks' own env vars are set in the Trigger.dev dashboard (each project, Envi
 
 `prune` lists what it keeps and what it would remove, then asks for the typed word `prune`; it keeps the images of the current tag, the 3 most recent other `ok` tags and the default rollback target (`rollback` needs them), the image of every container of the `comp` project, running or stopped, and the pinned `cloudflared` image, which is never a candidate (only `comp-api`, `comp-app`, `comp-portal` and `comp-migrate` images are removed), so it stays even when its container is gone.
 It then trims the build cache to 20 GB (`docker builder prune --keep-storage 20GB -f`) and never runs `docker image prune`, which can delete the digest-pinned `cloudflared` image (Docker lists it untagged).
-A release does the same by itself, without asking, when `/` is more than 70% used after it is recorded (`prune.sh auto`); a failure there leaves the release standing and says so.
+A release does the same by itself, without asking, when `/` is more than 70% used after it is recorded (`prune.sh auto`, bounded by `timeout 600`); the server reports `recorded=ok` first, so a failed or timed-out prune leaves the release standing and the laptop says "released, but the post-release prune failed" (or timed out), never a recording failure.
 
 ### unlock
 
