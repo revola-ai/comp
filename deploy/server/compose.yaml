@@ -1,0 +1,180 @@
+# Comp AI on the tunnel server (docs/plans/2026-10-07-server-tunnel-hosting.md).
+# Four containers on one private bridge network: api (:3333), app and portal (:3000) and
+# cloudflared, which carries app/portal/api.comp.revola.ai in from Cloudflare. No port is
+# published; the only way in is the tunnel.
+#
+#   TAG=<12-character git sha> docker compose -f deploy/server/compose.yaml build api
+#   TAG=<12-character git sha> docker compose -f deploy/server/compose.yaml up -d --no-build
+#
+# Env files come from deploy/server/render-env.sh (default /opt/comp/env; COMP_ENV_DIR
+# overrides it for tests). They hold secrets: inspect this file's resolved form with
+# `docker compose config --no-env-resolution`, never plain `config`.
+
+name: comp
+
+x-common: &common
+  restart: unless-stopped
+  init: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  stop_grace_period: 30s
+
+# The images are built on the server and never pulled (there is no registry), so
+# `up` with an unbuilt TAG fails instead of building from whatever is checked out.
+x-image-build: &image-build
+  context: ../..
+  dockerfile: deploy/aws/Dockerfile
+
+# GETs the URL given after the script; healthy on a 2xx within 4 seconds. The images have
+# Node but no curl.
+x-probe: &probe "fetch(process.argv[1], { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+
+x-healthcheck: &healthcheck
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 90s
+  start_interval: 5s
+
+# awslogs uses the instance profile; the groups /comp/<service> exist already
+# (deploy/server/provision.sh). non-blocking: a CloudWatch outage never stalls a request.
+x-awslogs: &awslogs
+  awslogs-region: us-east-2
+  awslogs-create-group: "false"
+  mode: non-blocking
+  max-buffer-size: 4m
+  tag: "{{.Name}}/{{.ID}}"
+
+services:
+  api:
+    <<: *common
+    image: comp-api:${TAG:?set TAG to the 12-character git sha of the release}
+    pull_policy: never
+    build:
+      <<: *image-build
+      target: api
+    env_file:
+      - path: ${COMP_ENV_DIR:-/opt/comp/env}/api.env
+        format: raw
+    # Liveness only (never touches the database), so a database outage does not restart it.
+    healthcheck:
+      <<: *healthcheck
+      test:
+        - CMD
+        - node
+        - -e
+        - *probe
+        - http://127.0.0.1:3333/v1/health
+    mem_limit: 2g
+    memswap_limit: 2g
+    networks: [comp]
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs
+        awslogs-group: /comp/api
+
+  app:
+    <<: *common
+    image: comp-app:${TAG:?set TAG to the 12-character git sha of the release}
+    pull_policy: never
+    build:
+      <<: *image-build
+      target: app
+      # Compiled into the bundles; must equal deploy/aws/public-env.ts and docker-bake.hcl
+      # (deploy/server/tests/compose.test.sh checks).
+      args:
+        NEXT_PUBLIC_API_URL: https://api.comp.revola.ai
+        NEXT_PUBLIC_APP_URL: https://app.comp.revola.ai
+        NEXT_PUBLIC_PORTAL_URL: https://portal.comp.revola.ai
+        NEXT_PUBLIC_BETTER_AUTH_URL: https://app.comp.revola.ai
+        NEXT_PUBLIC_SELF_HOSTED: "true"
+        NEXT_PUBLIC_APP_ENV: production
+    env_file:
+      - path: ${COMP_ENV_DIR:-/opt/comp/env}/app.env
+        format: raw
+    healthcheck:
+      <<: *healthcheck
+      test:
+        - CMD
+        - node
+        - -e
+        - *probe
+        - http://127.0.0.1:3000/api/health/live
+    mem_limit: 2g
+    memswap_limit: 2g
+    networks: [comp]
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs
+        awslogs-group: /comp/app
+
+  portal:
+    <<: *common
+    image: comp-portal:${TAG:?set TAG to the 12-character git sha of the release}
+    pull_policy: never
+    build:
+      <<: *image-build
+      target: portal
+      args:
+        NEXT_PUBLIC_API_URL: https://api.comp.revola.ai
+        NEXT_PUBLIC_APP_URL: https://app.comp.revola.ai
+        NEXT_PUBLIC_PORTAL_URL: https://portal.comp.revola.ai
+        NEXT_PUBLIC_BETTER_AUTH_URL: https://portal.comp.revola.ai
+    env_file:
+      - path: ${COMP_ENV_DIR:-/opt/comp/env}/portal.env
+        format: raw
+    healthcheck:
+      <<: *healthcheck
+      test:
+        - CMD
+        - node
+        - -e
+        - *probe
+        - http://127.0.0.1:3000/api/health
+    mem_limit: 1g
+    memswap_limit: 1g
+    networks: [comp]
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs
+        awslogs-group: /comp/portal
+
+  # Cloudflare publishes cloudflared only on Docker Hub; the digest pin makes the pull
+  # content-addressed and the image is pulled once per pin change. The image's entrypoint
+  # is `cloudflared --no-autoupdate`; `tunnel run` reads TUNNEL_TOKEN from the env file.
+  # Distroless (no shell), so there is no container healthcheck; the Route 53 checks on the
+  # public hosts cover the tunnel.
+  cloudflared:
+    <<: *common
+    image: docker.io/cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
+    command: [tunnel, run]
+    env_file:
+      - path: ${COMP_ENV_DIR:-/opt/comp/env}/cloudflared.env
+        format: raw
+    mem_limit: 256m
+    memswap_limit: 256m
+    networks:
+      comp:
+        # The api trusts CF-Connecting-IP only from this address (TRUSTED_EDGE_PROXY_IPS in
+        # env/api.public.env); it sits outside ip_range, so no other container can get it.
+        ipv4_address: 172.30.0.10
+    logging:
+      driver: awslogs
+      options:
+        <<: *awslogs
+        awslogs-group: /comp/cloudflared
+
+# A private bridge with a fixed subnet (clear of the VPC and Docker's default 172.17/16).
+# Not `internal: true`: the containers need outbound access (Supabase, Upstash, Resend,
+# model providers, Cloudflare's edge).
+networks:
+  comp:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1
+          ip_range: 172.30.0.128/25
