@@ -2779,7 +2779,7 @@ export class TrustAccessService {
   }
 
   /**
-   * Resolve a Trust by friendlyUrl, falling back to organizationId — the public
+   * Resolve a Trust by friendlyUrl, falling back to organizationId - the public
    * portal passes either. Two findUnique calls on unique columns give explicit
    * precedence (friendlyUrl wins), so an org whose friendlyUrl happens to equal
    * another org's id can't shadow it. Shared by the public read endpoints.

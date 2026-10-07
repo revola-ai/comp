@@ -62,7 +62,7 @@ let isSigningIn = false;
 // stopScheduler() is called BEFORE triggerSignIn() so no periodic checks
 // can re-trigger the expired handler during the sign-in flow.
 setSessionExpiredHandler(async () => {
-  log('Session expired — clearing auth and prompting re-login');
+  log('Session expired - clearing auth and prompting re-login');
   stopScheduler();
   await performLogout();
   currentResults = [];
@@ -74,7 +74,7 @@ setSessionExpiredHandler(async () => {
 // Handle stale device IDs: all orgs returned 404 for the stored device IDs.
 // This happens when devices are deleted from the portal. Re-login to re-register.
 setDevicesNotFoundHandler(async () => {
-  log('All devices returned 404 — clearing auth and re-registering');
+  log('All devices returned 404 - clearing auth and re-registering');
   stopScheduler();
   await performLogout();
   currentResults = [];
@@ -98,7 +98,7 @@ async function triggerSignIn(): Promise<void> {
 
     if (auth) {
       const orgNames = auth.organizations.map((o) => o.organizationName).join(', ');
-      log(`Login successful: ${auth.organizations.length} org(s) — ${orgNames}`);
+      log(`Login successful: ${auth.organizations.length} org(s) - ${orgNames}`);
       notifyRenderer(IPC_CHANNELS.AUTH_STATE_CHANGED, true);
       setStatus('checking');
       openStatusWindow();
@@ -237,7 +237,7 @@ function isLinuxNonAppImage(): boolean {
 
 /**
  * Simple semver comparison: returns true if remote > local.
- * Handles versions like "1.2.3" — ignores pre-release tags.
+ * Handles versions like "1.2.3" - ignores pre-release tags.
  */
 function isNewerVersion(remote: string, local: string): boolean {
   const r = remote.replace(/^v/, '').split('.').map(Number);
@@ -296,9 +296,9 @@ function initAutoUpdater(): void {
     return;
   }
 
-  // Linux .deb installs can't use electron-updater — use manual check instead
+  // Linux .deb installs can't use electron-updater - use manual check instead
   if (isLinuxNonAppImage()) {
-    log('Linux non-AppImage detected — using manual update checker');
+    log('Linux non-AppImage detected - using manual update checker');
     checkForManualUpdate();
     setInterval(checkForManualUpdate, UPDATE_CHECK_INTERVAL_MS);
     return;
@@ -327,7 +327,7 @@ function initAutoUpdater(): void {
   });
 
   autoUpdater.on('update-downloaded', (info) => {
-    log(`Update downloaded: v${info.version} — will install on next restart`);
+    log(`Update downloaded: v${info.version} - will install on next restart`);
     setAutoUpdateStatus('ready');
     updateTrayMenu(currentStatus, currentResults, trayCallbacks);
   });
