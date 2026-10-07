@@ -12,10 +12,10 @@
 #
 # It drives the server (the one running instance named comp-server) through SSM Run Command,
 # never SSH: each step's script runs there as root (deploy/server/on-server/), its full log
-# goes to /opt/comp/logs, and this prints the log's end. A <sha> must be on an origin branch
-# (the server fetches from GitHub); its 12-character prefix is the image tag. A server lock
-# runs one step at a time. The smoke checks run from here, against the public hosts. It never
-# reads, prints or sends a secret: the server reads them from Secrets Manager itself.
+# goes to /opt/comp/logs, and this prints the log's end. A <sha> must be on a branch of the fork
+# revola-ai/comp (the server fetches from it); its 12-character prefix is the image tag. A
+# server lock runs one step at a time. The smoke checks run from here, against the public
+# hosts. It never reads, prints or sends a secret: the server reads them from Secrets Manager.
 # Needs bash 4 or newer, aws, git, python3 and curl.
 if ((BASH_VERSINFO[0] < 4)); then
   echo "release: release.sh needs bash 4 or newer (this is $BASH_VERSION; brew install bash)" >&2
@@ -34,6 +34,8 @@ export AWS_PAGER=""
 
 # shellcheck source=deploy/server/lib/provision-common.sh
 source "$SERVER_DIR/lib/provision-common.sh"
+# shellcheck source=deploy/server/lib/server-common.sh
+source "$SERVER_DIR/lib/server-common.sh" # COMP_REPO_URL
 # shellcheck source=deploy/server/lib/release-remote.sh
 source "$SERVER_DIR/lib/release-remote.sh"
 # shellcheck source=deploy/server/lib/release-flow.sh

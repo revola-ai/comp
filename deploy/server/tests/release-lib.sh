@@ -6,12 +6,13 @@
 # it as root on the server. docker, git, curl, flock and sleep are fakes on PATH, so nothing
 # reaches AWS, GitHub, Docker, Trigger.dev, a database or the internet.
 
-SHA_A=aaaaaaaaaaaa1111111111111111111111111111 # pushed; released before the tests start
-SHA_B=bbbbbbbbbbbb2222222222222222222222222222 # pushed; the release under test
+SHA_A=aaaaaaaaaaaa1111111111111111111111111111 # pushed to the fork; released before the tests start
+SHA_B=bbbbbbbbbbbb2222222222222222222222222222 # pushed to the fork; the release under test
 SHA_C=cccccccccccc3333333333333333333333333333 # committed but never pushed
-SHA_D=dddddddddddd4444444444444444444444444444 # pushed; an older release
+SHA_D=dddddddddddd4444444444444444444444444444 # pushed to the fork; an older release
+SHA_U=999999999999555555555555555555555555555a # only on upstream (`origin` in Kyle's checkout)
 # shellcheck disable=SC2034 # used by the tests that source this file
-TAG_A="${SHA_A:0:12}" TAG_B="${SHA_B:0:12}" TAG_C="${SHA_C:0:12}" TAG_D="${SHA_D:0:12}"
+TAG_A="${SHA_A:0:12}" TAG_B="${SHA_B:0:12}" TAG_C="${SHA_C:0:12}" TAG_D="${SHA_D:0:12}" TAG_U="${SHA_U:0:12}"
 INSTANCE=i-0fake000000000001
 SERVER="$TMP/server"
 TUNNEL_REF='cloudflare/cloudflared:<none>' # how `docker image ls` shows a digest-pinned pull
@@ -28,7 +29,8 @@ install_release_fakes() {
   export FAKE_DOCKER_LOG="$TMP/docker.log" FAKE_DOCKER_STATE="$TMP/docker-state.json" \
     FAKE_GIT_LOG="$TMP/git.log" FAKE_GIT_HEAD="$TMP/git-head" FAKE_CURL_LOG="$TMP/curl.log" \
     FAKE_SSM_ROOT="$SERVER" FAKE_AWS_SECRET="$TMP/secret.json" \
-    FAKE_GIT_COMMITS="$SHA_A $SHA_B $SHA_C $SHA_D" FAKE_GIT_PUSHED="$SHA_A $SHA_B $SHA_D"
+    FAKE_GIT_COMMITS="$SHA_A $SHA_B $SHA_C $SHA_D $SHA_U" FAKE_GIT_PUSHED="$SHA_A $SHA_B $SHA_D" \
+    FAKE_GIT_UPSTREAM="$SHA_U"
   mkdir -p "$TMP/cwd"
 }
 

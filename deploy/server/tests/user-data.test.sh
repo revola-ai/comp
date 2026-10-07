@@ -62,6 +62,8 @@ check "requires Docker Engine 25" test "$MIN_ENGINE" = 25.0.0
 check "requires Compose 2.30" test "$MIN_COMPOSE" = 2.30.0
 check "clones revola-ai/comp into /opt/comp/src" \
   test "$REPO_URL $SRC_DIR" = "https://github.com/revola-ai/comp /opt/comp/src"
+check "clones the fork release.sh checks and the server fetches (COMP_REPO_URL)" \
+  test "$REPO_URL" = "$(bash -c 'source "$1" && printf %s "${COMP_REPO_URL:-unset}"' _ "$SERVER_DIR/lib/server-common.sh")"
 check "swap is 8 GiB" test "$SWAP_MIB" = 8192
 check "installs docker, git, python3, dnf-automatic and dnf-utils" \
   grep -qxF "  dnf install -y docker git python3 dnf-automatic dnf-utils" "$USER_DATA"

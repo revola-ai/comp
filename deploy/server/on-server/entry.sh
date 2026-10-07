@@ -10,11 +10,12 @@
 # 2. Checks the lease a release keeps between its steps (while the laptop runs the smoke
 #    checks): "new" refuses while another run holds it, "own" needs it to be <run-id>'s.
 # 3. Writes everything after this to /opt/comp/logs/<log-name> (0600 in a 0700 directory).
-# 4. With a sha: fetches every branch of origin into /opt/comp/src, refuses local changes, and
-#    checks the sha out detached, under umask 022 (the public source is not secret, and the
-#    images' node user must read what BuildKit copies); then makes every file and directory of
-#    the checkout (not .git, never through a symlink) world-readable, which also heals a tree
-#    an earlier run checked out under umask 077. Logs, env files, lock and lease stay 077.
+# 4. With a sha: fetches every branch of the fork (by its URL, COMP_REPO_URL) into
+#    /opt/comp/src, refuses local changes, and checks the sha out detached, under umask 022
+#    (the public source is not secret, and the images' node user must read what BuildKit
+#    copies); then makes every file and directory of the checkout (not .git, never through a
+#    symlink) world-readable, which also heals a tree an earlier run checked out under umask
+#    077. Logs, env files, lock and lease stay 077.
 # 5. Runs deploy/server/on-server/<script>.sh [args...] from the checkout, with COMP_RUN_ID.
 # 6. Prints the end of the log (200 lines, at most 20000 bytes: SSM keeps 24000 characters),
 #    then the lines release.sh reads (see `meta`), and exits with the script's status.
@@ -66,7 +67,7 @@ fi
 checkout() { # checkout <sha>: the full checkout at <sha>, or a refusal (run in a subshell)
   local changes head
   umask 022
-  git -C "$COMP_SRC" fetch --quiet origin '+refs/heads/*:refs/remotes/origin/*' || {
+  git -C "$COMP_SRC" fetch --quiet "$COMP_REPO_URL" '+refs/heads/*:refs/remotes/origin/*' || {
     echo "git fetch in $COMP_SRC failed"
     return 1
   }

@@ -15,7 +15,9 @@ LOG_NAME_RE='[0-9]{8}T[0-9]{6}Z-[a-z-]+-[0-9a-f]{12}\.log'
 # ---------------------------------------------------------------- refusals before any AWS call
 reset_server
 released "$TAG_A"
-for bad in "$SHA_C:not on any origin branch" "$TAG_C:not on any origin branch" \
+FORK=https://github.com/revola-ai/comp
+NOT_ON_FORK="is not on any branch of revola-ai/comp; push it there first (git push revola <branch>)"
+for bad in "$SHA_C:$NOT_ON_FORK" "$TAG_C:$NOT_ON_FORK" "$SHA_U:$NOT_ON_FORK" "$TAG_U:$NOT_ON_FORK" \
   "eeeeeeeeeeee:is not a commit" "main:is not a 12- or 40-character" "${SHA_B:0:7}:is not a 12- or 40-character"; do
   sha="${bad%%:*}" message="${bad#*:}"
   : >"$FAKE_AWS_LOG"
@@ -26,15 +28,18 @@ for bad in "$SHA_C:not on any origin branch" "$TAG_C:not on any origin branch" \
   check "release $sha: no AWS call at all" test ! -s "$FAKE_AWS_LOG"
 done
 check "refusals: no docker call" test ! -s "$FAKE_DOCKER_LOG"
-check "refusals: the laptop fetches origin, pruning deleted branches, before deciding" \
-  has_line "$FAKE_GIT_LOG" "git -C $ROOT fetch --prune --quiet origin"
+check "refusals: the laptop fetches the fork's URL (never a remote name) into its own refs, pruning" \
+  has_line "$FAKE_GIT_LOG" "git -C $ROOT fetch --prune --quiet $FORK +refs/heads/*:refs/comp-release/*"
+check "refusals: the laptop never fetches a remote by name" bash -c "! grep -qE '^git -C $ROOT fetch .* (origin|revola)( |\$)' '$FAKE_GIT_LOG'"
+check "refusals: the pushed check asks only the fork's refs" \
+  has_line "$FAKE_GIT_LOG" "git -C $ROOT for-each-ref --contains $SHA_U --format=%(refname) refs/comp-release/"
+release_sh "$TMP/upstream.out" release "$TAG_U"
+check "only on upstream: refused, naming the full SHA" grep -qF "$SHA_U $NOT_ON_FORK" "$TMP/upstream.out"
 : >"$FAKE_AWS_LOG"
 FAKE_GIT_STALE="$SHA_D" release_sh "$TMP/stale.out" release "$SHA_D"
-check "only on a deleted branch: refused" test "$?" -ne 0
-check "only on a deleted branch: says why" grep -qF "not on any origin branch" "$TMP/stale.out"
-check "only on a deleted branch: no AWS call" test ! -s "$FAKE_AWS_LOG"
-check "refusals: the pushed check asks origin's branches" \
-  has_line "$FAKE_GIT_LOG" "git -C $ROOT branch -r --contains $SHA_C"
+check "only on a deleted fork branch: refused" test "$?" -ne 0
+check "only on a deleted fork branch: says why" grep -qF "$NOT_ON_FORK" "$TMP/stale.out"
+check "only on a deleted fork branch: no AWS call" test ! -s "$FAKE_AWS_LOG"
 AWS_REGION=eu-west-1 release_sh "$TMP/region.out" release "$SHA_B"
 check "another AWS_REGION: refused" grep -qF "only works in us-east-2" "$TMP/region.out"
 
@@ -64,8 +69,8 @@ check "release: step 1 runs release up from the checkout of the full SHA" grep -
 check "release: step 2 records it under the same run" grep -qE \
   "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} own - release finish release $TAG_B\$" <<<"$(ssm_call 2 args)"
 check "release: polls each command until it ends" test "$(grep -c "^aws ssm get-command-invocation --command-id fake-command-[01] --instance-id $INSTANCE --output json --region us-east-2\$" "$FAKE_AWS_LOG")" -eq 4
-check "release: the server fetches every branch" \
-  has_line "$FAKE_GIT_LOG" "git -C $SERVER/src fetch --quiet origin +refs/heads/*:refs/remotes/origin/*"
+check "release: the server fetches every branch of the fork by URL" \
+  has_line "$FAKE_GIT_LOG" "git -C $SERVER/src fetch --quiet $FORK +refs/heads/*:refs/remotes/origin/*"
 check "release: the server checks out the SHA detached" \
   has_line "$FAKE_GIT_LOG" "git -C $SERVER/src checkout --quiet --detach $SHA_B"
 EXPECTED_DOCKER="$(

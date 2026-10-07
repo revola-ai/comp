@@ -34,18 +34,22 @@ require_local() {
   done
 }
 
-# resolve_pushed <sha>: FULL_SHA and TAG for a 12- or 40-character SHA that some origin branch
-# contains (after git fetch --prune origin, so a deleted branch no longer counts); anything
-# else stops before any AWS call.
+# resolve_pushed <sha>: FULL_SHA and TAG for a 12- or 40-character SHA that some branch of the
+# fork contains; anything else stops before any AWS call. "Pushed" is decided against the URL
+# the server fetches from (COMP_REPO_URL), never a remote name (Kyle's `origin` is upstream):
+# its branches are fetched with --prune into refs/comp-release/, so a deleted branch no longer
+# counts and no remote's refs are touched.
 resolve_pushed() {
   [[ "$1" =~ ^[0-9a-f]{12}$|^[0-9a-f]{40}$ ]] || die "'$1' is not a 12- or 40-character git SHA"
-  git -C "$REPO_ROOT" fetch --prune --quiet origin || die "git fetch --prune origin failed"
+  git -C "$REPO_ROOT" fetch --prune --quiet "$COMP_REPO_URL" '+refs/heads/*:refs/comp-release/*' ||
+    die "git fetch --prune $COMP_REPO_URL failed"
   FULL_SHA="$(git -C "$REPO_ROOT" rev-parse --verify --quiet "$1^{commit}")" ||
-    die "$1 is not a commit in this repository (after git fetch origin)"
-  local branches
-  branches="$(git -C "$REPO_ROOT" branch -r --contains "$FULL_SHA")" || die "git branch -r failed"
-  grep -qE '^[[:space:]]*origin/' <<<"$branches" ||
-    die "$FULL_SHA is not on any origin branch (a deleted branch does not count); push it first (the server fetches it from GitHub)"
+    die "$1 is not a commit in this repository (after fetching $COMP_REPO_URL)"
+  local refs
+  refs="$(git -C "$REPO_ROOT" for-each-ref --contains "$FULL_SHA" --format='%(refname)' refs/comp-release/)" ||
+    die "git for-each-ref failed"
+  [[ -n "$refs" ]] ||
+    die "$FULL_SHA is not on any branch of revola-ai/comp; push it there first (git push revola <branch>)"
   TAG="${FULL_SHA:0:12}"
 }
 
