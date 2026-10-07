@@ -147,14 +147,28 @@ lines_of() { # lines_of <word> <count>: <count> lines of <word>, for typed answe
   for ((i = 0; i < $2; i++)); do printf '%s\n' "$1"; done
 }
 
-# provision <stdin> <output-file> [args...]: runs provision.sh with <stdin> typed in, from an
-# empty working directory; stdout and stderr go to <output-file>; the aws log starts empty.
+# provision <typed> <output-file> [args...]: runs provision.sh from an empty working directory
+# with a pseudo-terminal as its /dev/tty, <typed> typed into it (then end-of-input) and an empty
+# stdin; stdout and stderr go to <output-file>; the aws log starts empty.
 provision() {
-  local input="$1" output="$2"
+  local typed="$1" output="$2"
   shift 2
   : >"$FAKE_AWS_LOG"
   mkdir -p "$TMP/cwd"
-  (cd "$TMP/cwd" && printf '%s' "$input" | bash "$SERVER_DIR/provision.sh" "$@") >"$output" 2>&1
+  (cd "$TMP/cwd" && python3 "$SERVER_DIR/tests/tty_run.py" --typed "$typed" --out "$output" \
+    -- bash "$SERVER_DIR/provision.sh" "$@")
+}
+
+# provision_piped <tty|no-tty> <stdin> <output-file> [args...]: like provision, but <stdin> is
+# piped in and nothing is typed (tty) or there is no terminal at all (no-tty).
+provision_piped() {
+  local mode=(--typed "") input="$2" output="$3"
+  [[ "$1" == no-tty ]] && mode=(--no-tty)
+  shift 3
+  : >"$FAKE_AWS_LOG"
+  mkdir -p "$TMP/cwd"
+  (cd "$TMP/cwd" && python3 "$SERVER_DIR/tests/tty_run.py" "${mode[@]}" --stdin "$input" \
+    --out "$output" -- bash "$SERVER_DIR/provision.sh" "$@")
 }
 
 ops_of() { # ops_of <aws-log>: "service operation" of each call, one per line

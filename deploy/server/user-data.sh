@@ -4,10 +4,11 @@
 # /var/log/cloud-init-output.log (`sudo cloud-init status --long` shows whether it failed).
 #
 # It installs Docker from the AL2023 repository, the compose and buildx plugins from their
-# GitHub releases (pinned versions, pinned sha256; a mismatch stops the run), git, python3 and
-# dnf-automatic (security updates applied daily); adds an 8 GiB swap file; installs a timer that
-# restarts unhealthy comp containers every minute; clones revola-ai/comp into /opt/comp/src; and
-# last checks Docker Engine >= 25 and Compose >= 2.30 (deploy/server/compose.yaml needs both).
+# GitHub releases (pinned versions, pinned sha256; a mismatch stops the run), git, python3,
+# dnf-automatic (security updates applied daily at 09:00 UTC) and dnf-utils (a reboot check on
+# Sundays at 09:30 UTC, rebooting only when updates need it); adds an 8 GiB swap file; installs a
+# timer that restarts unhealthy comp containers every minute; clones revola-ai/comp into
+# /opt/comp/src; and last checks Docker Engine >= 25 and Compose >= 2.30 (compose.yaml needs both).
 # On success it writes /opt/comp/provisioned. EC2 caps user data at 16 KB.
 #
 # Sourcing the file (deploy/server/tests/user-data.test.sh does) defines everything and runs
@@ -80,17 +81,20 @@ require_docker_versions() {
   local buildx
   require_version "Docker Engine" "$(docker version --format '{{.Server.Version}}' 2>/dev/null)" "$MIN_ENGINE"
   require_version "Docker Compose" "$(docker compose version --short 2>/dev/null)" "$MIN_COMPOSE"
-  buildx="$(docker buildx version 2>/dev/null)"
+  buildx="$(docker buildx version 2>/dev/null)" || true
   [[ "$buildx" == *" $BUILDX_VERSION "* ]] || fail "docker buildx is not $BUILDX_VERSION (got: ${buildx:-nothing})"
 }
 
-# configure_updates <automatic.conf> <releasever file>: dnf-automatic applies security updates.
-# AL2023 pins dnf to the AMI's release, so releasever "latest" is what lets it find new ones.
+# configure_updates <automatic.conf> <releasever file>: dnf-automatic applies security updates,
+# Docker and containerd included (a short container restart beats an unpatched runtime), with
+# no random delay: install_update_window sets when. AL2023 pins dnf to the AMI's release, so
+# releasever "latest" is what lets it find new ones.
 configure_updates() {
   local conf="$1" releasever="$2"
   [[ -f "$conf" ]] || fail "$conf is missing (is dnf-automatic installed?)"
   sed -E -e 's/^upgrade_type[[:space:]]*=.*/upgrade_type = security/' \
-    -e 's/^apply_updates[[:space:]]*=.*/apply_updates = yes/' "$conf" >"$conf.new"
+    -e 's/^apply_updates[[:space:]]*=.*/apply_updates = yes/' \
+    -e 's/^random_sleep[[:space:]]*=.*/random_sleep = 0/' "$conf" >"$conf.new"
   mv -f "$conf.new" "$conf"
   if ! grep -qx 'upgrade_type = security' "$conf" || ! grep -qx 'apply_updates = yes' "$conf"; then
     fail "could not configure $conf (expected upgrade_type and apply_updates lines)"
@@ -106,16 +110,27 @@ install_restarter() {
   mkdir -p "$1" "$2"
   cat >"$script" <<'SCRIPT'
 #!/bin/bash
-# Restarts every comp container whose healthcheck reports unhealthy (one-off `compose run`
-# containers such as a migration are left alone). Runs every minute from
+# Restarts every comp container whose healthcheck reports unhealthy. One-off `compose run`
+# containers (a migration) are left alone, and so is a container started under 5 minutes ago
+# (still in its start period, or one a release is waiting on). Runs every minute from
 # comp-restart-unhealthy.timer; its output is in `journalctl -u comp-restart-unhealthy`.
 set -uo pipefail
+MIN_AGE=300
 names="$(docker ps --filter label=com.docker.compose.project=comp \
   --filter label=com.docker.compose.oneoff=False --filter health=unhealthy \
   --format '{{.Names}}')" || { echo "docker ps failed" >&2; exit 1; }
+now="$(date +%s)"
 status=0
 while read -r name; do
   [[ -n "$name" ]] || continue
+  started=0 # an unreadable start time counts as long ago
+  if since="$(docker inspect --format '{{.State.StartedAt}}' "$name" 2>/dev/null)"; then
+    started="$(date -d "$since" +%s 2>/dev/null)" || started=0
+  fi
+  if ((now - started < MIN_AGE)); then
+    echo "leaving unhealthy container $name alone: started $((now - started))s ago (under ${MIN_AGE}s)"
+    continue
+  fi
   echo "restarting unhealthy container $name"
   docker restart "$name" >/dev/null || { echo "could not restart $name" >&2; status=1; }
 done <<<"$names"
@@ -146,6 +161,65 @@ WantedBy=timers.target
 UNIT
 }
 
+# install_reboot_check <sbin dir> <unit dir>: dnf-automatic installs updates but never reboots;
+# this reboots on Sundays at 09:30 UTC, only when `needs-restarting -r` says installed updates (a
+# kernel, glibc, systemd) need it. Docker is enabled and every container is restart:
+# unless-stopped, so the stack comes back by itself.
+install_reboot_check() {
+  local script="$1/comp-reboot-if-needed"
+  mkdir -p "$1" "$2"
+  cat >"$script" <<'SCRIPT'
+#!/bin/bash
+# Reboots when installed updates need it (needs-restarting -r exits 1 and says so); otherwise
+# does nothing. Run by comp-reboot-if-needed.timer; output in `journalctl -u comp-reboot-if-needed`.
+set -uo pipefail
+report="$(needs-restarting -r 2>&1)"
+status=$?
+echo "$report"
+if [[ "$status" -eq 0 ]]; then
+  echo "no reboot needed"
+  exit 0
+fi
+if [[ "$status" -eq 1 && "$report" == *"Reboot is required"* ]]; then
+  echo "rebooting to finish installing updates"
+  systemctl reboot
+  exit
+fi
+echo "needs-restarting failed (exit $status); not rebooting" >&2
+exit 1
+SCRIPT
+  chmod 755 "$script"
+  cat >"$2/comp-reboot-if-needed.service" <<UNIT
+[Unit]
+Description=Reboot when installed updates need it
+
+[Service]
+Type=oneshot
+ExecStart=$script
+UNIT
+  cat >"$2/comp-reboot-if-needed.timer" <<'UNIT'
+[Unit]
+Description=Weekly reboot check, Sundays 09:30 UTC
+
+[Timer]
+OnCalendar=Sun *-*-* 09:30:00 UTC
+Persistent=false
+
+[Install]
+WantedBy=timers.target
+UNIT
+}
+
+install_update_window() { # install_update_window <unit dir>: dnf-automatic daily at 09:00 UTC
+  mkdir -p "$1/dnf-automatic.timer.d"
+  cat >"$1/dnf-automatic.timer.d/comp-window.conf" <<'UNIT'
+[Timer]
+OnCalendar=
+OnCalendar=*-*-* 09:00:00 UTC
+RandomizedDelaySec=0
+UNIT
+}
+
 make_swap() {
   if [[ ! -f "$SWAP_FILE" ]]; then
     dd if=/dev/zero of="$SWAP_FILE" bs=1M count="$SWAP_MIB" status=none
@@ -159,18 +233,21 @@ make_swap() {
 main() {
   [[ "$(uname -m)" == aarch64 ]] || fail "expected an arm64 (aarch64) instance, got $(uname -m)"
   echo "user-data: installing packages"
-  dnf install -y docker git python3 dnf-automatic
+  dnf install -y docker git python3 dnf-automatic dnf-utils
   install_plugin "$COMPOSE_URL" "$COMPOSE_SHA256" "$PLUGIN_DIR/docker-compose"
   install_plugin "$BUILDX_URL" "$BUILDX_SHA256" "$PLUGIN_DIR/docker-buildx"
   systemctl enable --now docker
 
-  echo "user-data: security updates, swap, unhealthy-container timer"
+  echo "user-data: security updates, reboot check, swap, unhealthy-container timer"
   configure_updates /etc/dnf/automatic.conf /etc/dnf/vars/releasever
-  systemctl enable --now dnf-automatic.timer
-  make_swap
+  install_update_window /etc/systemd/system
+  install_reboot_check /usr/local/sbin /etc/systemd/system
   install_restarter /usr/local/sbin /etc/systemd/system
   systemctl daemon-reload
+  systemctl enable --now dnf-automatic.timer
+  systemctl enable --now comp-reboot-if-needed.timer
   systemctl enable --now comp-restart-unhealthy.timer
+  make_swap
 
   echo "user-data: cloning $REPO_URL into $SRC_DIR"
   mkdir -p "$(dirname "$SRC_DIR")"

@@ -41,15 +41,16 @@ ensure_subscription() {
   if [[ -n "${READY[$label]:-}" ]]; then REMIND_CONFIRMATION=1; fi
 }
 
-# ensure_health_check <short> <host> <path>: an HTTPS check every 30 seconds; 2xx and 3xx are
-# healthy, so the app's Cloudflare Access redirect counts as up.
+# ensure_health_check <short> <host> <path>: an HTTPS check every 30 seconds on a liveness route.
+# Route 53 counts 2xx and 3xx as healthy, so the app and portal routes need a Cloudflare Access
+# bypass: otherwise Access answers its login redirect at the edge even when the server is down.
 ensure_health_check() {
   local short="$1" host="$2" path="$3" label="health check comp-$1" config
   local -a ids
   query "$label" route53 list-health-checks \
     --query "HealthChecks[?HealthCheckConfig.FullyQualifiedDomainName=='$host' && HealthCheckConfig.ResourcePath=='$path'].Id" \
     --output text --region "$REGION"
-  read -ra ids <<<"$OUT"
+  words ids
   if ((${#ids[@]} > 1)); then
     PROBLEMS+=("${#ids[@]} health checks watch https://$host$path (${ids[*]}); there must be one")
     return 0
@@ -84,17 +85,24 @@ ensure_health_check_tags() { # ensure_health_check_tags <short>: Name and Projec
 }
 
 # ensure_alarm <short> <url>: alarms after two failing minutes (and when the metric stops), and
-# mails again when the check recovers.
+# mails again when the check recovers. An alarm on another check (one deleted and recreated)
+# is offered as an update.
 ensure_alarm() {
-  local short="$1" url="$2" name="comp-$1-health" label="alarm comp-$1-health"
+  local short="$1" url="$2" name="comp-$1-health" label="alarm comp-$1-health" verb=Create
+  local alarm watched
   needs "$label" "health check comp-$short" "$TOPIC" || return 0
   query "$label" cloudwatch describe-alarms --alarm-names "$name" \
-    --query 'MetricAlarms[].AlarmName' --output text --region "$ALERT_REGION"
+    --query "MetricAlarms[].[AlarmName,Dimensions[?Name=='HealthCheckId'].Value|[0]]" \
+    --output text --region "$ALERT_REGION"
   if [[ -n "$OUT" ]]; then
-    READY[$label]=1
-    return 0
+    read -r alarm watched <<<"$OUT"
+    if [[ "$alarm" == "$name" && "$watched" == "${HEALTH_CHECK_ID[$short]}" ]]; then
+      READY[$label]=1
+      return 0
+    fi
+    verb=Update
   fi
-  create Create "$label" cloudwatch put-metric-alarm --alarm-name "$name" \
+  create "$verb" "$label" cloudwatch put-metric-alarm --alarm-name "$name" \
     --alarm-description "$url is failing (Route 53 health check, deploy/server/provision.sh)" \
     --namespace AWS/Route53 --metric-name HealthCheckStatus \
     --dimensions "Name=HealthCheckId,Value=${HEALTH_CHECK_ID[$short]}" \

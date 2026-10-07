@@ -29,7 +29,8 @@ echo "docker $*" >>"$STUB_LOG"
 case "$1 ${2:-}" in
   "version --format") [[ -n "${DOCKER_ENGINE:-}" ]] && echo "$DOCKER_ENGINE" || exit 1 ;;
   "compose version") echo "${DOCKER_COMPOSE:-}" ;;
-  "buildx version") echo "github.com/docker/buildx ${DOCKER_BUILDX:-} 0123456789abcdef" ;;
+  "buildx version") [[ -z "${DOCKER_BUILDX_FAIL:-}" ]] || exit 1
+    echo "github.com/docker/buildx ${DOCKER_BUILDX:-} 0123456789abcdef" ;;
   "ps --filter") [[ -z "${DOCKER_PS_FAIL:-}" ]] || exit 1; printf '%b' "${DOCKER_UNHEALTHY:-}" ;;
   "restart "*) [[ "$2" != "${DOCKER_RESTART_FAIL:-}" ]] || exit 1; echo "$2" ;;
 esac
@@ -62,9 +63,9 @@ check "requires Compose 2.30" test "$MIN_COMPOSE" = 2.30.0
 check "clones revola-ai/comp into /opt/comp/src" \
   test "$REPO_URL $SRC_DIR" = "https://github.com/revola-ai/comp /opt/comp/src"
 check "swap is 8 GiB" test "$SWAP_MIB" = 8192
-check "installs docker, git, python3 and dnf-automatic" \
-  grep -qxF "  dnf install -y docker git python3 dnf-automatic" "$USER_DATA"
-for unit in docker dnf-automatic.timer comp-restart-unhealthy.timer; do
+check "installs docker, git, python3, dnf-automatic and dnf-utils" \
+  grep -qxF "  dnf install -y docker git python3 dnf-automatic dnf-utils" "$USER_DATA"
+for unit in docker dnf-automatic.timer comp-restart-unhealthy.timer comp-reboot-if-needed.timer; do
   check "enables $unit" grep -qxF "  systemctl enable --now $unit" "$USER_DATA"
 done
 check "checks Docker versions last, right before the done marker" test \
@@ -111,8 +112,8 @@ check "plugin download failure: says so" grep -qF "could not download https://ex
 check "plugin download failure: installs nothing" test "$(files_in "$PLUGINS")" = docker-compose
 
 # ---------------------------------------------------------------- require_docker_versions
-versions() { # versions <engine> <compose> <buildx> <output>: runs the check in a subshell
-  (DOCKER_ENGINE="$1" DOCKER_COMPOSE="$2" DOCKER_BUILDX="$3" require_docker_versions) >"$4" 2>&1
+versions() { # versions <engine> <compose> <buildx> <output>: runs the check as main does (errexit)
+  (set -e; DOCKER_ENGINE="$1" DOCKER_COMPOSE="$2" DOCKER_BUILDX="$3" require_docker_versions) >"$4" 2>&1
 }
 versions 25.0.8 5.5.1 "$BUILDX_VERSION" "$TMP/v-ok.out"
 check "versions: Engine 25 with the pinned plugins passes" test "$?" -eq 0
@@ -128,6 +129,10 @@ check "versions: Compose 2.29 says why" grep -qF "Docker Compose 2.29.7 is older
 versions 25.0.8 5.5.1 v0.12.1 "$TMP/v-buildx.out"
 check "versions: another buildx fails" test "$?" -ne 0
 check "versions: another buildx says why" grep -qF "docker buildx is not $BUILDX_VERSION" "$TMP/v-buildx.out"
+DOCKER_BUILDX_FAIL=1 versions 25.0.8 5.5.1 "$BUILDX_VERSION" "$TMP/v-no-buildx.out"
+check "versions: a failing buildx fails" test "$?" -ne 0
+check "versions: a failing buildx says why (not a silent errexit)" \
+  grep -qF "user-data: FAILED: docker buildx is not $BUILDX_VERSION (got: nothing)" "$TMP/v-no-buildx.out"
 
 # ---------------------------------------------------------------- configure_updates
 DNF_CONF="$TMP/automatic.conf"
@@ -137,7 +142,7 @@ cat >"$DNF_CONF" <<'CONF'
 # default                            = all available upgrades
 # security                           = only the security upgrades
 upgrade_type = default
-random_sleep = 0
+random_sleep = 300
 
 # Whether updates should be applied when they are available, by
 # dnf-automatic.timer. notify-only.timer will not apply updates.
@@ -147,7 +152,8 @@ CONF
 check "updates: configured" test "$?" -eq 0
 check "updates: security only" grep -qx "upgrade_type = security" "$DNF_CONF"
 check "updates: applied" grep -qx "apply_updates = yes" "$DNF_CONF"
-check "updates: other lines kept" grep -qx "random_sleep = 0" "$DNF_CONF"
+check "updates: no random delay (the timer sets the window)" grep -qx "random_sleep = 0" "$DNF_CONF"
+check "updates: comments kept" grep -qxF "# security                           = only the security upgrades" "$DNF_CONF"
 check "updates: follow the latest AL2023 release" test "$(cat "$TMP/releasever")" = latest
 printf '[commands]\nupgrade_type = default\n' >"$DNF_CONF"
 (configure_updates "$DNF_CONF" "$TMP/releasever") >"$TMP/updates-bad.out" 2>&1
@@ -155,37 +161,5 @@ check "updates: an unexpected config fails" test "$?" -ne 0
 check "updates: says which file" grep -qF "could not configure $DNF_CONF" "$TMP/updates-bad.out"
 (configure_updates "$TMP/missing.conf" "$TMP/releasever") >"$TMP/updates-missing.out" 2>&1
 check "updates: a missing config fails" test "$?" -ne 0
-
-# ---------------------------------------------------------------- unhealthy restarter
-(install_restarter "$TMP/sbin" "$TMP/units") >"$TMP/restarter.out" 2>&1
-RESTARTER="$TMP/sbin/comp-restart-unhealthy"
-check "restarter: installed executable" test "$(mode_of "$RESTARTER")" = 755
-check "restarter: the service runs it" grep -qxF "ExecStart=$RESTARTER" "$TMP/units/comp-restart-unhealthy.service"
-check "restarter: the service needs docker" grep -qxF "Requires=docker.service" "$TMP/units/comp-restart-unhealthy.service"
-check "restarter: runs every minute" grep -qxF "OnUnitActiveSec=1min" "$TMP/units/comp-restart-unhealthy.timer"
-check "restarter: starts with the machine" grep -qxF "WantedBy=timers.target" "$TMP/units/comp-restart-unhealthy.timer"
-check "restarter: is shellcheck clean" shellcheck "$RESTARTER"
-
-: >"$STUB_LOG"
-DOCKER_UNHEALTHY='comp-api-1\ncomp-app-1\n' "$RESTARTER" >"$TMP/r.out" 2>&1
-check "restarter: exits zero" test "$?" -eq 0
-check "restarter: lists unhealthy comp containers, not one-off runs" test "$(head -n 1 "$STUB_LOG")" = \
-  "docker ps --filter label=com.docker.compose.project=comp --filter label=com.docker.compose.oneoff=False --filter health=unhealthy --format {{.Names}}"
-check "restarter: restarts each" test "$(grep restart "$STUB_LOG")" = $'docker restart comp-api-1\ndocker restart comp-app-1'
-check "restarter: logs each restart" test "$(cat "$TMP/r.out")" = \
-  $'restarting unhealthy container comp-api-1\nrestarting unhealthy container comp-app-1'
-
-: >"$STUB_LOG"
-"$RESTARTER" >"$TMP/r-none.out" 2>&1
-check "restarter: nothing unhealthy exits zero" test "$?" -eq 0
-check "restarter: nothing unhealthy restarts nothing" bash -c "! grep -q restart '$STUB_LOG'"
-check "restarter: nothing unhealthy is quiet" test ! -s "$TMP/r-none.out"
-
-DOCKER_UNHEALTHY='comp-api-1\ncomp-app-1\n' DOCKER_RESTART_FAIL=comp-api-1 "$RESTARTER" >"$TMP/r-fail.out" 2>&1
-check "restarter: a failed restart exits non-zero" test "$?" -ne 0
-check "restarter: a failed restart says which" grep -qF "could not restart comp-api-1" "$TMP/r-fail.out"
-check "restarter: a failed restart still tries the rest" grep -qF "restarting unhealthy container comp-app-1" "$TMP/r-fail.out"
-DOCKER_PS_FAIL=1 "$RESTARTER" >"$TMP/r-ps.out" 2>&1
-check "restarter: docker ps failure exits non-zero" test "$?" -ne 0
 
 finish

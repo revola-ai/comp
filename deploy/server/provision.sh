@@ -9,13 +9,18 @@
 # (no inbound rules), the log groups /comp/{api,app,portal,cloudflared} (30-day retention) and
 # the instance (t4g.xlarge, latest AL2023 arm64, private subnet, no public IP, no key pair,
 # IMDSv2 with hop limit 1, 60 GB encrypted gp3, termination protection, user-data.sh). Route 53
-# health checks on the api and app hosts, with alarms in us-east-1 mailed through the SNS topic
-# comp-alerts to ADDRESS (asked for when not given; never written to a file).
+# health checks on the liveness routes of api, app and portal, with alarms in us-east-1 mailed
+# through the SNS topic comp-alerts to ADDRESS (asked for when not given; never written to a file).
 #
 # Every resource is looked up first and left alone when it exists, so a second run changes
-# nothing. Each create prints its exact command and runs only when you type "yes"; anything
-# else skips it (and whatever depends on it), and the run then exits non-zero listing them.
-# It refuses other accounts and regions. It handles no secret.
+# nothing. Each create prints its exact command and runs only when you type "yes" at the
+# terminal (answers are read from /dev/tty, never from stdin; without a terminal it refuses);
+# anything else skips it (and whatever depends on it), and the run then exits non-zero listing
+# them. It refuses other accounts and regions. It handles no secret. Needs bash 4 or newer.
+if ((BASH_VERSINFO[0] < 4)); then
+  echo "provision: provision.sh needs bash 4 or newer (this is $BASH_VERSION; brew install bash)" >&2
+  exit 1
+fi
 set -euo pipefail
 
 SERVER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -74,11 +79,11 @@ done
 for tool in aws python3; do
   command -v "$tool" >/dev/null || die "$tool is not installed"
 done
+open_terminal
 
 if [[ -z "$ALERT_EMAIL" ]]; then
-  printf 'Email address for the comp alarms (used in AWS only, never saved): '
-  read -r ALERT_EMAIL || true
-  [[ -t 0 ]] || echo
+  ask 'Email address for the comp alarms (used in AWS only, never saved): '
+  read -r ALERT_EMAIL <<<"$OUT" || true # drops surrounding spaces
 fi
 [[ -n "$ALERT_EMAIL" ]] || die "an alert email address is required (--alert-email ADDRESS)"
 if [[ ! "$ALERT_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$ ]]; then
@@ -96,7 +101,8 @@ Whatever exists is left alone; each missing piece is created only when you type 
   * log groups ${LOG_GROUPS[*]} ($LOG_RETENTION_DAYS-day retention)
   * instance $NAME ($INSTANCE_TYPE, $SUBNET_ID, no public IP, no key pair, user-data.sh)
   * SNS topic $TOPIC_NAME with an email subscription to $ALERT_EMAIL
-  * Route 53 health checks and alarms for https://api.comp.revola.ai/v1/health and https://app.comp.revola.ai/
+  * Route 53 health checks and alarms for https://api.comp.revola.ai/v1/health,
+    https://app.comp.revola.ai/api/health/live and https://portal.comp.revola.ai/api/health
 PLAN
 
 ensure_role
@@ -112,7 +118,8 @@ ensure_instance
 ensure_topic
 ensure_subscription
 ensure_uptime_alerts api api.comp.revola.ai /v1/health
-ensure_uptime_alerts app app.comp.revola.ai /
+ensure_uptime_alerts app app.comp.revola.ai /api/health/live
+ensure_uptime_alerts portal portal.comp.revola.ai /api/health
 
 if [[ -n "$INSTANCE_ID" ]]; then
   echo

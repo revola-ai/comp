@@ -20,8 +20,8 @@ provision "$(lines_of no 40)" "$TMP/no.out" --alert-email "$TEST_EMAIL"
 status=$?
 check "declined: exits non-zero" test "$status" -ne 0
 check "declined: creates nothing" bash -c "! grep -qE '$MUTATING' '$FAKE_AWS_LOG'"
-check "declined: asks once per independent create (10)" \
-  test "$(grep -c 'Type yes to run it' "$TMP/no.out")" -eq 10
+check "declined: asks once per independent create (11)" \
+  test "$(grep -c 'Type yes to run it' "$TMP/no.out")" -eq 11
 check "declined: checks the account first" \
   test "$(head -n 1 "$FAKE_AWS_LOG")" = "aws sts get-caller-identity --query Account --output text --region us-east-2"
 for item in "IAM role comp-server (declined)" \
@@ -30,7 +30,8 @@ for item in "IAM role comp-server (declined)" \
   "log group /comp/cloudflared (declined)" "30-day retention on /comp/api (needs log group /comp/api)" \
   "instance comp-server (needs role comp-server in instance profile comp-server, security group comp-server)" \
   "email subscription to comp-alerts (needs SNS topic comp-alerts)" \
-  "alarm comp-app-health (needs health check comp-app, SNS topic comp-alerts)"; do
+  "alarm comp-app-health (needs health check comp-app, SNS topic comp-alerts)" \
+  "alarm comp-portal-health (needs health check comp-portal, SNS topic comp-alerts)"; do
   check "declined: lists '$item'" grep -qF -- "  - $item" "$TMP/no.out"
 done
 check "declined: no AMI lookup for an instance it cannot launch" \
@@ -52,7 +53,7 @@ EXPECTED_OPS="$(
   done
   printf '%s\n' "ec2 describe-instances" "ssm get-parameter" "ec2 run-instances" \
     "sns get-topic-attributes" "sns create-topic" "sns subscribe"
-  for _ in api app; do
+  for _ in api app portal; do
     printf '%s\n' "route53 list-health-checks" "route53 create-health-check" \
       "route53 change-tags-for-resource" "cloudwatch describe-alarms" "cloudwatch put-metric-alarm"
   done
@@ -82,13 +83,19 @@ expect "the AMI lookup" "aws ssm get-parameter --name /aws/service/ami-amazon-li
 expect "create-topic" "aws sns create-topic --name comp-alerts --tags Key=Name,Value=comp-alerts Key=Project,Value=comp --query TopicArn --output text --region us-east-1"
 expect "subscribe" "aws sns subscribe --topic-arn $TOPIC --protocol email --notification-endpoint $TEST_EMAIL --region us-east-1"
 check "confirmed: api health check" grep -qE "^aws route53 create-health-check --caller-reference comp-api-[0-9]+ --health-check-config '\{\"Type\":\"HTTPS\",\"FullyQualifiedDomainName\":\"api.comp.revola.ai\",\"Port\":443,\"ResourcePath\":\"/v1/health\",\"EnableSNI\":true,\"RequestInterval\":30,\"FailureThreshold\":3\}' --query HealthCheck.Id --output text --region us-east-2$" "$TMP/yes.log"
-check "confirmed: app health check (the Access redirect counts as healthy)" grep -qE "^aws route53 create-health-check --caller-reference comp-app-[0-9]+ --health-check-config '\{\"Type\":\"HTTPS\",\"FullyQualifiedDomainName\":\"app.comp.revola.ai\",\"Port\":443,\"ResourcePath\":\"/\",\"EnableSNI\":true,\"RequestInterval\":30,\"FailureThreshold\":3\}' --query HealthCheck.Id --output text --region us-east-2$" "$TMP/yes.log"
+for target in "app app.comp.revola.ai /api/health/live" "portal portal.comp.revola.ai /api/health"; do
+  read -r short host path <<<"$target"
+  check "confirmed: $short health check on its liveness route" grep -qE "^aws route53 create-health-check --caller-reference comp-$short-[0-9]+ --health-check-config '\{\"Type\":\"HTTPS\",\"FullyQualifiedDomainName\":\"$host\",\"Port\":443,\"ResourcePath\":\"$path\",\"EnableSNI\":true,\"RequestInterval\":30,\"FailureThreshold\":3\}' --query HealthCheck.Id --output text --region us-east-2$" "$TMP/yes.log"
+done
+check "confirmed: three health checks" test "$(grep -c 'route53 create-health-check' "$TMP/yes.log")" -eq 3
 expect "health check tags" "aws route53 change-tags-for-resource --resource-type healthcheck --resource-id fake-check-0 --add-tags Key=Name,Value=comp-api Key=Project,Value=comp --region us-east-2"
 expect "the api alarm" "aws cloudwatch put-metric-alarm --alarm-name comp-api-health --alarm-description 'https://api.comp.revola.ai/v1/health is failing (Route 53 health check, deploy/server/provision.sh)' --namespace AWS/Route53 --metric-name HealthCheckStatus --dimensions Name=HealthCheckId,Value=fake-check-0 --statistic Minimum --period 60 --evaluation-periods 2 --datapoints-to-alarm 2 --threshold 1 --comparison-operator LessThanThreshold --treat-missing-data breaching --alarm-actions $TOPIC --ok-actions $TOPIC --tags Key=Name,Value=comp-api-health Key=Project,Value=comp --region us-east-1"
 check "confirmed: the app alarm watches the app check" grep -qF -- \
-  "--alarm-name comp-app-health --alarm-description 'https://app.comp.revola.ai/ is failing" "$TMP/yes.log"
+  "--alarm-name comp-app-health --alarm-description 'https://app.comp.revola.ai/api/health/live is failing" "$TMP/yes.log"
 check "confirmed: the app alarm uses the app check id" grep -qF -- \
-  "--dimensions Name=HealthCheckId,Value=fake-check-1 " "$TMP/yes.log"
+  "--alarm-name comp-app-health --alarm-description 'https://app.comp.revola.ai/api/health/live is failing (Route 53 health check, deploy/server/provision.sh)' --namespace AWS/Route53 --metric-name HealthCheckStatus --dimensions Name=HealthCheckId,Value=fake-check-1 " "$TMP/yes.log"
+check "confirmed: the portal alarm uses the portal check id" grep -qF -- \
+  "--alarm-name comp-portal-health --alarm-description 'https://portal.comp.revola.ai/api/health is failing (Route 53 health check, deploy/server/provision.sh)' --namespace AWS/Route53 --metric-name HealthCheckStatus --dimensions Name=HealthCheckId,Value=fake-check-2 " "$TMP/yes.log"
 
 check "role policy: exactly two statements" test "$(fake_state "len(s['inline']['Statement'])")" = 2
 check "role policy: reads only comp/production/* secrets" test \
@@ -104,6 +111,24 @@ check "confirmed: says how to reach the server" \
 check "confirmed: writes no file in the working directory" test -z "$(ls -A "$TMP/cwd")"
 check "confirmed: writes no file in HOME" bash -c "! test -e '$TMP/home' || test -z \"\$(ls -A '$TMP/home')\""
 check "confirmed: changes nothing in the repository" test "$(cd "$ROOT" && git status --porcelain)" = "$before"
+
+# ---------------------------------------------------------------- piped answers never count
+cp -f "$FAKE_AWS_STATE" "$TMP/provisioned-state.json"
+export FAKE_AWS_STATE="$TMP/piped-state.json"
+provision_piped no-tty "$(lines_of yes 40)" "$TMP/piped.out" --alert-email "$TEST_EMAIL"
+status=$?
+check "no terminal, stdin full of yes: exits non-zero" test "$status" -ne 0
+check "no terminal, stdin full of yes: says a terminal is needed" \
+  grep -qF "provision.sh needs a terminal to confirm each create" "$TMP/piped.out"
+check "no terminal, stdin full of yes: makes no aws call" test ! -s "$FAKE_AWS_LOG"
+provision_piped tty "$(lines_of yes 40)" "$TMP/piped-tty.out" --alert-email "$TEST_EMAIL"
+status=$?
+check "terminal, stdin full of yes, nothing typed: exits non-zero" test "$status" -ne 0
+check "terminal, stdin full of yes, nothing typed: creates nothing" \
+  bash -c "! grep -qE '$MUTATING' '$FAKE_AWS_LOG'"
+check "terminal, stdin full of yes, nothing typed: asked at the terminal" \
+  test "$(grep -c 'Type yes to run it' "$TMP/piped-tty.out")" -eq 11
+export FAKE_AWS_STATE="$TMP/provisioned-state.json"
 
 # ---------------------------------------------------------------- second run
 provision "" "$TMP/again.out" --alert-email "$TEST_EMAIL"

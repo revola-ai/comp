@@ -145,7 +145,7 @@ ensure_instance() {
   query "$label" ec2 describe-instances \
     --filters "Name=tag:Name,Values=$NAME" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
     --query 'Reservations[].Instances[].InstanceId' --output text --region "$REGION"
-  read -ra ids <<<"$OUT"
+  words ids
   if ((${#ids[@]} > 1)); then
     PROBLEMS+=("${#ids[@]} instances are tagged Name=$NAME (${ids[*]}); there must be one")
     return 0

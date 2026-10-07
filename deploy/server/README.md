@@ -15,6 +15,7 @@ This file describes the stack and its configuration; the operator runbook is add
 | `user-data.sh` | First-boot setup of the instance: Docker, the compose and buildx plugins, updates, swap, the unhealthy-container timer, the checkout |
 | `tests/*.test.sh` | Bash tests with a stubbed `aws`; run each with `bash deploy/server/tests/<name>.test.sh` |
 | `tests/fake_aws.py` | The stateful fake `aws` the provision tests put on `PATH` |
+| `tests/tty_run.py` | Runs `provision.sh` with a pseudo-terminal to type answers into, or with no terminal at all |
 
 ## The stack
 
@@ -39,7 +40,8 @@ The `NEXT_PUBLIC_*` build arguments of `app` and `portal` equal `deploy/aws/publ
 
 Healthchecks are liveness probes that never touch the database, so a database outage does not mark a container unhealthy.
 Docker restarts a container that exits (`restart: unless-stopped`), not one that turns unhealthy; health is what the release script waits for.
-For that gap the server runs `comp-restart-unhealthy.timer` (installed by `user-data.sh`): every minute it restarts each `comp` container whose healthcheck reports `unhealthy`, leaving one-off `compose run` containers alone, and logs each restart to journald (`journalctl -u comp-restart-unhealthy`).
+For that gap the server runs `comp-restart-unhealthy.timer` (installed by `user-data.sh`): every minute it restarts each `comp` container whose healthcheck reports `unhealthy`, and logs each restart to journald (`journalctl -u comp-restart-unhealthy`).
+It leaves alone one-off `compose run` containers and any container started less than 5 minutes ago (still in its start period, or one a release is waiting on).
 
 The four containers together are limited to 5.25 GiB (swap included), which leaves about 10 GiB of the 16 GiB host for an image build (the Next.js builds use a 6 GiB heap) and the system.
 Every container drops all capabilities and runs with `no-new-privileges`.
@@ -149,18 +151,23 @@ deploy/server/provision.sh --alert-email <address>   # asks for the address when
 | Security group `comp-server` | In `vpc-06b67bec700b38a10`, with no inbound rule (the default outbound rule stays) |
 | Log groups `/comp/api`, `/comp/app`, `/comp/portal`, `/comp/cloudflared` | 30-day retention |
 | Instance `comp-server` | `t4g.xlarge`, the latest Amazon Linux 2023 arm64 AMI (SSM parameter), private subnet `subnet-08095a4ada58a9eef`, no public IP, no key pair, IMDSv2 required with hop limit 1, 60 GB encrypted gp3, termination protection, `user-data.sh` |
-| Route 53 health checks | `https://api.comp.revola.ai/v1/health` and `https://app.comp.revola.ai/` (the Access redirect is a 3xx, which counts as healthy), every 30 seconds |
-| SNS topic `comp-alerts` and alarms `comp-api-health`, `comp-app-health` | In `us-east-1`, where Route 53 publishes health-check metrics; an alarm fires after two failing minutes and mails again on recovery |
+| Route 53 health checks | The liveness routes `https://api.comp.revola.ai/v1/health`, `https://app.comp.revola.ai/api/health/live` and `https://portal.comp.revola.ai/api/health`, every 30 seconds |
+| SNS topic `comp-alerts` and alarms `comp-api-health`, `comp-app-health`, `comp-portal-health` | In `us-east-1`, where Route 53 publishes health-check metrics; an alarm fires after two failing minutes and mails again on recovery |
 
 Everything is tagged `Name` and `Project=comp`.
 The script refuses other accounts, and refuses to run when `AWS_REGION` or `AWS_DEFAULT_REGION` names a region other than `us-east-2`; every call passes its region explicitly.
 It looks each resource up first and leaves an existing one alone, so a second run changes nothing (an inline role policy that differs from the expected one is offered as an update).
-Each create prints the exact command and runs only when you type `yes`; anything else skips it and whatever depends on it, and the run ends non-zero with the list of what was not done.
+Each create prints the exact command and runs only when you type `yes` at the terminal; anything else skips it and whatever depends on it, and the run ends non-zero with the list of what was not done.
+Answers (and the alert address, when prompted) are read from the terminal (`/dev/tty`), never from stdin, so `yes | provision.sh` confirms nothing; without a terminal the script refuses before any AWS call.
+It needs bash 4 or newer (macOS ships 3.2; `brew install bash`).
 It also stops on an existing `comp-server` security group with an inbound rule, more than one instance named `comp-server`, or an instance profile holding another role; it never adds or removes a rule.
 
 The alert address is used in the AWS calls only and never written to a file.
 SNS sends it a confirmation email, and the alarms reach nobody until the link in it is clicked; the script says so until it is.
-Until the first release brings the tunnel up, both health checks fail and the alarms fire, which is expected.
+Until the first release brings the tunnel up, the health checks fail and the alarms fire, which is expected.
+Route 53 counts any 2xx or 3xx answer as healthy, and Cloudflare Access answers its login redirect at the edge even when the tunnel or the app is down.
+The app and portal checks are therefore only meaningful once `/api/health/live` on the app host and `/api/health` on the portal host have Cloudflare Access Bypass applications; until then those two checks report healthy whatever the server does.
+The api host is not behind Access, so its check works from the start.
 
 The instance hop limit of 1 keeps containers on the bridge network away from the instance credentials; the Docker daemon (the `awslogs` driver) and `render-env.sh` run on the host and keep them.
 There is no SSH: open a shell with `aws ssm start-session --target <instance-id> --region us-east-2` (the script prints the command).
@@ -169,11 +176,14 @@ There is no SSH: open a shell with `aws ssm start-session --target <instance-id>
 
 cloud-init runs `user-data.sh` once, as root (`sudo cloud-init status --long` reports the result, `/var/log/cloud-init-output.log` has the output):
 
-- Docker, git, python3 and dnf-automatic from the Amazon Linux repository.
+- Docker, git, python3, dnf-automatic and dnf-utils from the Amazon Linux repository.
 - The compose plugin (`v5.5.1`) and buildx (`v0.37.2`) from their GitHub releases into `/usr/local/lib/docker/cli-plugins`, each checked against a pinned sha256; a mismatch stops the run.
   To bump one, change its version and checksum together, taking the checksum from the release's `checksums.txt`.
-- dnf-automatic applies security updates daily; `/etc/dnf/vars/releasever` is `latest`, because Amazon Linux 2023 otherwise stays on the AMI's release and finds no updates.
-  Kernel updates take effect only after a reboot.
+- dnf-automatic applies security updates every day at 09:00 UTC (a drop-in replaces the packaged schedule and removes its random delay); `/etc/dnf/vars/releasever` is `latest`, because Amazon Linux 2023 otherwise stays on the AMI's release and finds no updates.
+  Docker and containerd are patched too: an update restarts the Docker daemon, which briefly stops the containers, and they come back by themselves (`restart: unless-stopped`).
+- `comp-reboot-if-needed.timer` runs every Sunday at 09:30 UTC: it reboots only when `needs-restarting -r` reports that installed updates (a kernel, glibc, systemd) need it, and logs either way (`journalctl -u comp-reboot-if-needed`).
+  Docker is enabled at boot and every container is `restart: unless-stopped`, so the stack comes back after the reboot without a release.
+  A missed window (the server was off) is not caught up at boot.
 - An 8 GiB swap file, `/swapfile`, for image builds (the containers themselves never swap).
 - `comp-restart-unhealthy.timer` (see The stack).
 - A clone of `https://github.com/revola-ai/comp` in `/opt/comp/src`.
@@ -187,8 +197,9 @@ bash deploy/server/tests/render-env-refusals.test.sh   # malformed secret or env
 bash deploy/server/tests/compose.test.sh      # docker compose config validates; stack shape
 bash deploy/server/tests/provision.test.sh    # declined, confirmed and second runs; exact commands
 bash deploy/server/tests/provision-failures.test.sh   # refusals, partial and drifted accounts, aws errors
-bash deploy/server/tests/user-data.test.sh    # size limit, checksums, version gates, updates, restarter
+bash deploy/server/tests/user-data.test.sh    # size limit, checksums, version gates, updates
+bash deploy/server/tests/user-data-units.test.sh   # restarter, reboot check, update window
 ```
 
-The render-env tests stub `aws` with a fake secret; the provision tests use the stateful fake `tests/fake_aws.py`; `user-data.test.sh` sources the script and stubs `curl`, `docker` and the system tools, so nothing is installed or fetched.
+The render-env tests stub `aws` with a fake secret; the provision tests use the stateful fake `tests/fake_aws.py` and type their answers into a pseudo-terminal (`tests/tty_run.py`); the user-data tests source the script and stubs `curl`, `docker` and the system tools, so nothing is installed or fetched.
 `compose.test.sh` needs Docker and Bun (it compares build arguments with `deploy/aws/public-env.ts`) and starts no container; the provision and user-data tests need `shellcheck` and `python3`.

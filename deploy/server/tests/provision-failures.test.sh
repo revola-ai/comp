@@ -60,6 +60,10 @@ check "unknown argument: exits 2" test "$?" -eq 2
 provision "" "$TMP/help.out" --help
 check "--help: exits zero" test "$?" -eq 0
 check "--help: shows usage" grep -qF "usage: provision.sh" "$TMP/help.out"
+if [[ "$(/bin/bash -c 'echo "${BASH_VERSINFO[0]}"')" -lt 4 ]]; then # macOS ships bash 3.2
+  (cd "$TMP" && /bin/bash "$SERVER_DIR/provision.sh" --alert-email "$TEST_EMAIL" </dev/null >"$TMP/old-bash.out" 2>&1)
+  check "bash 3: refused by name" grep -qF "provision.sh needs bash 4 or newer" "$TMP/old-bash.out"
+fi
 
 # ---------------------------------------------------------------- answers
 fresh
@@ -151,7 +155,33 @@ edit_state "s['alarms'] = {}"
 provision "$(lines_of no 40)" "$TMP/alarm-declined.out" --alert-email "$TEST_EMAIL"
 status=$?
 check "declined alarms: exits non-zero" test "$status" -ne 0
-check "declined alarms: lists both" test "$(grep -c '^  - alarm comp-' "$TMP/alarm-declined.out")" -eq 2
-check "declined alarms: asks only for them" test "$(grep -c 'Type yes to run it' "$TMP/alarm-declined.out")" -eq 2
+check "declined alarms: lists all three" test "$(grep -c '^  - alarm comp-' "$TMP/alarm-declined.out")" -eq 3
+check "declined alarms: asks only for them" test "$(grep -c 'Type yes to run it' "$TMP/alarm-declined.out")" -eq 3
+
+provision_everything
+edit_state "s['alarms']['comp-api-health'] = 'fake-check-deleted'"
+provision "$ALL_YES" "$TMP/alarm-drift.out" --alert-email "$TEST_EMAIL"
+status=$?
+check "alarm on an old check: exits zero" test "$status" -eq 0
+check "alarm on an old check: offered as an update" grep -qF "Update alarm comp-api-health:" "$TMP/alarm-drift.out"
+check "alarm on an old check: the only change" \
+  test "$(mutations_in "$FAKE_AWS_LOG" | awk '{ print $3 }')" = put-metric-alarm
+check "alarm on an old check: now on the current check" test "$(fake_state "s['alarms']['comp-api-health']")" = fake-check-0
+
+# ---------------------------------------------------------------- what the CLI prints
+provision_everything
+FAKE_AWS_WARN=1 provision "" "$TMP/warn.out" --alert-email "$TEST_EMAIL"
+status=$?
+check "stderr notices on success: exits zero" test "$status" -eq 0
+check "stderr notices on success: not read as answers" bash -c "! grep -q 'Type yes' '$TMP/warn.out'"
+check "stderr notices on success: create nothing" nothing_created
+FAKE_AWS_PAGED=1 provision "" "$TMP/paged.out" --alert-email "$TEST_EMAIL"
+status=$?
+check "paged answers: exits zero" test "$status" -eq 0
+check "paged answers: finds the checks and the instance on later pages" nothing_created
+edit_state "s['instances'].append('i-0second')"
+FAKE_AWS_PAGED=1 provision "" "$TMP/paged-two.out" --alert-email "$TEST_EMAIL"
+check "paged answers: counts instances across pages" \
+  grep -qF "2 instances are tagged Name=comp-server (i-0fake000000000000 i-0second)" "$TMP/paged-two.out"
 
 finish
