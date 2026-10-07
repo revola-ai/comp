@@ -78,7 +78,9 @@ async function bootstrap(): Promise<void> {
 
   // STEP 3c: Give better-auth's rate limiter the verified client IP. There is
   // deliberately no `trust proxy`: req.ip is the socket address, and proxy
-  // headers count only with a valid origin header or internal token.
+  // headers count only with a valid origin header, from a socket peer in
+  // TRUSTED_EDGE_PROXY_IPS (the Cloudflare Tunnel connector) or with the
+  // forwarded-IP token (see verifiedClientIp).
   app.use(clientIpHeaderMiddleware);
 
   // STEP 4a: Configure body parser

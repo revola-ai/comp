@@ -99,6 +99,18 @@ describe('identityTracker', () => {
     );
   });
 
+  it('never trusts the origin header when COMP_ORIGIN_AUTH is whitespace', () => {
+    const blank = req({
+      headers: {
+        'x-comp-origin-auth': '  ',
+        'cf-connecting-ip': '198.51.100.1',
+      },
+    });
+    expect(
+      identityTracker({ req: blank, env: { COMP_ORIGIN_AUTH: '  ' } }),
+    ).toBe('ip:10.0.1.20');
+  });
+
   it('ignores an invalid CF-Connecting-IP even with a valid origin header', () => {
     const invalid = req({
       headers: {
