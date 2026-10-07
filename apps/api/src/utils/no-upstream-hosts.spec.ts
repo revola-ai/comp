@@ -2,7 +2,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import ts from 'typescript';
 
-// Guard: server, Trigger, email, Sentry and device-agent code must never name upstream
+// Guard: server, Trigger, email, Sentry, device-agent, page metadata, CI workflow and
+// seed-template code must never name upstream
 // Comp's hosts (trycomp.ai, trust.inc). Laptops share the production database and send
 // real email, so a default such as `NEXT_PUBLIC_APP_URL ?? 'https://app.trycomp.ai'`
 // hands recipients, addresses, record ids and tokens to upstream. Upstream merges that
@@ -10,6 +11,7 @@ import ts from 'typescript';
 //
 // Only string literals and template parts are read, through the TypeScript AST, so
 // comments are ignored and nothing that looks like a comment (`'/v1/*'`) can hide code.
+// YAML and JSON files are read whole.
 // UPSTREAM_GUARD_ROOT points the scan at a scratch copy of the repository.
 
 const REPO_ROOT =
@@ -33,6 +35,10 @@ const ROOTS = [
   'packages/device-agent/src',
   'packages/device-agent/electron.vite.config.ts',
   'packages/device-agent/electron-builder.config.js',
+  'apps/app/src/app/layout.tsx',
+  'apps/portal/src/app/layout.tsx',
+  '.github/workflows',
+  'packages/db/prisma/seed/primitives/FrameworkEditorTaskTemplate.json',
 ];
 /**
  * Any host (or address) on an upstream domain, or upstream's Sentry ingest host, with
@@ -40,7 +46,8 @@ const ROOTS = [
  */
 const UPSTREAM_HOST =
   /(?:https?:\/\/)?[a-z0-9._@-]*(?:trycomp\.ai|trust\.inc|o4509214247813120\.ingest(?:\.us)?\.sentry\.io)(?![a-z0-9-])/gi;
-const SOURCE_FILE = /\.(tsx?|c?js)$/;
+const SOURCE_FILE = /\.(tsx?|c?js|ya?ml|json)$/;
+const DATA_FILE = /\.(ya?ml|json)$/;
 const TEST_FILE = /\.(spec|test)\.tsx?$/;
 
 /** Upstream mentions allowed per file (lower case), and why they send nothing upstream. */
@@ -126,6 +133,16 @@ const ALLOWED: Record<string, { values: string[]; reason: string }> = {
     values: ['https://trycomp.ai'],
     reason: 'marketing footer link (upstream marketing string, left alone)',
   },
+  '.github/workflows/security-questionnaire-extension-release.yml': {
+    values: ['https://api.trycomp.ai', 'https://app.trycomp.ai'],
+    reason:
+      "upstream's Chrome Web Store release (push only on a release branch, needs upstream's store secrets); see the report",
+  },
+  'packages/db/prisma/seed/primitives/FrameworkEditorTaskTemplate.json': {
+    values: ['https://www.trycomp.ai'],
+    reason:
+      "link to upstream's device-agent documentation in task text; nothing is sent",
+  },
   'packages/email/components/get-started.tsx': {
     values: ['https://trycomp.ai'],
     reason: 'marketing button (upstream marketing string, left alone)',
@@ -140,6 +157,11 @@ function findUpstreamHosts({
   file: string;
   source: string;
 }): string[] {
+  if (DATA_FILE.test(file)) {
+    return [...source.matchAll(UPSTREAM_HOST)].map((match) =>
+      match[0].toLowerCase(),
+    );
+  }
   const kind = file.endsWith('x')
     ? ts.ScriptKind.TSX
     : /\.c?js$/.test(file)
