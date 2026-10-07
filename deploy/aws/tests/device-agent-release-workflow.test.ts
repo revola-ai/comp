@@ -11,13 +11,18 @@ import { join } from 'node:path';
 const REPO_ROOT = join(import.meta.dir, '../../..');
 const WORKFLOW = join(REPO_ROOT, '.github/workflows/device-agent-release.yml');
 
-type Step = { name?: string; run?: string };
+type Step = { name?: string; run?: string; env?: Record<string, string> };
 type Workflow = {
   on: Record<string, { inputs?: Record<string, { required?: boolean }> } | null>;
-  jobs: { 'detect-version': { steps: Step[] } };
+  jobs: { 'detect-version': { steps: Step[] } } & Record<string, { steps: Step[] }>;
 };
 
 const workflow = Bun.YAML.parse(readFileSync(WORKFLOW, 'utf8')) as Workflow;
+
+// The variables electron-vite build and electron-builder packaging require.
+const { BUILD_URL_NAMES } = (await import(
+  join(REPO_ROOT, 'packages/device-agent/src/build-config/build-urls.cjs')
+)) as { BUILD_URL_NAMES: readonly string[] };
 
 /** Runs the version step's script with the given inputs; returns its exit code and outputs. */
 function runVersionStep({ portalUrl, apiUrl }: { portalUrl: string; apiUrl: string }) {
@@ -83,5 +88,20 @@ describe('device agent release workflow', () => {
       'auto_update_url=https://portal.comp.revola.ai/api/device-agent/updates\n',
     );
     expect(outputs).toContain('is_prerelease=true\n');
+  });
+
+  test('passes every build URL to each build and package step', () => {
+    const steps = Object.entries(workflow.jobs).flatMap(([job, { steps }]) =>
+      steps
+        .filter((step) => /bun run (build|package:)/.test(step.run ?? ''))
+        .map((step) => ({ id: `${job}: ${step.name}`, env: Object.keys(step.env ?? {}) })),
+    );
+    expect(steps.length).toBe(6);
+    for (const { id, env } of steps) {
+      expect({ id, missing: BUILD_URL_NAMES.filter((name) => !env.includes(name)) }).toEqual({
+        id,
+        missing: [],
+      });
+    }
   });
 });
