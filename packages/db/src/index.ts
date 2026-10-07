@@ -4,11 +4,13 @@ export type { DatabaseConfigErrorCode } from './database-config-error';
 export * from './framework-manifest';
 export {
   DATABASE_CONNECT_TIMEOUT_MS,
+  DATABASE_KEEPALIVE_INITIAL_DELAY_MS,
   buildPgAdapterOptions,
   tlsModeOf,
 } from './pg-adapter-options';
 export type { PgAdapterOptions, TlsMode } from './pg-adapter-options';
 export {
+  READINESS_PROBE_MAX_AGE_MS,
   READINESS_TIMEOUT_MS,
   checkDatabaseReadiness,
   createReadinessCheck,

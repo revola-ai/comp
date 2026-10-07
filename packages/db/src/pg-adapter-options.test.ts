@@ -2,7 +2,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DATABASE_CONNECT_TIMEOUT_MS, buildPgAdapterOptions } from './pg-adapter-options';
+import {
+  DATABASE_CONNECT_TIMEOUT_MS,
+  DATABASE_KEEPALIVE_INITIAL_DELAY_MS,
+  buildPgAdapterOptions,
+} from './pg-adapter-options';
 
 const REMOTE_URL =
   'postgresql://postgres.ref:s3cret@pooler.example.com:5432/postgres?sslmode=require';
@@ -238,5 +242,14 @@ describe('buildPgAdapterOptions: connection timeout', () => {
       expect(options.connectionTimeoutMillis).toBe(DATABASE_CONNECT_TIMEOUT_MS);
     }
     expect(DATABASE_CONNECT_TIMEOUT_MS).toBeGreaterThan(0);
+  });
+});
+
+describe('buildPgAdapterOptions: TCP keepalive', () => {
+  it('turns keepalive on with a short initial delay so dead idle connections are found', () => {
+    const options = buildPgAdapterOptions({ databaseUrl: REMOTE_URL, env: {}, log: silent() });
+    expect(options.keepAlive).toBe(true);
+    expect(options.keepAliveInitialDelayMillis).toBe(DATABASE_KEEPALIVE_INITIAL_DELAY_MS);
+    expect(DATABASE_KEEPALIVE_INITIAL_DELAY_MS).toBeGreaterThan(0);
   });
 });

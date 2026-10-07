@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import {
   checkDatabaseReadiness,
   createReadinessCheck,
+  READINESS_PROBE_MAX_AGE_MS,
   READINESS_TIMEOUT_MS,
   readinessReason,
 } from './readiness';
@@ -252,5 +253,33 @@ describe('createReadinessCheck (single flight)', () => {
   it('uses the 2-second readiness timeout by default', async () => {
     const check = createReadinessCheck({ probe: async () => [{ '?column?': 1 }] });
     expect(await check()).toEqual({ status: 'ok' });
+  });
+
+  it('starts a fresh probe once the in-flight one is older than its maximum age', async () => {
+    const stalled = stalledProbe();
+    const check = createReadinessCheck({ probe: stalled.probe, maxAgeMs: 30 });
+    await check({ timeoutMs: 5 });
+    await check({ timeoutMs: 5 });
+    expect(stalled.calls()).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    await check({ timeoutMs: 5 });
+    expect(stalled.calls()).toBe(2);
+  });
+
+  it('lets a stale probe that settles late leave the fresh one in flight', async () => {
+    const calls: Array<(value: unknown) => void> = [];
+    const probe = () => new Promise((resolve) => calls.push(resolve));
+    const check = createReadinessCheck({ probe, maxAgeMs: 10 });
+    await check({ timeoutMs: 2 });
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    await check({ timeoutMs: 2 });
+    calls[0]?.([]);
+    await tick();
+    await check({ timeoutMs: 2 });
+    expect(calls).toHaveLength(2);
+  });
+
+  it('defaults the maximum age to three readiness timeouts', () => {
+    expect(READINESS_PROBE_MAX_AGE_MS).toBe(3 * READINESS_TIMEOUT_MS);
   });
 });

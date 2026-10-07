@@ -11,6 +11,8 @@ export type PgAdapterOptions = {
   connectionString: string;
   ssl: SslConfig;
   connectionTimeoutMillis: number;
+  keepAlive: true;
+  keepAliveInitialDelayMillis: number;
   max?: number;
 };
 
@@ -18,6 +20,11 @@ export type PgAdapterOptions = {
 // Bounded, a database outage fails queries (and readiness probes) instead of leaving
 // them parked on a dead socket or in the pool queue.
 export const DATABASE_CONNECT_TIMEOUT_MS = 15_000;
+
+// TCP keepalive on every pooled connection, first probe after 10 s idle (0 would keep
+// the OS default of two hours), so a connection whose peer vanished without a FIN or
+// RST is found and dropped instead of being handed to the next query.
+export const DATABASE_KEEPALIVE_INITIAL_DELAY_MS = 10_000;
 
 export type TlsMode = 'disabled' | 'verified' | 'chain-only' | 'insecure';
 
@@ -148,6 +155,12 @@ export function buildPgAdapterOptions({
     log(`[db] TLS ${TLS_MODE_DESCRIPTIONS[tlsModeOf(ssl)]}; pool max ${pool}`);
   }
 
-  const options = { connectionString, ssl, connectionTimeoutMillis: DATABASE_CONNECT_TIMEOUT_MS };
+  const options = {
+    connectionString,
+    ssl,
+    connectionTimeoutMillis: DATABASE_CONNECT_TIMEOUT_MS,
+    keepAlive: true as const,
+    keepAliveInitialDelayMillis: DATABASE_KEEPALIVE_INITIAL_DELAY_MS,
+  };
   return max === undefined ? options : { ...options, max };
 }

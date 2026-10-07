@@ -175,25 +175,39 @@ export async function checkDatabaseReadiness({
 
 export type ReadinessCheck = (options?: { timeoutMs?: number }) => Promise<ReadinessResult>;
 
+// A probe still pending after this long is presumed stuck on a dead connection and
+// is no longer shared: the next check starts a fresh one. Stuck probes are bounded by
+// the driver (connect timeout, statement_timeout, TCP keepalive), so at most one new
+// probe per this interval is ever added during an outage.
+export const READINESS_PROBE_MAX_AGE_MS = 3 * READINESS_TIMEOUT_MS;
+
 /**
  * A readiness check whose callers share one in-flight probe (single flight). The
  * timeout only ends a caller's wait; the probe keeps running until the driver gives
  * up, so during an outage a new probe per request would pile up queries and pool
  * waiters. Here every check that arrives while a probe is pending waits on that same
- * probe (with its own timeout), and the next probe starts only after it settles.
+ * probe (with its own timeout); the next probe starts after it settles or once it is
+ * older than `maxAgeMs`.
  */
-export function createReadinessCheck({ probe }: { probe: () => Promise<unknown> }): ReadinessCheck {
-  let inFlight: Promise<unknown> | undefined;
+export function createReadinessCheck({
+  probe,
+  maxAgeMs = READINESS_PROBE_MAX_AGE_MS,
+}: {
+  probe: () => Promise<unknown>;
+  maxAgeMs?: number;
+}): ReadinessCheck {
+  let inFlight: { promise: Promise<unknown>; startedAt: number } | undefined;
   const sharedProbe = (): Promise<unknown> => {
-    if (!inFlight) {
-      const started = Promise.resolve().then(probe);
+    const now = Date.now();
+    if (!inFlight || now - inFlight.startedAt >= maxAgeMs) {
+      const started = { promise: Promise.resolve().then(probe), startedAt: now };
       inFlight = started;
       const clear = () => {
         if (inFlight === started) inFlight = undefined;
       };
-      started.then(clear, clear);
+      started.promise.then(clear, clear);
     }
-    return inFlight;
+    return inFlight.promise;
   };
   return ({ timeoutMs = READINESS_TIMEOUT_MS } = {}) =>
     checkDatabaseReadiness({ probe: sharedProbe, timeoutMs });
