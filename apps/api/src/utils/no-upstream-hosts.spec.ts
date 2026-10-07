@@ -133,11 +133,6 @@ const ALLOWED: Record<string, { values: string[]; reason: string }> = {
     values: ['https://trycomp.ai'],
     reason: 'marketing footer link (upstream marketing string, left alone)',
   },
-  '.github/workflows/security-questionnaire-extension-release.yml': {
-    values: ['https://api.trycomp.ai', 'https://app.trycomp.ai'],
-    reason:
-      "upstream's Chrome Web Store release (push only on a release branch, needs upstream's store secrets); see the report",
-  },
   'packages/db/prisma/seed/primitives/FrameworkEditorTaskTemplate.json': {
     values: ['https://www.trycomp.ai'],
     reason:
