@@ -1,4 +1,8 @@
 import {
+  parseTrustedEdgeProxyIps,
+  TRUSTED_EDGE_PROXY_IPS,
+} from '../throttle/verified-headers';
+import {
   SERVICE_TOKEN_MIN_LENGTH,
   weakServiceTokenVariable,
 } from './service-token-strength';
@@ -27,24 +31,51 @@ function bootError({
 }
 
 /**
- * Boot check for the self-hosted production deployment: the shared secrets
- * that let the API trust Cloudflare's client IP (COMP_ORIGIN_AUTH) and the
- * app's and portal's forwarded client IP (COMP_FORWARDED_IP_TOKEN) must be
- * present and well formed, and every configured service token
- * (SERVICE_TOKEN_<NAME> and its _PREVIOUS) must be at least 32 characters, or
- * the API refuses to start. Messages name the variable, never its value.
- * Other deployments (no AUTH_COOKIE_DOMAIN, or not production) are left alone.
+ * The API can trust Cloudflare's client IP: through the origin header
+ * (COMP_ORIGIN_AUTH, Cloudflare in front of an ALB) or the socket peer
+ * (TRUSTED_EDGE_PROXY_IPS, a Cloudflare Tunnel). At least one must be
+ * configured, and each one that is configured must be well formed.
  */
-export function assertEdgeSecrets({ env }: { env: Env }): void {
-  if (env.NODE_ENV !== 'production') return;
-  if (!env.AUTH_COOKIE_DOMAIN?.trim()) return;
-
-  if (!ORIGIN_AUTH_SHAPE.test(env[ORIGIN_AUTH] ?? '')) {
+function assertCloudflareTrust({ env }: { env: Env }): void {
+  const origin = env[ORIGIN_AUTH] ?? '';
+  const peers = parseTrustedEdgeProxyIps({
+    value: env[TRUSTED_EDGE_PROXY_IPS],
+  });
+  if (!origin && peers.addresses.length === 0 && !peers.hasInvalidEntry) {
+    throw bootError({
+      detail: `${ORIGIN_AUTH} (exactly 64 characters from [A-Za-z0-9], for Cloudflare in front of a load balancer) or ${TRUSTED_EDGE_PROXY_IPS} (the comma-separated IP addresses of the Cloudflare Tunnel connector) must be set`,
+      consequence: UNTRUSTED_PROXY,
+    });
+  }
+  if (origin && !ORIGIN_AUTH_SHAPE.test(origin)) {
     throw bootError({
       detail: `${ORIGIN_AUTH} must be set to exactly 64 characters from [A-Za-z0-9]`,
       consequence: UNTRUSTED_PROXY,
     });
   }
+  if (peers.hasInvalidEntry) {
+    throw bootError({
+      detail: `${TRUSTED_EDGE_PROXY_IPS} must be a comma-separated list of IP addresses, with no empty entry`,
+      consequence: UNTRUSTED_PROXY,
+    });
+  }
+}
+
+/**
+ * Boot check for the self-hosted production deployment: the settings that
+ * let the API trust Cloudflare's client IP (COMP_ORIGIN_AUTH or
+ * TRUSTED_EDGE_PROXY_IPS) and the app's and portal's forwarded client IP
+ * (COMP_FORWARDED_IP_TOKEN) must be present and well formed, and every
+ * configured service token (SERVICE_TOKEN_<NAME> and its _PREVIOUS) must be
+ * at least 32 characters, or the API refuses to start. Messages name the
+ * variable, never its value. Other deployments (no AUTH_COOKIE_DOMAIN, or not
+ * production) are left alone.
+ */
+export function assertEdgeSecrets({ env }: { env: Env }): void {
+  if (env.NODE_ENV !== 'production') return;
+  if (!env.AUTH_COOKIE_DOMAIN?.trim()) return;
+
+  assertCloudflareTrust({ env });
   const forwarded = env[FORWARDED_IP_TOKEN]?.trim() ?? '';
   if (forwarded.length < FORWARDED_IP_TOKEN_MIN_LENGTH) {
     throw bootError({

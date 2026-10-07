@@ -91,6 +91,84 @@ describe('assertEdgeSecrets', () => {
     expect(`${first}${second}`).not.toContain(FORWARDED);
   });
 
+  describe('Cloudflare Tunnel deployment (TRUSTED_EDGE_PROXY_IPS)', () => {
+    const tunnel = {
+      NODE_ENV: 'production',
+      AUTH_COOKIE_DOMAIN: '.comp.revola.ai',
+      TRUSTED_EDGE_PROXY_IPS: '172.30.0.10',
+      COMP_FORWARDED_IP_TOKEN: FORWARDED,
+    };
+
+    it.each([
+      ['one IPv4 address', '172.30.0.10'],
+      ['a list with IPv6 and spaces', '172.30.0.10, fd00:30::10 '],
+    ])('accepts it with %s instead of COMP_ORIGIN_AUTH', (_case, value) => {
+      const env = { ...tunnel, TRUSTED_EDGE_PROXY_IPS: value };
+      expect(() => assertEdgeSecrets({ env })).not.toThrow();
+    });
+
+    it('accepts both designs configured at once', () => {
+      const env = { ...production, TRUSTED_EDGE_PROXY_IPS: '172.30.0.10' };
+      expect(() => assertEdgeSecrets({ env })).not.toThrow();
+    });
+
+    it.each([
+      ['unset', undefined],
+      ['empty', ''],
+      ['whitespace', '  '],
+    ])(
+      'refuses neither design (list %s), naming both variables',
+      (_case, value) => {
+        const message = messageOf(() =>
+          assertEdgeSecrets({
+            env: { ...tunnel, TRUSTED_EDGE_PROXY_IPS: value },
+          }),
+        );
+        expect(message).toContain('COMP_ORIGIN_AUTH');
+        expect(message).toContain('TRUSTED_EDGE_PROXY_IPS');
+      },
+    );
+
+    it.each([
+      ['a hostname', 'cloudflared'],
+      ['a CIDR range', '172.30.0.0/24'],
+      ['an empty entry', '172.30.0.10,,172.30.0.11'],
+      ['an invalid address', '172.30.0.256'],
+    ])(
+      'refuses a list with %s, even next to a valid COMP_ORIGIN_AUTH',
+      (_case, value) => {
+        for (const env of [tunnel, production]) {
+          const message = messageOf(() =>
+            assertEdgeSecrets({
+              env: { ...env, TRUSTED_EDGE_PROXY_IPS: value },
+            }),
+          );
+          expect(message).toContain('TRUSTED_EDGE_PROXY_IPS');
+          expect(message).not.toContain(value);
+        }
+      },
+    );
+
+    it('refuses a malformed COMP_ORIGIN_AUTH even with a valid list', () => {
+      const message = messageOf(() =>
+        assertEdgeSecrets({
+          env: { ...tunnel, COMP_ORIGIN_AUTH: 'short-origin-value' },
+        }),
+      );
+      expect(message).toContain('COMP_ORIGIN_AUTH');
+      expect(message).not.toContain('short-origin-value');
+    });
+
+    it('still requires COMP_FORWARDED_IP_TOKEN', () => {
+      const message = messageOf(() =>
+        assertEdgeSecrets({
+          env: { ...tunnel, COMP_FORWARDED_IP_TOKEN: undefined },
+        }),
+      );
+      expect(message).toContain('COMP_FORWARDED_IP_TOKEN');
+    });
+  });
+
   describe('service tokens (validated in memory, so they must not be guessable)', () => {
     const SHORT = 's'.repeat(20);
     const STRONG = 't'.repeat(32);

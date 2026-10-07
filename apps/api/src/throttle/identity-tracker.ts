@@ -4,7 +4,9 @@ import {
   hasValidForwardedAuth,
   hasValidOriginAuth,
   headerValue,
+  isTrustedEdgePeer,
   type SecretEnv,
+  unwrapIpv4Mapped,
 } from './verified-headers';
 
 /**
@@ -21,8 +23,6 @@ export type TrackableRequest = {
   serviceName?: string;
 };
 
-const IPV4_MAPPED = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i;
-
 function validIp(value: string | undefined): string | undefined {
   const candidate = value?.trim();
   return candidate && isIP(candidate) ? candidate : undefined;
@@ -34,7 +34,9 @@ function validIp(value: string | undefined): string | undefined {
  * - a valid forwarded-auth token (Service Connect from the app or portal):
  *   the first X-Forwarded-For entry, which the caller sanitized to one client
  *   IP (the Envoy sidecar may append its own hop after it);
- * - a valid origin header (Cloudflare): CF-Connecting-IP;
+ * - a valid origin header (Cloudflare in front of an ALB), or a socket peer
+ *   listed in TRUSTED_EDGE_PROXY_IPS (the Cloudflare Tunnel connector):
+ *   CF-Connecting-IP;
  * - otherwise the socket address. There is no `trust proxy`, so a forged
  *   X-Forwarded-For never reaches `req.ip`.
  */
@@ -51,7 +53,10 @@ export function verifiedClientIp({
     const first = validIp(forwarded?.split(',')[0]);
     if (first) return first;
   }
-  if (hasValidOriginAuth({ headers, env })) {
+  const peer = req.socket?.remoteAddress ?? req.ip;
+  const viaCloudflare =
+    hasValidOriginAuth({ headers, env }) || isTrustedEdgePeer({ peer, env });
+  if (viaCloudflare) {
     const connecting = validIp(
       headerValue({ headers, name: 'cf-connecting-ip' }),
     );
@@ -75,11 +80,10 @@ function expandIpv6(address: string): string[] {
  * IPv6 by /64, since one host usually controls a whole /64.
  */
 export function ipBucket(address: string): string {
-  const mapped = IPV4_MAPPED.exec(address);
-  if (mapped) return mapped[1];
-  if (isIP(address) !== 6 || address.includes('.'))
-    return address.toLowerCase();
-  const prefix = expandIpv6(address.toLowerCase()).slice(0, 4).join(':');
+  const unwrapped = unwrapIpv4Mapped(address);
+  if (isIP(unwrapped) !== 6 || unwrapped.includes('.'))
+    return unwrapped.toLowerCase();
+  const prefix = expandIpv6(unwrapped.toLowerCase()).slice(0, 4).join(':');
   return `${prefix}::/64`;
 }
 
