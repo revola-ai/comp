@@ -13,6 +13,10 @@ import { ApiKeyService } from './api-key.service';
 import { hasAppAccess } from './app-access';
 import { auth } from './auth.server';
 import { API_KEY_HEADER, SERVICE_TOKEN_HEADER } from './credential-headers';
+import {
+  credentialStoreUnavailable,
+  isCredentialStoreFailure,
+} from './credential-store-error';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { SKIP_ORG_CHECK_KEY } from './skip-org-check.decorator';
 import { resolveServiceByToken } from './service-token.config';
@@ -107,10 +111,12 @@ export class HybridAuthGuard implements CanActivate {
       );
     }
 
-    const org = await db.organization.findUnique({
-      where: { id: organizationId },
-      select: { id: true },
-    });
+    const org = await db.organization
+      .findUnique({ where: { id: organizationId }, select: { id: true } })
+      .catch((error: unknown) => {
+        this.logger.error('Service token organization lookup failed', error);
+        throw credentialStoreUnavailable();
+      });
     if (!org) {
       throw new UnauthorizedException(
         'Organization not found for the provided x-organization-id',
@@ -272,6 +278,9 @@ export class HybridAuthGuard implements CanActivate {
       }
 
       console.error('[HybridAuthGuard] Session verification failed:', error);
+      // A database outage is not an invalid session: answer 503 so clients
+      // retry instead of signing the user out.
+      if (isCredentialStoreFailure(error)) throw credentialStoreUnavailable();
       throw new UnauthorizedException('Invalid or expired session');
     }
   }

@@ -8,6 +8,7 @@ import { db } from '@db';
 import { statement } from '@trycompai/auth';
 import { randomBytes } from 'node:crypto';
 import { lockKeyCreator } from './api-key-creator-lock';
+import { credentialStoreUnavailable } from './credential-store-error';
 import type { ApiKeyProvenance } from './api-key-provenance';
 import {
   extractKeyPrefix,
@@ -217,8 +218,10 @@ export class ApiKeyService {
 
       return toValidationResult(matchingRecord);
     } catch (error) {
+      // Nothing in here judges the key: a failure is the database's, so the
+      // caller gets 503, not "invalid key" (which would count against its IP).
       this.logger.error('Error validating API key:', error);
-      return null;
+      throw credentialStoreUnavailable();
     }
   }
 
