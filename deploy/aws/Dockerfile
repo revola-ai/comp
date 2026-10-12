@@ -4,8 +4,12 @@
 # Build with deploy/aws/docker-bake.hcl from the repository root; the build context is the
 # whole monorepo (.dockerignore keeps env files, installs and build output out).
 
-ARG NODE_IMAGE=node:22-slim
-ARG BUN_IMAGE=oven/bun:1.3.4
+# Base images pinned by the digest of their multi-architecture index, so every build (each
+# release builds on the production server) pulls the same content whatever the tag points at
+# later. Bump the tag and the digest together; the digest is the "Digest:" line of
+# `docker buildx imagetools inspect node:22-slim` (or oven/bun:<tag>), never a per-platform one.
+ARG NODE_IMAGE=node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+ARG BUN_IMAGE=oven/bun:1.3.4@sha256:7608db4aeb44f1fe8169cc8ec7055376b3013557b106407ccf092b00e426407d
 
 FROM ${BUN_IMAGE} AS bun
 
