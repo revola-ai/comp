@@ -10,6 +10,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 source "$SERVER_DIR/tests/release-lib.sh"
 install_release_fakes
 has_line() { grep -qxF -- "$2" "$1"; } # has_line <file> <exact line>
+TAG_E=eeeeeeeeeeee TAG_F=ffffffffffff # two releases older than release-lib.sh's tags
 
 # ---------------------------------------------------------------- disk: prune after a release, warn in status
 auto_server() { # five ok releases (A serving), then release B with / at <use> percent
