@@ -20,11 +20,11 @@
 #    worktree of /opt/comp/src, removed after the step, except that a release's up step leaves
 #    it to its run while the run holds its lease: finish and revert reuse it when it is still at
 #    the sha, so they need no new worktree, and finish, revert or unlock removes it), so
-#    /opt/comp/src itself stays at the serving release (a release's finish moves it).
-#    A "new" step first fetches every branch of
-#    the fork (by its URL, COMP_REPO_URL), refuses a sha its RELEASE_BRANCH lacks (release.sh
-#    checked it too; this holds when the step is run some other way) and refuses local changes
-#    in /opt/comp/src; an "own" step (finish, revert) reuses what its run fetched. The worktree
+#    /opt/comp/src itself stays at the serving release (a release's finish moves it). A "new"
+#    step first fetches every branch of the fork (by its URL, COMP_REPO_URL), refuses a sha its
+#    RELEASE_BRANCH lacks (release.sh checked it too; this holds when the step is run some other
+#    way) and refuses local changes in /opt/comp/src; an "own" step (finish, revert) reuses what
+#    its run fetched. The worktree
 #    is written under umask 022 (the public source is not secret, and the images' node user
 #    must read what BuildKit copies), then made world-readable (readable_tree). Logs, env
 #    files, snapshots, lock and lease stay 077. Without a sha, the step runs from /opt/comp/src:

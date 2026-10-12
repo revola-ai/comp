@@ -21,7 +21,9 @@ SMOKE_SECONDS=$((LEASE_SECONDS / 2))
 SMOKE_DEADLINE=0   # epoch seconds, set by smoke
 # After a finish or revert the server refused (the run's lease ran out, or the lock stayed busy).
 LEASE_HINT="Check deploy/server/release.sh status (a lease it lists is freed with deploy/server/release.sh unlock)"
-UP_SECONDS=2400    # render, migration status, compose up --wait (600 s), a restore with the snapshot (600 s) and rendered again (600 s)
+# The up step: render, migration status, compose up --wait (600 s), then a restore's: up with the
+# previous tag's snapshot (600 s) and, when that fails, rendered again (600 s).
+UP_SECONDS=2400
 BUILD_SECONDS=7200 # builds of up to four images (the build step, which changes nothing live)
 
 # smoke_one <url> <200|access>: retries until the URL answers 200, or for "access" a 302 to
