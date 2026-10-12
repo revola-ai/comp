@@ -74,6 +74,17 @@ after_prune() { # after a recorded release: a failed or slow post-release prune,
   esac
 }
 
+# not_recorded: after a finish step without recorded=ok: refused (nothing changed), or the
+# server could not record it, in which case the run's lease stays.
+not_recorded() {
+  if unchanged; then
+    echo "The finish step of $TAG was refused (above), so it is not recorded and serves unverified; check deploy/server/release.sh status, then release $TAG again."
+  else
+    echo "$TAG is up and passes the smoke checks, but the server could not record it (above); its lease stays, so no other step starts for up to 20 minutes."
+    echo "Fix the cause (a full disk?), then run deploy/server/release.sh unlock and release $TAG again."
+  fi
+}
+
 unknown_state() { # unknown_state <what happened>: the step's outcome cannot be trusted
   echo "$1, and the serving state is unknown: the server did not report how the step ended."
   echo "Check what serves now with: deploy/server/release.sh status"
@@ -101,8 +112,7 @@ bring_up() {
   if smoke "$TAG"; then
     step finish "$UP_SECONDS" "$run" own "$sha" release finish "$action" "$TAG"
     STAGE=done
-    [[ "$(result_of recorded)" == ok ]] ||
-      die "$TAG is up and passes the smoke checks, but recording it failed (above); rerun: deploy/server/release.sh $action $TAG"
+    [[ "$(result_of recorded)" == ok ]] || { not_recorded; exit 1; }
     echo
     echo "Released $TAG: it serves and passes the smoke checks ($action)."
     after_prune

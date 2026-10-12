@@ -60,5 +60,35 @@ check "up with an image missing since the build: changed nothing" grep -qxF "com
 check "up with an image missing since the build: never builds, no container changed" \
   bash -c "! grep -q 'buildx bake' '$FAKE_DOCKER_LOG' && test -z \"\$(grep -E ' (up|stop)( |\$)' '$FAKE_DOCKER_LOG')\""
 
+# ---------------------------------------------------------------- state writes that fail
+lease_holder() { cut -d' ' -f1 "$SERVER/release.lease" 2>/dev/null; }
+reset_server
+released "$TAG_A"
+chmod 444 "$SERVER/releases.log" # appending fails, as on a full disk
+release_sh "$TMP/norecord.out" release "$SHA_B"
+check "finish cannot record: exits non-zero" test "$?" -ne 0
+check "finish cannot record: the server says so" grep -qF "COULD NOT RECORD 'release $TAG_B ok'" "$SERVER"/logs/*-finish-"$TAG_B".log
+check "finish cannot record: never reports recorded=ok" bash -c "! grep -qF 'recorded=ok' '$SERVER'/logs/*-finish-$TAG_B.log"
+check "finish cannot record: the run keeps its lease" test "$(lease_holder)" = "$(ssm_call 1 args | cut -d' ' -f2)"
+check "finish cannot record: the laptop says it is not recorded, and what to do" bash -c "
+  grep -qF '$TAG_B is up and passes the smoke checks, but the server could not record it (above)' '$TMP/norecord.out' &&
+  grep -qF 'then run deploy/server/release.sh unlock and release $TAG_B again' '$TMP/norecord.out'"
+check "finish cannot record: never says released" bash -c "! grep -qF 'Released $TAG_B' '$TMP/norecord.out'"
+check "finish cannot record: /opt/comp/src stays at the recorded release" test "$(cat "$FAKE_GIT_HEAD")" = "$SHA_A"
+chmod 644 "$SERVER/releases.log"
+
+reset_server
+released "$TAG_A"
+mkdir -p "$SERVER/release.lease" # the lease file cannot be written
+release_sh "$TMP/nolease.out" release "$SHA_B"
+check "up cannot take the lease: exits non-zero" test "$?" -ne 0
+check "up cannot take the lease: says so" grep -qF "COULD NOT WRITE the lease" "$TMP/nolease.out"
+check "up cannot take the lease: brings the previous tag back at once" test "$(up_configs)" = \
+  "$(printf '%s\n' "$TAG_B up stage" "$TAG_A up releases/$TAG_A")"
+check "up cannot take the lease: serving the previous tag, recorded as rolled back" \
+  test "$(serving):$(last_record)" = "comp-api:$TAG_A:release $TAG_B rolled-back"
+check "up cannot take the lease: no smoke check of $TAG_B, no finish (build and up only)" test "$(ssm_sends)" -eq 2
+check "up cannot take the lease: says which tag serves" grep -qF "Now serving $TAG_A" "$TMP/nolease.out"
+
 check "shellcheck -x: this suite" bash -c "cd '$ROOT' && shellcheck -x deploy/server/tests/release-failures.test.sh"
 finish

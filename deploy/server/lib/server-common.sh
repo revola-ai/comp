@@ -38,8 +38,14 @@ utc_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # root_use_percent: the use of / in percent, digits only (df -P prints "73%").
 root_use_percent() { df -P / | awk 'NR == 2 { sub(/%$/, "", $5); print $5 }'; }
 
-# record <action> <sha12> <outcome>: one line per attempt in releases.log.
-record() { printf '%s %s %s %s\n' "$(utc_now)" "$1" "$2" "$3" >>"$RELEASES_LOG"; }
+# record <action> <sha12> <outcome>: one line per attempt in releases.log; fails, saying so,
+# when the line could not be written (a full disk, a read-only file). Every state write here
+# reports its own failure, so a caller only decides what the failure means for its step.
+record() {
+  printf '%s %s %s %s\n' "$(utc_now)" "$1" "$2" "$3" 2>/dev/null >>"$RELEASES_LOG" && return 0
+  echo "COULD NOT RECORD '$1 $2 $3' in $RELEASES_LOG (a full disk or a read-only file?)"
+  return 1
+}
 
 # readable_tree <dir>: every file and directory of a checkout (not .git, never through a
 # symlink) world-readable, so the images' node user can read what BuildKit copies; it also heals
@@ -88,9 +94,15 @@ lease_live() {
   [[ -n "$LEASE_HOLDER" ]] && ((LEASE_EXPIRES > $(date +%s)))
 }
 lease_take() { # lease_take <run-id> <what>
-  printf '%s %s %s\n' "$1" "$(($(date +%s) + LEASE_SECONDS))" "$2" >"$RELEASE_LEASE"
+  printf '%s %s %s\n' "$1" "$(($(date +%s) + LEASE_SECONDS))" "$2" 2>/dev/null >"$RELEASE_LEASE" && return 0
+  echo "COULD NOT WRITE the lease $RELEASE_LEASE (a full disk?)"
+  return 1
 }
-lease_drop() { rm -f "$RELEASE_LEASE"; }
+lease_drop() {
+  rm -f "$RELEASE_LEASE" 2>/dev/null && return 0
+  echo "COULD NOT REMOVE the lease $RELEASE_LEASE"
+  return 1
+}
 
 # meta <exit status> [log]: ends the output release.sh reads; everything before
 # comp-meta-begin is for the operator, everything after for release.sh.

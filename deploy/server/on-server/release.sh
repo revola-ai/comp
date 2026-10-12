@@ -100,13 +100,13 @@ bring_up() {
   local previous status=0
   previous="$(current_tag)"
   echo "== serving before this step: ${previous:-nothing}"
-  if up_wait "$tag"; then
-    lease_take "${COMP_RUN_ID:?}" "$action $tag"
+  if up_wait "$tag" && lease_take "${COMP_RUN_ID:?}" "$action $tag"; then
     result "serving=$tag"
     echo "$tag is up and healthy; the laptop runs the smoke checks next."
     return 0
   fi
-  echo "compose up of $tag failed (above)"
+  # Without the lease the laptop could neither record nor revert this run: no tag stays unverified.
+  echo "compose up of $tag failed, or its lease could not be taken (above)"
   restore "$previous" || status=$?
   rm -rf "$stage"
   return "$status"
@@ -167,8 +167,12 @@ case "$step" in
     else
       read -r sha <"$COMP_RELEASES/$tag/sha" || sha=""
     fi
-    record "$action" "$tag" ok
-    lease_drop
+    if ! record "$action" "$tag" ok; then
+      echo "Not recorded: $tag serves and passed the smoke checks; the lease of this run stays, so no other step starts until it is unlocked."
+      result "recorded=failed"
+      exit 1
+    fi
+    lease_drop || echo "Free the lease with deploy/server/release.sh unlock; the release is recorded."
     result "serving=$tag"
     result "recorded=ok"
     echo "Recorded: $action $tag ok."
@@ -176,7 +180,7 @@ case "$step" in
     [[ "$action" != release ]] || prune_after_release
     ;;
   revert)
-    lease_drop
+    lease_drop || echo "The lease stays (above); $tag is reverted anyway, then free it with deploy/server/release.sh unlock."
     echo "The smoke checks of $tag failed, or the laptop was interrupted."
     if [[ "$action" == release ]]; then use_config "$stage"; else use_config "$COMP_RELEASES/$tag"; fi
     status=0
@@ -185,9 +189,9 @@ case "$step" in
     exit "$status"
     ;;
   unlock)
-    lease_drop
+    lease_drop || exit 1
     rm -rf "$stage"
-    record "$action" "$tag" unlocked
+    record "$action" "$tag" unlocked || { echo "The lease is gone, but recording the unlock failed (above)."; exit 1; }
     echo "Removed the lease of $action $tag (run ${COMP_RUN_ID:-?}); no container was changed."
     echo "Recorded serving tag: $(current_tag); the comp containers run: $(docker ps --all \
       --filter label=com.docker.compose.project=comp --format '{{.Image}}' | paste -sd ' ' -)"

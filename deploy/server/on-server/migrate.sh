@@ -54,5 +54,5 @@ if [[ "$MIGRATIONS" != up-to-date ]]; then
   echo "The migrations ran, but the status is $MIGRATIONS (above)."
   exit 1
 fi
-record migrate "$tag" ok
+record migrate "$tag" ok || { echo "The database has every migration of $tag, but recording that failed (above)."; exit 1; }
 echo "Applied: the database has every migration of $tag."

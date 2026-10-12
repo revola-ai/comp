@@ -145,8 +145,7 @@ interrupted_verify() {
         echo "To undo it: deploy/server/release.sh rollback"
         after_prune
       else
-        echo "$TAG is up and passed the smoke checks, but recording it failed (above)."
-        echo "Check what serves with: deploy/server/release.sh status"
+        not_recorded
       fi
       ;;
     revert) after_restore ;;

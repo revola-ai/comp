@@ -71,5 +71,5 @@ for project in "$@"; do
     exit 1
   fi
 done
-record trigger "$tag" ok
+record trigger "$tag" ok || { echo "Deployed Trigger.dev prod: $* from $tag, but recording that failed (above)."; exit 1; }
 echo "Deployed Trigger.dev prod: $* from $tag."
