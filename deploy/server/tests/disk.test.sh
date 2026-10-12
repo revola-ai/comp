@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tests for the disk side of `deploy/server/release.sh`: the bounded prune a release runs after
-# itself when / is over 70% used, and the warning `status` prints. Run:
+# itself when / is over 70% used, the warning `status` prints, and prune.sh apply checking each
+# image again. Run:
 # bash deploy/server/tests/disk.test.sh
 # Laptop and server share one sandbox (tests/release-lib.sh); nothing reaches AWS or the server.
 set -uo pipefail
@@ -63,4 +64,23 @@ FAKE_DF_USE=71 release_sh "$TMP/status-full.out" status
 check "status over 70%: a warning line" grep -qxF "WARNING: / is 71% used (over 70%); free space with deploy/server/release.sh prune" "$TMP/status-full.out"
 FAKE_DF_USE=70 release_sh "$TMP/status-ok.out" status
 check "status at 70%: no warning" bash -c "! grep -qF WARNING '$TMP/status-ok.out'"
+
+# ---------------------------------------------------------------- prune.sh apply checks each ref again
+# As entry.sh runs it after the typed confirmation: the refs are those of the plan, and things may
+# have changed since (a container now runs one of them); a ref that is not comp-* is never removed.
+reset_server
+released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A" "$TAG_B"
+docker_state "s['images'] += ['busybox:latest']
+s['containers']['worker'] = 'comp-app:$TAG_E'"
+COMP_ROOT="$SERVER" bash "$SERVER/src/deploy/server/on-server/prune.sh" apply \
+  "comp-api:$TAG_A" "comp-app:$TAG_E" busybox:latest "comp-api:$TAG_E" >"$TMP/apply.out" 2>&1
+check "prune apply: exits zero" test "$?" -eq 0
+check "prune apply: skips a kept tag's image" grep -qxF "skipping comp-api:$TAG_A: kept now" "$TMP/apply.out"
+check "prune apply: skips an image a container uses since the plan" grep -qxF "skipping comp-app:$TAG_E: kept now" "$TMP/apply.out"
+check "prune apply: never removes an image that is not comp-*" grep -qxF "skipping busybox:latest: not a comp image" "$TMP/apply.out"
+check "prune apply: removes only the one still removable" test "$(sed -n 's/^docker image rm //p' "$FAKE_DOCKER_LOG")" = "comp-api:$TAG_E"
+check "prune apply: says so" grep -qxF "removed comp-api:$TAG_E" "$TMP/apply.out"
+check "prune apply: removes the snapshots of the tags no longer kept, whatever refs it got" \
+  test "$(files_in "$SERVER/releases")" = "$TAG_A $TAG_B $TAG_C $TAG_D"
+check "prune apply: trims the build cache" has_line "$FAKE_DOCKER_LOG" "docker builder prune --keep-storage 20GB -f"
 finish
