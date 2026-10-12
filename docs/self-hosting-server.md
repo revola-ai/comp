@@ -215,12 +215,13 @@ Success: step 10's sign-in completes; a `redirect_uri_mismatch` page from Google
 deploy/server/release.sh trigger <sha>
 ```
 
-Type `trigger`; it deploys `apps/api`, then `apps/app`, to their prod environments with `npx trigger.dev@4.4.3 deploy --env prod`, in a one-off container of the tools image that runs as the `node` user.
+Type `trigger`; it deploys `apps/api`, then `apps/app`, to their prod environments with the image's `trigger.dev` 4.4.3 CLI (`trigger deploy --env prod`, installed from `bun.lock`, never fetched from npm), in a one-off container of the tools image that runs as the `node` user.
 This is the first run of that path, so watch for:
 
 - A permission error (`EACCES`, `EPERM`, a failed `chown`), most likely from the Prisma extension running `prisma generate` into the root-owned `node_modules/.prisma`.
   Nothing is deployed for that project; the fix belongs in the image (generate that client at build time, or give that one directory to `node`), followed by a release and this step again.
-- A network or build error from `npx` or Trigger.dev's remote build, shown in the log `release.sh` prints.
+- `REFUSING: the image has trigger.dev ...`: the image's CLI is missing or not the pinned version; bump `TRIGGER_CLI` in `deploy/server/on-server/trigger.sh` with `trigger.dev` in both `package.json` files and `bun.lock`.
+- A network or build error from the CLI or Trigger.dev's remote build, shown in the log `release.sh` prints.
 
 Success: the CLI reports a deployed version for each project, and the Trigger.dev dashboard lists it under Deployments, Production.
 Once both are deployed, the laptop that ran the schedules with `COMP_RUN_SCHEDULES_IN_DEV=true` removes that variable (`docs/self-hosting-local.md`, Local runs write production data).

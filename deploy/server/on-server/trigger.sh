@@ -19,6 +19,11 @@ set -uo pipefail
 
 TRIGGER_CLI=trigger.dev@4.4.3 # equals "trigger.dev" in apps/api and apps/app package.json
 UPSTREAM_REFS=(proj_zhioyrusqertqgafqgpj proj_lhxjliiqgcdyqbgtucda)
+# The container runs the CLI bun.lock installed in the image, never one npx would fetch from npm
+# (with TRIGGER_ACCESS_TOKEN in its env), and refuses before deploying when it is missing or
+# not TRIGGER_CLI's version (passed in as TRIGGER_CLI_VERSION).
+# shellcheck disable=SC2016 # expanded by the container's shell
+CLI_CHECK='cli=/repo/node_modules/.bin/trigger; found="$(node -p "require(\"/repo/node_modules/trigger.dev/package.json\").version" 2>/dev/null)"; [ -x "$cli" ] && [ "$found" = "$TRIGGER_CLI_VERSION" ] || { echo "REFUSING: the image has trigger.dev ${found:-missing}, not $TRIGGER_CLI_VERSION (TRIGGER_CLI in on-server/trigger.sh, bun.lock)."; exit 1; }; '
 
 usage() {
   echo "usage: trigger.sh <sha12> <api|app>..." >&2
@@ -56,8 +61,8 @@ for project in "$@"; do
   name="TRIGGER_PROJECT_REF_${project^^}"
   echo "== $TRIGGER_CLI deploy --env prod, apps/$project ($name)"
   # shellcheck disable=SC2016 # expanded by the container's shell
-  if ! tools "$tag" -w "/repo/apps/$project" trigger \
-    sh -c 'export TRIGGER_PROJECT_REF="$'"$name"'"; exec npx --yes '"$TRIGGER_CLI"' deploy --env prod'; then
+  if ! tools "$tag" -e "TRIGGER_CLI_VERSION=${TRIGGER_CLI#trigger.dev@}" -w "/repo/apps/$project" trigger \
+    sh -c "$CLI_CHECK"'export TRIGGER_PROJECT_REF="$'"$name"'"; exec "$cli" deploy --env prod'; then
     echo "The Trigger.dev deploy of $project failed (above); nothing after it was deployed."
     record trigger "$tag" failed
     exit 1

@@ -275,7 +275,8 @@ The tools containers run as `node` with `HOME` on a tmpfs at `/tmp`, and can use
 ### trigger
 
 `trigger <sha>` deploys the Trigger.dev tasks of `apps/api`, then `apps/app` (or only `--project api|app`) to their prod environments, after the typed word `trigger`.
-It runs `npx --yes trigger.dev@4.4.3 deploy --env prod` from `/repo/apps/<project>` in a one-off container of `comp-migrate:<sha12>`; the CLI bundles there and builds the deploy image remotely on Trigger.dev.
+It runs `trigger deploy --env prod` from `/repo/apps/<project>` in a one-off container of `comp-migrate:<sha12>`, with the `trigger.dev` CLI `bun.lock` installed in the image (`/repo/node_modules/.bin/trigger`), never one `npx` would fetch from npm; the container refuses before deploying when that CLI is missing or is not the version `TRIGGER_CLI` in `on-server/trigger.sh` pins (which equals `trigger.dev` in `apps/api` and `apps/app` `package.json`).
+The CLI bundles there and builds the deploy image remotely on Trigger.dev.
 `trigger.env` holds `TRIGGER_ACCESS_TOKEN` (a personal access token) and both project refs, which must be in `comp/production/config` before the first `release` (render-env refuses missing keys); the container sets `TRIGGER_PROJECT_REF` from `TRIGGER_PROJECT_REF_API` or `TRIGGER_PROJECT_REF_APP`, which overrides the upstream ref in `trigger.config.ts`; it refuses, before deploying anything, a ref that is still an upstream Comp AI project (`proj_zhioyrusqertqgafqgpj`, `proj_lhxjliiqgcdyqbgtucda`).
 
 The tasks' own env vars are set in the Trigger.dev dashboard (each project, Environment Variables, Production), not by `release.sh`; the list per project is in `docs/self-hosting-server.md`.
