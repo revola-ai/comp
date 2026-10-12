@@ -6,9 +6,10 @@ import {
   PageLayout,
 } from '@trycompai/design-system';
 import { redirect } from 'next/navigation';
-import { RequirementControls } from './components/RequirementControls';
 import { AddCustomControlSheet } from './components/AddCustomControlSheet';
 import { LinkExistingControlSheet } from './components/LinkExistingControlSheet';
+import { RequirementControls } from './components/RequirementControls';
+import { RequirementDescription } from './components/RequirementDescription';
 
 interface PageProps {
   params: Promise<{
@@ -19,14 +20,11 @@ interface PageProps {
 }
 
 export default async function RequirementPage({ params }: PageProps) {
-  const { orgId: organizationId, frameworkInstanceId, requirementKey } =
-    await params;
+  const { orgId: organizationId, frameworkInstanceId, requirementKey } = await params;
 
   const [frameworkRes, requirementRes] = await Promise.all([
     serverApi.get<any>(`/v1/frameworks/${frameworkInstanceId}`),
-    serverApi.get<any>(
-      `/v1/frameworks/${frameworkInstanceId}/requirements/${requirementKey}`,
-    ),
+    serverApi.get<any>(`/v1/frameworks/${frameworkInstanceId}/requirements/${requirementKey}`),
   ]);
 
   if (!frameworkRes.data || !requirementRes.data) {
@@ -35,8 +33,7 @@ export default async function RequirementPage({ params }: PageProps) {
 
   const framework = frameworkRes.data;
   const reqData = requirementRes.data;
-  const frameworkName =
-    framework.framework?.name ?? framework.customFramework?.name ?? 'Framework';
+  const frameworkName = framework.framework?.name ?? framework.customFramework?.name ?? 'Framework';
   const requirement = reqData.requirement;
   // Whether this specific requirement is custom — NOT whether its framework is.
   // A platform framework (e.g. ISO 27001) can carry per-instance custom
@@ -80,6 +77,10 @@ export default async function RequirementPage({ params }: PageProps) {
           />
         </PageHeaderActions>
       </PageHeader>
+      <RequirementDescription
+        description={requirement.description}
+        alreadyShown={[title, showNameAsDescription ? requirement.name : null]}
+      />
       <RequirementControls
         tasks={reqData.tasks ?? []}
         relatedControls={reqData.relatedControls ?? []}
