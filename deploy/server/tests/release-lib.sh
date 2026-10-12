@@ -7,7 +7,8 @@
 # the server. docker, git, curl, flock, df, timeout, sleep and date are fakes on PATH, and
 # awk can signal mid-print, so nothing reaches AWS, GitHub, Docker, Trigger.dev, a database or the
 # internet. With FAKE_CLOCK naming a file that holds epoch seconds, time is fake on both sides:
-# `date +%s` answers it, and sleep (and a slow curl, FAKE_CURL_SLOW) advance it instead of waiting.
+# `date +%s` and `date -u +<format>` answer it, and sleep (and a slow curl, FAKE_CURL_SLOW or
+# FAKE_CURL_JUMP) advance it instead of waiting, so no check depends on how fast the machine is.
 
 SHA_A=aaaaaaaaaaaa1111111111111111111111111111 # pushed to the fork; released before the tests start
 SHA_B=bbbbbbbbbbbb2222222222222222222222222222 # pushed to the fork; the release under test
@@ -25,7 +26,8 @@ COMPOSE_ARGV="docker compose -f CONFIG" # any compose file, as docker_log shows 
 install_release_fakes() {
   install_fake_aws
   local bin="$TMP/bin" fake
-  [[ -n "${FAKE_REAL_AWK:-}" ]] || export FAKE_REAL_AWK="$(command -v awk)" # before the fake exists
+  [[ -n "${FAKE_REAL_AWK:-}" ]] || FAKE_REAL_AWK="$(command -v awk)" # before the fake exists
+  export FAKE_REAL_AWK
   for fake in docker curl flock; do
     printf '#!/usr/bin/env bash\nexec python3 %q "$@"\n' "$SERVER_DIR/tests/fake_$fake.py" >"$bin/$fake"
   done
@@ -66,9 +68,12 @@ SH
   # shellcheck disable=SC2016 # expanded by the fakes when they run
   printf '%s\n' '#!/usr/bin/env bash' 'echo "$*" >>"$FAKE_AWS_LOG.sleeps"' \
     '[[ -z "${FAKE_CLOCK:-}" ]] || echo $(($(cat "$FAKE_CLOCK") + ${1%.*})) >"$FAKE_CLOCK"' >"$bin/sleep"
+  # date: with FAKE_CLOCK, `date +%s` and `date -u +<format>` (log names, records) tell its time
   # shellcheck disable=SC2016 # expanded by the fakes when they run
-  printf '%s\n' '#!/usr/bin/env bash' \
-    'if [[ "$*" == +%s && -n "${FAKE_CLOCK:-}" ]]; then cat "$FAKE_CLOCK"; else exec /bin/date "$@"; fi' >"$bin/date"
+  printf '%s\n' '#!/usr/bin/env bash' '[[ -n "${FAKE_CLOCK:-}" ]] || exec /bin/date "$@"' 'now="$(cat "$FAKE_CLOCK")"' \
+    'case "$*" in' '  +%s) echo "$now" ;;' \
+    '  "-u +"*) /bin/date -u -r "$now" "$2" 2>/dev/null || /bin/date -u -d "@$now" "$2" ;;' \
+    '  *) exec /bin/date "$@" ;;' 'esac' >"$bin/date"
   chmod 755 "$bin/docker" "$bin/curl" "$bin/flock" "$bin/git" "$bin/df" "$bin/awk" "$bin/timeout" "$bin/sleep" "$bin/date"
   export FAKE_DOCKER_LOG="$TMP/docker.log" FAKE_DOCKER_STATE="$TMP/docker-state.json" \
     FAKE_GIT_LOG="$TMP/git.log" FAKE_GIT_HEAD="$TMP/git-head" FAKE_CURL_LOG="$TMP/curl.log" \
@@ -77,6 +82,8 @@ SH
     FAKE_GIT_COMMITS="$SHA_A $SHA_B $SHA_C $SHA_D $SHA_U $SHA_X" FAKE_GIT_PUSHED="$SHA_A $SHA_B $SHA_D $SHA_X" \
     FAKE_GIT_SELF_HOST="$SHA_A $SHA_B $SHA_D" FAKE_GIT_UPSTREAM="$SHA_U" \
     FAKE_GIT_TREE="$TMP/tree" FAKE_GIT_OVERLAYS="$TMP/overlays"
+  # A run that keeps calling the fakes is slow, not hung (tests/tty_run.py).
+  export TTY_RUN_ACTIVITY="$TTY_RUN_ACTIVITY:$FAKE_DOCKER_LOG:$FAKE_GIT_LOG:$FAKE_CURL_LOG"
   mkdir -p "$TMP/cwd"
 }
 

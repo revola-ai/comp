@@ -33,8 +33,18 @@ for mode in "--typed ''" --no-tty; do
   ) >"$TMP/hung.report" 2>&1
   check "hung child ($mode): reported as a failed check" grep -qF "FAIL tty_run timed out" "$TMP/hung.report"
   check "hung child ($mode): counted as a failure" grep -qF "status=124 failures=1" "$TMP/hung.report"
-  check "hung child ($mode): the output says so" grep -qxF "tty_run: timed out after 1 seconds" "$TMP/hung.out"
+  check "hung child ($mode): the output says so" grep -qxF "tty_run: timed out after 1 seconds without output or activity" "$TMP/hung.out"
 done
+# A slow run is not a hung one: one that keeps printing, or writing a file the harness watches
+# (TTY_RUN_ACTIVITY, as the release tests' fakes do), runs to its end however long it takes.
+# shellcheck disable=SC2016 # expanded when the script runs
+printf 'for i in $(seq 15); do echo "$i" >>"${1:-/dev/stdout}"; /bin/sleep 0.2; done\n' >"$TMP/slow.sh"
+for mode in "--typed ''" --no-tty; do
+  TTY_RUN_TIMEOUT=2 eval harness "$mode" --out "'$TMP/slow.out'" -- bash "'$TMP/slow.sh'"
+  check "slow child that prints ($mode): runs to its end" test "$?:$(tail -n 1 "$TMP/slow.out")" = "0:15"
+done
+TTY_RUN_TIMEOUT=2 TTY_RUN_ACTIVITY="$TMP/none:$TMP/activity" harness --no-tty --out "$TMP/busy.out" -- bash "$TMP/slow.sh" "$TMP/activity"
+check "slow child that writes a watched file: runs to its end" test "$?:$(tail -n 1 "$TMP/activity")" = "0:15"
 
 # ---------------------------------------------------------------- refusals before any create
 fresh

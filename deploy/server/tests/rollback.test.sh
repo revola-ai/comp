@@ -167,7 +167,7 @@ check "entry never overwrites a log" test "$(cat "$SERVER/logs/20261007T120000Z-
 
 # The server lock: finish, revert and unlock ("own" steps of a run) wait up to 120 s for it, so
 # the reboot check or a security update skipping under the lease cannot make them fail; a new
-# step never waits. The fake flock waits at most 2 real seconds.
+# step never waits. The fake flock waits at most 2 real seconds (FAKE_FLOCK_MAX_WAIT).
 own_lease() { printf '20261007T120000Z-release-%s-0123abcd %s release %s\n' "$TAG_C" "$(($(date +%s) + 600))" "$TAG_C" >"$SERVER/release.lease"; }
 unlock_c() { entry "20261007T12010$1Z-unlock-$TAG_C.log" "20261007T120000Z-release-$TAG_C-0123abcd" own - release unlock release "$TAG_C"; }
 reset_server
@@ -175,12 +175,16 @@ released "$TAG_A"
 own_lease
 export FAKE_FLOCK_LOG="$TMP/flock.log"
 : >"$FAKE_FLOCK_LOG"
-python3 -c 'import fcntl, sys, time
-f = open(sys.argv[1], "a"); fcntl.flock(f, fcntl.LOCK_EX); open(sys.argv[2], "w").close(); time.sleep(1)' \
-  "$SERVER/release.lock" "$TMP/held" &
+# The holder lets go once the own step is waiting for the lock (its flock call is logged), not
+# after a fixed time, so the wait ends on that condition however slow the machine is.
+python3 -c 'import fcntl, os, sys, time
+f = open(sys.argv[1], "a"); fcntl.flock(f, fcntl.LOCK_EX); open(sys.argv[2], "w").close()
+deadline = time.monotonic() + 60
+while "flock -w" not in open(sys.argv[3]).read() and time.monotonic() < deadline: time.sleep(0.05)' \
+  "$SERVER/release.lock" "$TMP/held" "$FAKE_FLOCK_LOG" &
 holder=$!
 until [[ -e "$TMP/held" ]]; do /bin/sleep 0.05; done
-unlock_c 1
+FAKE_FLOCK_MAX_WAIT=60 unlock_c 1
 check "an own step waits for a lock held briefly" test "$?" -eq 0
 wait "$holder"
 check "an own step waits for a lock held briefly: it ran" test "$(last_record):$(test -e "$SERVER/release.lease" && echo leased)" = "release $TAG_C unlocked:"

@@ -139,6 +139,7 @@ install_fake_aws() {
   printf '#!/usr/bin/env bash\necho "$*" >>"$FAKE_AWS_LOG.sleeps"\n' >"$TMP/bin/sleep"
   chmod 755 "$TMP/bin/aws" "$TMP/bin/sleep"
   export PATH="$TMP/bin:$PATH" FAKE_AWS_LOG="$TMP/aws.log" FAKE_AWS_STATE="$TMP/aws-state.json"
+  export TTY_RUN_ACTIVITY="$FAKE_AWS_LOG:$FAKE_AWS_LOG.sleeps" # each call is progress (tests/tty_run.py)
   unset AWS_REGION AWS_DEFAULT_REGION
 }
 

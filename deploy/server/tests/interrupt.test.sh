@@ -136,8 +136,12 @@ check "Ctrl-C while finish is sent: points at status and unlock" bash -c "grep -
 check "Ctrl-C while finish is sent: never says released or reverts" bash -c "! grep -qE 'Released|it is released|Bringing the previous' '$TMP/sending-finish.out'"
 
 # ---------------------------------------------------------------- before the up step: cancel
+# The fake clock names both runs' build logs (one second apart would collide: entry.sh never
+# overwrites a log) by the time the polls took, not by how fast the machine is.
 reset_server
 released "$TAG_A"
+date +%s >"$TMP/clock"
+export FAKE_CLOCK="$TMP/clock"
 FAKE_AWS_INTERRUPT="INT@fake-command-0" release_sh "$TMP/build.out" release "$SHA_B"
 check "Ctrl-C during the build step: exits 130" test "$?" -eq 130
 check "Ctrl-C during the build step: cancels it" test "$(grep -c "^aws ssm cancel-command --command-id fake-command-0 " "$FAKE_AWS_LOG")" -eq 1
@@ -150,6 +154,7 @@ check "Ctrl-C during the build step: no lease" test ! -e "$SERVER/release.lease"
 release_sh "$TMP/after-build.out" release "$SHA_B"
 check "a release after a cancelled build: released" test "$(last_record)" = "release $TAG_B ok"
 check "a release after a cancelled build: skips the images already built" bash -c "! grep -q 'buildx bake' '$FAKE_DOCKER_LOG'"
+unset FAKE_CLOCK
 
 reset_server
 released "$TAG_A"
@@ -235,6 +240,8 @@ lease() { # lease <seconds left> <what>: a lease of a run that stopped between i
 }
 reset_server
 released "$TAG_A"
+date +%s >"$TMP/clock"
+export FAKE_CLOCK="$TMP/clock" # the lease's age is exact, however long the steps take
 lease 600 "release $TAG_C"
 harness --no-tty --stdin unlock --cwd "$TMP/cwd" --out "$TMP/u-notty.out" -- bash "$SERVER_DIR/release.sh" unlock
 check "unlock without a terminal: refused" test "$?" -ne 0
@@ -243,7 +250,7 @@ check "unlock without a terminal: no AWS call" test ! -s "$FAKE_AWS_LOG"
 release_typed "no" "$TMP/u-no.out" unlock
 check "unlock declined: exits non-zero" test "$?" -ne 0
 check "unlock declined: shows the holder and its age" \
-  grep -qE "release $TAG_C \(run 20261007T120000Z-release-$TAG_C-0123abcd\), taken 60[0-2] seconds ago" "$TMP/u-no.out"
+  grep -qF "release $TAG_C (run 20261007T120000Z-release-$TAG_C-0123abcd), taken 600 seconds ago, for 600 more seconds" "$TMP/u-no.out"
 check "unlock declined: the lease stays" test -s "$SERVER/release.lease"
 check "unlock declined: one read-only SSM command" test "$(ssm_sends)" -eq 1
 

@@ -89,6 +89,7 @@ GUARD="$SBIN/comp-unless-leased"
 check "lease guard: installed executable" test "$(mode_of "$GUARD")" = 755
 check "lease guard: is shellcheck clean" shellcheck "$GUARD"
 check "lease guard: reads the lease release steps write" grep -qF 'COMP_LEASE_FILE:-/opt/comp/release.lease' "$GUARD"
+# shellcheck disable=SC2016 # expanded by the stub when it runs
 printf '#!/usr/bin/env bash\necho "dnf-automatic $*" >>"$STUB_LOG"\nexit 3\n' >"$TMP/bin/dnf-automatic"
 chmod 755 "$TMP/bin/dnf-automatic"
 export COMP_LEASE_FILE="$TMP/release.lease"
