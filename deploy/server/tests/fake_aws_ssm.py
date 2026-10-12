@@ -13,6 +13,8 @@ Knobs (environment):
                                ends that way instead, with no output (timed out, cancelled...)
   FAKE_SSM_CANCEL              cancel-command: "ok" (default; it ends Cancelled, no output) or
                                "late" (it had ended already)
+  FAKE_SSM_POLL_ERRORS         "<n>" or "<n>@<command id>": the first n get-command-invocation
+                               calls (of that command) fail with a ThrottlingException
 A send-command can be interrupted (FAKE_AWS_INTERRUPT in tests/fake_aws.py) as "ssm send-command"
 (the first) or "ssm send-command fake-command-<n>" (that one), after its command ran.
 """
@@ -66,6 +68,11 @@ def cancel(fake) -> None:
 
 def invocation(fake) -> None:
     command_id = fake.required_opt('--command-id')
+    count, _, which = os.environ.get('FAKE_SSM_POLL_ERRORS', '0').partition('@')
+    if which in ('', command_id) and fake.state.setdefault('poll_errors', 0) < int(count):
+        fake.state['poll_errors'] += 1
+        fake.save()
+        fake.error('ThrottlingException', 'GetCommandInvocation', 'Rate exceeded')
     command = fake.state['commands'].get(command_id)
     if command is None or command['instance'] != fake.required_opt('--instance-id'):
         fake.error('InvocationDoesNotExist', 'GetCommandInvocation', 'no such invocation')

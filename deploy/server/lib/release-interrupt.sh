@@ -40,6 +40,13 @@ on_signal() { # on_signal <signal> <exit status>
 leave_now() { # leave_now <exit status>: the second interrupt
   echo
   echo "Interrupted again: leaving now."
+  left_running
+  exit "$1"
+}
+
+# left_running: what may still run on the server once this command stops following it (a
+# second interrupt, or SSM no longer answering), and what to do next.
+left_running() {
   if [[ "$STAGE" == up ]]; then
     echo "The server finishes the $UP_ACTION step of $TAG on its own; if it succeeds, $TAG serves unverified under a 20-minute lease."
     echo "Next: deploy/server/release.sh status, then deploy/server/release.sh unlock, then release (or roll back to) the SHA that should serve."
@@ -49,7 +56,6 @@ leave_now() { # leave_now <exit status>: the second interrupt
   else
     echo "Check the server with deploy/server/release.sh status; free a lease left behind with deploy/server/release.sh unlock."
   fi
-  exit "$1"
 }
 
 interrupted_before_up() {

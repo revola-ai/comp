@@ -25,6 +25,7 @@ INFLIGHT_LOG=""  # its log on the server (/opt/comp/logs/<name>), for an entry s
 LAST_STEP=""     # the name of the last step that ended, set with REMOTE_* before INFLIGHT_ID clears
 DELIVERY_SECONDS=600
 POLL_SECONDS=5
+POLL_FAILURES=12 # get-command-invocation errors in a row tolerated (a minute of throttling or network trouble)
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -143,17 +144,21 @@ remote() {
 # await_command <command-id> <max polls>: waits for an SSM command to end, prints its output
 # and sets REMOTE_STATUS, REMOTE_CODE, REMOTE_ENDED, REMOTE_LOG and LAST_STEP. INFLIGHT_ID is
 # cleared last, so an interrupt while the output prints still sees the step in flight and
-# awaits it again (the command has ended: that returns at once, with the same result).
+# awaits it again (the command has ended: that returns at once, with the same result). A poll
+# that fails (throttling, a network blip) is retried; POLL_FAILURES in a row, or max polls,
+# give up, saying what may still run on the server (stranded).
 await_command() {
-  local id="$1" max="$2" polls=0 status code details
+  local id="$1" max="$2" polls=0 failures=0 status code details
   while :; do
-    ((polls++ < max)) || die "gave up waiting for SSM command $id; it may still run (aws ssm get-command-invocation --command-id $id --instance-id $INSTANCE_ID --region $REGION)"
+    ((polls++ < max)) || stranded "gave up waiting for SSM command $id after $max polls"
     sleep "$POLL_SECONDS"
     if ! capture aws ssm get-command-invocation --command-id "$id" --instance-id "$INSTANCE_ID" \
       --output json --region "$REGION"; then
       [[ "$ERR" == *InvocationDoesNotExist* ]] && continue
-      die "could not read SSM command $id: $ERR"
+      ((++failures < POLL_FAILURES)) && continue
+      stranded "could not read SSM command $id $POLL_FAILURES times in a row: $ERR"
     fi
+    failures=0
     read -r status code details < <(printf '%s' "$OUT" | python3 -c '
 import json, sys
 answer = json.load(sys.stdin)
@@ -178,6 +183,14 @@ print(answer.get("Status", "Unknown"), answer.get("ResponseCode", -1), answer.ge
   [[ "$REMOTE_CODE" -ne 0 || "$status" == Success ]] || REMOTE_CODE=1
   LAST_STEP="$INFLIGHT_STEP"
   INFLIGHT_ID=""
+}
+
+# stranded <message>: this command can no longer follow the step in flight; says so, what may
+# still run on the server and what to do (left_running, lib/release-interrupt.sh), then fails.
+stranded() {
+  echo "release: $1; it may still run (aws ssm get-command-invocation --command-id $INFLIGHT_ID --instance-id $INSTANCE_ID --region $REGION)" >&2
+  left_running
+  exit 1
 }
 
 # split_output: prints the step's own output and keeps its meta lines in $WORK/meta.

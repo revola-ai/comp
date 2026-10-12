@@ -140,5 +140,27 @@ check "a failing check says how long it tried, from the constants" \
   grep -qF "FAIL  https://api.comp.revola.ai/v1/health/ready answered 502 on all 24 tries, 5 seconds apart" "$TMP/bad-api.out"
 check "a failing check never claims 2 minutes" bash -c "! grep -qF 'for 2 minutes' '$TMP/bad-api.out'"
 
+# ---------------------------------------------------------------- SSM errors while waiting for a step
+polls_of() { grep -c "^aws ssm get-command-invocation --command-id $1 " "$FAKE_AWS_LOG"; }
+reset_server
+released "$TAG_A"
+FAKE_SSM_POLL_ERRORS=3 release_sh "$TMP/flaky.out" release "$SHA_B"
+check "a few failed polls (throttling): the release completes" test "$?:$(last_record)" = "0:release $TAG_B ok"
+reset_server
+released "$TAG_A"
+FAKE_SSM_POLL_ERRORS=100@fake-command-1 release_sh "$TMP/lost-up.out" release "$SHA_B"
+check "polls failing during the up step: exits non-zero" test "$?" -ne 0
+check "polls failing during the up step: gives up after 12 in a row, saying so" \
+  test "$(polls_of fake-command-1):$(grep -c 'could not read SSM command fake-command-1 12 times in a row' "$TMP/lost-up.out")" = "12:1"
+check "polls failing during the up step: the guidance of leaving it running" grep -qF \
+  "Next: deploy/server/release.sh status, then deploy/server/release.sh unlock, then release (or roll back to) the SHA that should serve." "$TMP/lost-up.out"
+check "polls failing during the up step: sends nothing else" test "$(ssm_sends)" -eq 2
+reset_server
+released "$TAG_A"
+FAKE_SSM_POLL_ERRORS=100@fake-command-2 release_sh "$TMP/lost-finish.out" release "$SHA_B"
+check "polls failing during finish: points at status, the step's log and unlock" bash -c "
+  grep -qF 'The finish step is still running on the server; check it with deploy/server/release.sh status' '$TMP/lost-finish.out' &&
+  grep -qF 'free it with deploy/server/release.sh unlock' '$TMP/lost-finish.out'"
+
 check "shellcheck -x: this suite" bash -c "cd '$ROOT' && shellcheck -x deploy/server/tests/release-failures.test.sh"
 finish
