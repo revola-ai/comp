@@ -53,6 +53,8 @@
         "check-types": "tsc --noEmit",
         "crosswalk:csf": "bun src/scripts/apply-csf-crosswalk.ts",
         "crosswalk:csf:check": "bun src/scripts/apply-csf-crosswalk.ts --check",
+        "crosswalk:soc2": "bun src/scripts/apply-soc2-tsc.ts",
+        "crosswalk:soc2:check": "bun src/scripts/apply-soc2-tsc.ts --check",
         "db:generate": "node scripts/generate-prisma-client-js.js",
         "db:migrate": "prisma migrate dev",
         "db:migrate:reset": "prisma migrate reset",
