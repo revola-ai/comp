@@ -18,6 +18,8 @@ const ALLOWED: Readonly<Record<string, string>> = {
   DATABASE_MIGRATION_URL: 'sslmode, sslaccept, connect_timeout',
 };
 
+const ENCODE_HINT = 'percent-encode the user and password';
+
 /** The refusal of query parameter `name` in the URL under `key`. */
 function refusedParameter({ key, name }: { key: string; name: string }): string {
   return `${key} carries the query parameter ${name}, which can change where or how it connects (allowed: ${ALLOWED[key]})`;
@@ -194,6 +196,15 @@ describe('database URLs', () => {
     for (const key of DATABASE_KEYS) {
       expect(problems(key, `${RUNTIME_URL}?${name}=fakesecret-override`)).toEqual([
         refusedParameter({ key, name }),
+      ]);
+    }
+  });
+
+  test('an unknown parameter name is never repeated: it could be a pasted part of the password', () => {
+    for (const key of DATABASE_KEYS) {
+      expect(problems(key, `${RUNTIME_URL}?password=fakesecret-first&fakesecret-second-half`)).toEqual([
+        refusedParameter({ key, name: 'password' }),
+        `${key} carries 1 query parameter that is not a known connection parameter, not named here because it could be part of a credential; ${ENCODE_HINT}`,
       ]);
     }
   });

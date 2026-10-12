@@ -30,6 +30,16 @@ const ALLOWED_PARAMETERS: Readonly<Record<string, readonly string[]>> = {
   DATABASE_MIGRATION_URL: ['sslmode', 'sslaccept', 'connect_timeout'],
 };
 const ENCODE = 'percent-encode the user and password';
+/** Connection parameters pg, libpq or Prisma read, named in refusals; any other name is not. */
+const KNOWN_PARAMETERS: readonly string[] = [
+  ...['user', 'password', 'host', 'hostaddr', 'port', 'database', 'dbname', 'db', 'service'],
+  ...['options', 'schema', 'application_name', 'fallback_application_name', 'client_encoding'],
+  ...['replication', 'target_session_attrs', 'keepalives', 'keepalives_idle', 'pgbouncer'],
+  ...['ssl', 'sslmode', 'sslaccept', 'sslcert', 'sslkey', 'sslrootcert', 'sslcrl', 'sslpassword'],
+  ...['sslnegotiation', 'uselibpqcompat', 'connect_timeout', 'connection_limit', 'pool_timeout'],
+  ...['socket_timeout', 'statement_cache_size', 'statement_timeout', 'query_timeout'],
+  ...['lock_timeout', 'idle_in_transaction_session_timeout'],
+];
 
 /** Why a value cannot be pushed under `key`; empty when it can. */
 export function valueProblems({
@@ -136,11 +146,24 @@ function databaseUrlProblems({
   return [];
 }
 
-/** One problem per query parameter outside the key's allowlist, by its name as pg decodes it. */
+/**
+ * One problem per known connection parameter outside the key's allowlist, by its name as pg
+ * decodes it, and one for all other names together. Those other names are never repeated: a
+ * malformed URL (an unescaped & in the password) turns part of a credential into a name.
+ */
 function parameterProblems({ key, url }: { key: string; url: URL }): string[] {
   const allowed = ALLOWED_PARAMETERS[key] ?? [];
   const reason = `which can change where or how it connects (allowed: ${allowed.join(', ')})`;
-  return [...new Set(url.searchParams.keys())]
-    .filter((name) => !allowed.includes(name))
+  const refused = [...new Set(url.searchParams.keys())].filter((name) => !allowed.includes(name));
+  const unknown = refused.filter((name) => !KNOWN_PARAMETERS.includes(name)).length;
+  const problems = refused
+    .filter((name) => KNOWN_PARAMETERS.includes(name))
     .map((name) => `${key} carries the query parameter ${name}, ${reason}`);
+  if (unknown > 0) {
+    const what = unknown === 1 ? '1 query parameter that is' : `${unknown} query parameters that are`;
+    problems.push(
+      `${key} carries ${what} not a known connection parameter, not named here because it could be part of a credential; ${ENCODE}`,
+    );
+  }
+  return problems;
 }
