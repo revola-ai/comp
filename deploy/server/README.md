@@ -91,6 +91,8 @@ Env files of a service removed from `env/` are not deleted; remove them by hand.
 `--out-dir DIR` writes elsewhere (the tests use it); compose reads `COMP_ENV_DIR` (default `/opt/comp/env`).
 
 A `.keys` line is a key name, or `NAME from KEY` when the container variable differs from the key in the secret (the app's `AUTH_SECRET from SECRET_KEY`, and each project's `TRIGGER_SECRET_KEY`).
+Names start with a letter and the line has single spaces and nothing around it; besides those, a line is empty or a comment starting with `#` in the first column.
+`push-secrets` and `render-env.sh` read this one grammar (`secrets/keys-grammar.test.ts` runs both over the same lines and the committed files).
 Lines starting with `#` are comments.
 The files are written verbatim, one `NAME=VALUE` per line, and compose reads them with `format: raw`, so a value may contain `$`, quotes, `#` or spaces.
 

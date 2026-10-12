@@ -108,13 +108,15 @@ export const SECRET_KEYS: Readonly<Record<string, SecretKeySpec>> = Object.freez
 /** deploy/server/env, next to this kit. */
 export const KEYS_DIR = join(import.meta.dir, '..', 'env');
 
-const KEYS_LINE = /^([A-Z_][A-Z0-9_]*)(?:\s+from\s+([A-Z_][A-Z0-9_]*))?$/;
+// The one .keys grammar, the same as render-env.sh's KEYS_LINE (secrets/keys-grammar.test.ts
+// runs both): exactly NAME or `NAME from KEY` with single spaces, each starting with a letter,
+// nothing stripped; empty lines and lines starting with # in the first column are skipped.
+const KEYS_LINE = /^([A-Z][A-Z0-9_]*)(?: from ([A-Z][A-Z0-9_]*))?$/;
 
 /** The secret keys one .keys file reads: the KEY of `NAME from KEY`, else NAME. */
 export function parseKeysFile({ text, file }: { text: string; file: string }): string[] {
   const keys: string[] = [];
-  for (const [index, raw] of text.split('\n').entries()) {
-    const line = raw.trim();
+  for (const [index, line] of text.split('\n').entries()) {
     if (line === '' || line.startsWith('#')) continue;
     const match = KEYS_LINE.exec(line);
     if (!match?.[1]) throw new Error(`${file} line ${index + 1} is neither NAME nor NAME from KEY`);

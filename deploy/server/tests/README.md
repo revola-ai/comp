@@ -14,7 +14,7 @@ bash deploy/server/tests/release.test.sh      # pushed check, exact calls, migra
 bash deploy/server/tests/rollback.test.sh     # rollback, lock, lease, account checks, status, logs
 bash deploy/server/tests/release-ops.test.sh  # migrate, trigger and prune with typed confirmations; disk
 bash deploy/server/tests/interrupt.test.sh    # INT, TERM and HUP before and after the up step; unlock
-(cd deploy/server && bun test)                # push-secrets: sources, refusals, diff, create or put, terminal; workspace
+(cd deploy/server && bun test)                # push-secrets: sources, refusals, diff, create or put, terminal; workspace; one .keys grammar with render-env
 ```
 
 The render-env tests stub `aws` with a fake secret; the provision tests use the stateful fake `tests/fake_aws.py` and type their answers into a pseudo-terminal (`tests/tty_run.py`); the user-data tests source the script and stub `curl`, `docker` and the system tools, so nothing is installed or fetched.

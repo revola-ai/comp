@@ -61,6 +61,8 @@ import json, os, re, sys, tempfile
 
 keys_dir, out_dir, secret_id = sys.argv[1:4]
 NAME = re.compile(r'[A-Z][A-Z0-9_]*\Z')
+# The one .keys grammar, the same as KEYS_LINE in secrets/keys.ts (secrets/keys-grammar.test.ts
+# runs both): nothing is stripped, and only empty lines and first-column # lines are skipped.
 KEYS_LINE = re.compile(r'([A-Z][A-Z0-9_]*)(?: from ([A-Z][A-Z0-9_]*))?\Z')
 
 
@@ -73,6 +75,14 @@ def content_lines(path):
     with open(path) as handle:
         for number, line in enumerate(handle.read().splitlines(), start=1):
             if line.strip() and not line.startswith('#'):
+                yield number, line
+
+
+def keys_lines(path):
+    # newline='' keeps a carriage return, which the grammar then refuses, as keys.ts does.
+    with open(path, encoding='utf-8', newline='') as handle:
+        for number, line in enumerate(handle.read().split('\n'), start=1):
+            if line and not line.startswith('#'):
                 yield number, line
 
 
@@ -91,7 +101,7 @@ problems, rendered = [], {}
 for service in services:
     lines, seen = [], set()
     keys_path = os.path.join(keys_dir, f'{service}.keys')
-    for number, line in content_lines(keys_path):
+    for number, line in keys_lines(keys_path):
         match = KEYS_LINE.match(line)
         if not match:
             problems.append(f'{service}.keys line {number} is not NAME or "NAME from KEY"')
