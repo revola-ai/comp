@@ -91,6 +91,30 @@ check "refused at the gate: no staged configuration or checkout left" bash -c "$
 check "refused at the gate: /opt/comp/src stays at $TAG_A" src_at "$SHA_A"
 check "refused at the gate: no env file outside the snapshots" test ! -e "$SERVER/env"
 
+# ---------------------------------------------------------------- a key missing from the secret: render-env refuses
+reset_server
+released "$TAG_D" "$TAG_A"
+before="$(fingerprint "$SERVER/releases")"
+write_fixture "$TMP/secret.json" --drop RESEND_API_KEY
+for sha in "$SHA_B" "$SHA_A"; do # a new tag, and the serving one released again (a changed secret)
+  : >"$FAKE_DOCKER_LOG"
+  release_sh "$TMP/nokey.out" release "$sha"
+  check "key missing (${sha:0:12}): exits non-zero" test "$?" -ne 0
+  check "key missing (${sha:0:12}): names the key" said "$TMP/nokey.out" "RESEND_API_KEY is missing from comp/production/config"
+  check "key missing (${sha:0:12}): says no container changed" said "$TMP/nokey.out" "before any container changed"
+  check "key missing (${sha:0:12}): no container changed" test -z "$(container_changes)"
+  check "key missing (${sha:0:12}): recorded failed" test "$(last_record)" = "release ${sha:0:12} failed"
+  check "key missing (${sha:0:12}): the containers still run $TAG_A's snapshot" test "$(up_state env)" = "$SERVER/releases/$TAG_A/env"
+  check "key missing (${sha:0:12}): the snapshots are unchanged" test "$(fingerprint "$SERVER/releases")" = "$before"
+  check "key missing (${sha:0:12}): no staged configuration left" empty_dir "$SERVER/stage"
+done
+# A rollback renders nothing: it comes back with the target's snapshot whatever the secret holds.
+: >"$FAKE_DOCKER_LOG"
+release_sh "$TMP/nokey-back.out" rollback
+check "key missing, rollback: exits zero with $TAG_D's snapshot" test "$?:$(up_configs)" = "0:$TAG_D up releases/$TAG_D"
+check "key missing, rollback: never renders" bash -c "! grep -qF 'render-env' '$TMP/nokey-back.out' '$SERVER'/logs/*-rollback-$TAG_D.log"
+no_secret "key missing" "$TMP/nokey.out" "$TMP/nokey-back.out"
+
 # ---------------------------------------------------------------- rollback needs the target's snapshot
 reset_server
 released "$TAG_D" "$TAG_A"
