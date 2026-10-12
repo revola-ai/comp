@@ -14,8 +14,9 @@
 # of the current release and the last 3 other ok releases (releases.log), the default rollback
 # target (the entry below the top of the serving history), and the image of
 # every container of the comp project, running or stopped. A tag's snapshot
-# (/opt/comp/releases/<tag>) goes with its images: only the kept tags' stay, so the current
-# tag's and the rollback target's always do. The pinned cloudflared image is
+# (/opt/comp/releases/<tag>) and the pin of its commit (refs/comp/releases/<tag> in
+# /opt/comp/src) go with its images: only the kept tags' stay, so the current tag's and the
+# rollback target's always do. The pinned cloudflared image is
 # never a candidate (it is not comp-*), so it stays even when its container is gone; Docker
 # shows it untagged, which is why this never runs `docker image prune`. The laptop asks for
 # the typed confirmation between the two steps.
@@ -47,20 +48,37 @@ removable() {
   done <<<"$images"
 }
 
-# stale_snapshots: prints, one per line, every tag with a snapshot that is not a kept tag.
+pinned_tags() { # the tags whose commits are pinned (refs/comp/releases/<tag>, on-server/release.sh)
+  git -C "$COMP_SRC" for-each-ref --format='%(refname)' refs/comp/releases/ | sed -n 's|^refs/comp/releases/||p'
+}
+
+# stale_snapshots: prints, one per line, every tag with a snapshot or a pinned commit that is not
+# a kept tag. Fails when the pins cannot be read.
 stale_snapshots() {
-  local keep dir
+  local keep pins dir tag
   keep="$(kept_tags)"
-  for dir in "$COMP_RELEASES"/*; do
-    [[ -d "$dir" && "${dir##*/}" =~ $TAG_RE ]] || continue
-    grep -qxF -- "${dir##*/}" <<<"$keep" || echo "${dir##*/}"
+  pins="$(pinned_tags)" || { echo "could not list the pinned releases in $COMP_SRC" >&2; return 1; }
+  for tag in $({ for dir in "$COMP_RELEASES"/*; do [[ -d "$dir" ]] && echo "${dir##*/}"; done; echo "$pins"; } | sort -u); do
+    [[ "$tag" =~ $TAG_RE ]] || continue
+    grep -qxF -- "$tag" <<<"$keep" || echo "$tag"
   done
 }
 
-remove_snapshots() { # the snapshots of the tags no longer kept
-  local tag status=0
-  for tag in $(stale_snapshots); do
-    if rm -rf "${COMP_RELEASES:?}/$tag"; then echo "removed the snapshot of $tag"; else echo "could not remove the snapshot of $tag"; status=1; fi
+remove_snapshots() { # the snapshots and pins of the tags no longer kept
+  local tag pins stale status=0
+  stale="$(stale_snapshots)" || return 1
+  pins="$(pinned_tags)" || return 1
+  for tag in $stale; do
+    if [[ -e "$COMP_RELEASES/$tag" ]]; then
+      if rm -rf "${COMP_RELEASES:?}/$tag"; then echo "removed the snapshot of $tag"; else echo "could not remove the snapshot of $tag"; status=1; fi
+    fi
+    grep -qxF -- "$tag" <<<"$pins" || continue
+    if git -C "$COMP_SRC" update-ref -d "refs/comp/releases/$tag"; then
+      echo "unpinned $tag (refs/comp/releases/$tag)"
+    else
+      echo "could not remove refs/comp/releases/$tag"
+      status=1
+    fi
   done
   return "$status"
 }
@@ -68,7 +86,8 @@ remove_snapshots() { # the snapshots of the tags no longer kept
 plan() {
   local remove tunnel ref snapshots
   remove="$(removable)" || { echo "could not list the images or containers"; return 1; }
-  snapshots="$(stale_snapshots | tr '\n' ' ')"
+  snapshots="$(stale_snapshots)" || return 1
+  snapshots="$(tr '\n' ' ' <<<"$snapshots")"
   tunnel="$(grep -oE 'docker\.io/cloudflare/cloudflared:[^@[:space:]]+@sha256:[0-9a-f]{64}' "$COMPOSE_FILE" | head -n 1)"
   echo "Keeping the tags of the current release, the last 3 others and the rollback target: $(kept_tags | tr '\n' ' ')"
   echo "Keeping the images of the comp containers: $(docker ps --all --filter label=com.docker.compose.project=comp --format '{{.Image}}' | tr '\n' ' ')"
@@ -79,7 +98,7 @@ plan() {
   else
     echo "Removing no image."
   fi
-  echo "Removing the snapshots (the configurations in $COMP_RELEASES) of: ${snapshots:-no tag}"
+  echo "Removing the snapshots (the configurations in $COMP_RELEASES) and pinned commits (refs/comp/releases/<tag>) of: ${snapshots:-no tag}"
   echo "Then trimming the build cache to 20 GB: docker builder prune --keep-storage 20GB -f"
   result "remove=$(tr '\n' ' ' <<<"$remove" | sed 's/ *$//')"
 }

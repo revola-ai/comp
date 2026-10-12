@@ -64,6 +64,15 @@ keep_snapshot() {
   echo "== kept the configuration of $2 as its snapshot ($target)"
 }
 
+# pin_release <tag> <sha>: refs/comp/releases/<tag> in /opt/comp/src points at the released
+# commit, so git gc never drops it, even once no branch holds it (revola/self-host force-pushed
+# past it): a rollback or a revert can always check it out. prune removes it with the snapshot.
+pin_release() {
+  git -C "$COMP_SRC" update-ref "refs/comp/releases/$1" "$2" && return 0
+  echo "could not pin $2 as refs/comp/releases/$1 in $COMP_SRC"
+  return 1
+}
+
 # serve_checkout <sha>: moves /opt/comp/src to <sha> (under umask 022, world-readable), so the
 # steps without a SHA (rollback, prune, unlock) run the scripts of the release that serves. Git
 # writes a changed file as a new file, so a script running from /opt/comp/src reads on unharmed.

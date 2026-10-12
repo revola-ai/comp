@@ -48,7 +48,8 @@ Every step that may change something, on the server:
 Each release keeps the configuration it was verified with as the snapshot of its tag, `/opt/comp/releases/<tag>/` (0700, files 0600): `sha` (the full 40-character SHA), `compose.yaml` (that commit's) and `env/<service>.env` (rendered from `comp/production/config` by that commit's `render-env.sh` and `.keys` files).
 A release renders its configuration into `/opt/comp/stage/<run>/`, checks the migrations and brings the stack up with it, and only when the smoke checks pass does it become the tag's snapshot (a release of the same tag replaces the older one).
 Bringing a tag back (after a failed health or smoke check, an interrupt, or `rollback`) always uses that tag's own snapshot, so a bad secret, a `.keys` change or a `compose.yaml` change of the new commit leaves with it.
-`status` lists the tags that have one; `prune` removes a tag's snapshot together with its images and keeps those of the current tag and the rollback target.
+The same finish pins the released commit in `/opt/comp/src` as `refs/comp/releases/<tag>` (refused, like a snapshot it cannot keep, when the ref cannot be written), so `git gc` never drops it: a rollback or a revert can check it out even after `revola/self-host` was force-pushed past it.
+`status` lists the tags that have one; `prune` removes a tag's snapshot and its pin together with its images and keeps those of the current tag and the rollback target.
 A tag has no snapshot only when it was pruned (or removed by hand); prune always keeps the serving tag's, so a release is refused, before anything changes, when the serving tag has none: a failure could not bring it back.
 Roll back to a tag that has one first (that is not refused); releases work again once it serves.
 
@@ -122,7 +123,7 @@ The tasks' own env vars are set in the Trigger.dev dashboard (each project, Envi
 ## prune
 
 `prune` lists what it keeps and what it would remove, then asks for the typed word `prune`; it keeps the images of the current tag, the 3 most recent other `ok` tags and the default rollback target (`rollback` needs them), the image of every container of the `comp` project, running or stopped, and the pinned `cloudflared` image, which is never a candidate (only `comp-api`, `comp-app`, `comp-portal` and `comp-migrate` images are removed), so it stays even when its container is gone.
-It removes the snapshot of every tag it no longer keeps, with its images, so the current tag's and the rollback target's always stay.
+It removes the snapshot and the pin (`refs/comp/releases/<tag>`) of every tag it no longer keeps, with its images, so the current tag's and the rollback target's always stay.
 The removal checks each listed image again when it runs: one kept by then (a release or a container since the list) is skipped as `kept now`, and anything but a `comp-*` image as `not a comp image`.
 It then trims the build cache to 20 GB (`docker builder prune --keep-storage 20GB -f`) and never runs `docker image prune`, which can delete the digest-pinned `cloudflared` image (Docker lists it untagged).
 A release does the same by itself, without asking, when `/` is more than 70% used after it is recorded (`prune.sh auto`, bounded by `timeout 600`); the server reports `recorded=ok` first, so a failed or timed-out prune leaves the release standing and the laptop says "released, but the post-release prune failed" (or timed out), never a recording failure.

@@ -13,8 +13,9 @@
 #                                     migration check; refuses a tag whose three images or whose
 #                                     snapshot are gone, the serving one, or any while
 #                                     /opt/comp/src (these scripts) is not at the serving tag
-#   release.sh finish <action> <sha12>  after the laptop's smoke checks passed: keeps a release's
-#                                     configuration as the tag's snapshot, records ok and says so
+#   release.sh finish <action> <sha12>  after the laptop's smoke checks passed: pins a release's
+#                                     commit (refs/comp/releases/<tag>, lib/server-config.sh) and
+#                                     keeps its configuration as the tag's snapshot, records ok and says so
 #                                     (recorded=ok), moves /opt/comp/src to the tag's SHA
 #                                     (checkout=failed when it cannot, which the laptop warns of); after a
 #                                     release, then prunes old images when / is over 70% used, for
@@ -166,6 +167,7 @@ case "$step" in
   finish)
     sha="${COMP_SHA:-}"
     if [[ "$action" == release ]]; then
+      pin_release "$tag" "$sha" || { echo "Not recorded: $tag serves, but its commit could not be pinned (above)."; exit 1; }
       keep_snapshot "$stage" "$tag" || { echo "Not recorded: $tag serves, but its configuration could not be kept (above)."; exit 1; }
     else
       read -r sha <"$COMP_RELEASES/$tag/sha" || sha=""
