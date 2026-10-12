@@ -1,7 +1,5 @@
-import {
-  type ProductionTarget,
-  productionVerdict,
-} from '../../../packages/db/src/production-target.ts';
+import { requiredProductionVerdict } from '../../../packages/db/src/production-connection.ts';
+import type { ProductionTarget } from '../../../packages/db/src/production-target.ts';
 
 // The checks every value of comp/production/config passes before push-secrets writes it.
 // Messages name the key and never the value, not even a part of it.
@@ -13,6 +11,20 @@ const PROJECT_REF = /^proj_[a-z0-9]{20}$/;
 const UPSTREAM_PROJECT_REFS: readonly string[] = ['proj_zhioyrusqertqgafqgpj', 'proj_lhxjliiqgcdyqbgtucda'];
 const DATABASE_KEYS: readonly string[] = ['DATABASE_URL', 'DATABASE_MIGRATION_URL'];
 const TRANSACTION_POOLER_PORT = '6543';
+/**
+ * The only query parameters a database URL may carry. pg-connection-string copies every query
+ * parameter over the authority, so `user`, `host`, `port`, `password`, `database`, `db`,
+ * `options` and the rest would move the connection or change its session while the authority
+ * still reads as production. sslmode: the services strip it and refuse every other TLS
+ * parameter at boot (packages/db/src/pg-adapter-options.ts), and the migrate container sets it
+ * with the CA-verified sslcert and sslaccept (VERIFIED_URL in lib/server-stack.sh). sslaccept
+ * is Prisma's alone. connect_timeout only bounds the connect. sslrootcert, sslcert and sslkey
+ * name files pg reads while it parses the URL (here, on the laptop), so they are refused too.
+ */
+const ALLOWED_PARAMETERS: Readonly<Record<string, readonly string[]>> = {
+  DATABASE_URL: ['sslmode', 'connect_timeout'],
+  DATABASE_MIGRATION_URL: ['sslmode', 'sslaccept', 'connect_timeout'],
+};
 const ENCODE = 'percent-encode the user and password';
 
 /** Why a value cannot be pushed under `key`; empty when it can. */
@@ -67,7 +79,8 @@ function projectRefProblems({ key, value }: { key: string; value: string }): str
  * A database URL must parse, carry a user and password before the host, read back exactly as
  * written (so no unescaped character was reinterpreted: an unescaped /, ?, # or @ in the
  * password would otherwise be read as a host, port or path and echoed in a driver error), avoid
- * the transaction pooler, and name the production database (packages/db/production-target.ts).
+ * the transaction pooler, carry only the query parameters of ALLOWED_PARAMETERS, and name the
+ * production project and no other (packages/db/src/production-connection.ts).
  */
 function databaseUrlProblems({
   key,
@@ -91,17 +104,31 @@ function databaseUrlProblems({
   if (url.href !== value) {
     return [`${key} does not read back as written (an unescaped character in the user or password); ${ENCODE}`];
   }
+  const parameters = parameterProblems({ key, url });
+  if (parameters.length > 0) return parameters;
   if (url.port === TRANSACTION_POOLER_PORT) {
     return [
       `${key} uses port ${TRANSACTION_POOLER_PORT}, the transaction pooler; use the session pooler (5432) or the direct host`,
     ];
   }
-  const verdict = productionVerdict({ databaseUrl: value, env: {}, target });
+  const verdict = requiredProductionVerdict({ databaseUrl: value, target });
   if (verdict === 'unverifiable') {
     return [`${key} cannot be checked against the production database; ${ENCODE}`];
   }
   if (verdict === 'not_production') {
     return [`${key} does not name the production database (packages/db/production-target.json)`];
   }
+  if (verdict === 'mixed') {
+    return [`${key} also names another project (its user and host carry different project refs)`];
+  }
   return [];
+}
+
+/** One problem per query parameter outside the key's allowlist, by its name as pg decodes it. */
+function parameterProblems({ key, url }: { key: string; url: URL }): string[] {
+  const allowed = ALLOWED_PARAMETERS[key] ?? [];
+  const reason = `which can change where or how it connects (allowed: ${allowed.join(', ')})`;
+  return [...new Set(url.searchParams.keys())]
+    .filter((name) => !allowed.includes(name))
+    .map((name) => `${key} carries the query parameter ${name}, ${reason}`);
 }

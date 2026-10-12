@@ -11,6 +11,18 @@ import {
 } from './testing/fixtures.ts';
 import { valueProblems } from './values.ts';
 
+const OTHER_REF = 'fakesecretotherrefab';
+const DATABASE_KEYS = ['DATABASE_URL', 'DATABASE_MIGRATION_URL'];
+const ALLOWED: Readonly<Record<string, string>> = {
+  DATABASE_URL: 'sslmode, connect_timeout',
+  DATABASE_MIGRATION_URL: 'sslmode, sslaccept, connect_timeout',
+};
+
+/** The refusal of query parameter `name` in the URL under `key`. */
+function refusedParameter({ key, name }: { key: string; name: string }): string {
+  return `${key} carries the query parameter ${name}, which can change where or how it connects (allowed: ${ALLOWED[key]})`;
+}
+
 function problems(key: string, value: string): string[] {
   const found = valueProblems({ key, value, target: TARGET });
   expectNoValues(found.join('\n'));
@@ -140,6 +152,75 @@ describe('database URLs', () => {
     expect(problems('DATABASE_URL', value)).toEqual([
       'DATABASE_URL has no user and password before the host; an unescaped /, ?, # or @ in the password ends it early, so percent-encode the user and password',
     ]);
+  });
+
+  test('a clean session-pooler URL and one with an allowed TLS parameter pass', () => {
+    expect(problems('DATABASE_URL', `${RUNTIME_URL}?sslmode=require`)).toEqual([]);
+    expect(problems('DATABASE_MIGRATION_URL', `${RUNTIME_URL}?sslmode=verify-full`)).toEqual([]);
+    const timeout = `${MIGRATION_URL}?sslmode=require&connect_timeout=10`;
+    expect(problems('DATABASE_MIGRATION_URL', timeout)).toEqual([]);
+  });
+
+  test('a ?user= and ?port= override of a production URL is refused by name', () => {
+    const value = `${RUNTIME_URL}?user=postgres.${OTHER_REF}&port=6543`;
+    for (const key of DATABASE_KEYS) {
+      expect(problems(key, value)).toEqual([
+        refusedParameter({ key, name: 'user' }),
+        refusedParameter({ key, name: 'port' }),
+      ]);
+    }
+  });
+
+  test.each([
+    'user',
+    'host',
+    'port',
+    'password',
+    'database',
+    'db',
+    'options',
+    'schema',
+    'application_name',
+  ])('the query parameter %s is refused by name', (name) => {
+    for (const key of DATABASE_KEYS) {
+      expect(problems(key, `${RUNTIME_URL}?${name}=fakesecret-override`)).toEqual([
+        refusedParameter({ key, name }),
+      ]);
+    }
+  });
+
+  test('a percent-encoded parameter name is read as pg reads it', () => {
+    expect(problems('DATABASE_URL', `${RUNTIME_URL}?us%65r=postgres.${OTHER_REF}`)).toEqual([
+      refusedParameter({ key: 'DATABASE_URL', name: 'user' }),
+    ]);
+  });
+
+  test('sslaccept passes only in the migration URL, which Prisma reads', () => {
+    expect(problems('DATABASE_MIGRATION_URL', `${MIGRATION_URL}?sslaccept=strict`)).toEqual([]);
+    expect(problems('DATABASE_URL', `${RUNTIME_URL}?sslaccept=strict`)).toEqual([
+      refusedParameter({ key: 'DATABASE_URL', name: 'sslaccept' }),
+    ]);
+  });
+
+  test.each(['sslrootcert', 'sslcert', 'sslkey'])(
+    '%s, a file pg reads while parsing, is refused',
+    (name) => {
+      for (const key of DATABASE_KEYS) {
+        expect(problems(key, `${MIGRATION_URL}?${name}=/fakesecret.crt`)).toEqual([
+          refusedParameter({ key, name }),
+        ]);
+      }
+    },
+  );
+
+  test('a URL naming production next to another project is refused', () => {
+    const host = `db.${OTHER_REF}.supabase.co`;
+    const value = `postgresql://postgres.${PROD_REF}:fakesecretPw@${host}:5432/postgres`;
+    for (const key of DATABASE_KEYS) {
+      expect(problems(key, value)).toEqual([
+        `${key} also names another project (its user and host carry different project refs)`,
+      ]);
+    }
   });
 
   test('a percent-encoded password passes', () => {
