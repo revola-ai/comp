@@ -2,10 +2,11 @@
 # Server side of `deploy/server/release.sh prune`, run as root by on-server/entry.sh (which
 # holds the server lock) from /opt/comp/src:
 #
-#   prune.sh plan            prints what is kept and what would go (comp-result: remove=...)
-#   prune.sh apply <ref>...  removes those of <ref> that would still go and the snapshots of the
-#                            tags no longer kept, then trims the build cache to 20 GB (docker
-#                            builder prune --keep-storage 20GB -f)
+#   prune.sh plan            prints what is kept and what would go (comp-result: remove=<images>
+#                            and snapshots=<tags>)
+#   prune.sh apply <ref>...  removes those of <ref> (the plan's images, and its snapshots as
+#                            snapshot:<tag>) that would still go, then trims the build cache to
+#                            20 GB (docker builder prune --keep-storage 20GB -f)
 #   prune.sh auto            after a release (on-server/release.sh finish), with no confirmation:
 #                            when / is more than 70% used, removes everything `plan` would list,
 #                            then trims the build cache; otherwise does nothing
@@ -64,11 +65,14 @@ stale_snapshots() {
   done
 }
 
-remove_snapshots() { # the snapshots and pins of the tags no longer kept
+# remove_snapshots <tag>...: the snapshot and the pin of each <tag> that is still not kept
+# (a release since the plan may keep it now); a stale tag the plan did not list stays.
+remove_snapshots() {
   local tag pins stale status=0
   stale="$(stale_snapshots)" || return 1
   pins="$(pinned_tags)" || return 1
-  for tag in $stale; do
+  for tag in "$@"; do
+    grep -qxF -- "$tag" <<<"$stale" || { echo "skipping the snapshot of $tag: kept now"; continue; }
     if [[ -e "$COMP_RELEASES/$tag" ]]; then
       if rm -rf "${COMP_RELEASES:?}/$tag"; then echo "removed the snapshot of $tag"; else echo "could not remove the snapshot of $tag"; status=1; fi
     fi
@@ -87,7 +91,7 @@ plan() {
   local remove tunnel ref snapshots
   remove="$(removable)" || { echo "could not list the images or containers"; return 1; }
   snapshots="$(stale_snapshots)" || return 1
-  snapshots="$(tr '\n' ' ' <<<"$snapshots")"
+  snapshots="$(paste -sd ' ' - <<<"$snapshots")"
   tunnel="$(grep -oE 'docker\.io/cloudflare/cloudflared:[^@[:space:]]+@sha256:[0-9a-f]{64}' "$COMPOSE_FILE" | head -n 1)"
   echo "Keeping the tags of the current release, the last 3 others and the rollback target: $(kept_tags | tr '\n' ' ')"
   echo "Keeping the images of the comp containers: $(docker ps --all --filter label=com.docker.compose.project=comp --format '{{.Image}}' | tr '\n' ' ')"
@@ -101,17 +105,21 @@ plan() {
   echo "Removing the snapshots (the configurations in $COMP_RELEASES) and pinned commits (refs/comp/releases/<tag>) of: ${snapshots:-no tag}"
   echo "Then trimming the build cache to 20 GB: docker builder prune --keep-storage 20GB -f"
   result "remove=$(tr '\n' ' ' <<<"$remove" | sed 's/ *$//')"
+  result "snapshots=$snapshots"
 }
 
+# apply <ref>...: each <ref> an image (comp-<name>:<tag>) or a snapshot (snapshot:<tag>) of the
+# plan; removes those that would still go.
 apply() {
-  local remove ref status=0
+  local remove ref status=0 snapshots=()
   remove="$(removable)" || { echo "could not list the images or containers"; return 1; }
   for ref in "$@"; do
+    if [[ "$ref" =~ ^snapshot:([0-9a-f]{12})$ ]]; then snapshots+=("${BASH_REMATCH[1]}") && continue; fi
     [[ "$ref" =~ $CANDIDATE_RE ]] || { echo "skipping $ref: not a comp image"; continue; }
     grep -qxF -- "$ref" <<<"$remove" || { echo "skipping $ref: kept now"; continue; }
     if docker image rm "$ref" >/dev/null; then echo "removed $ref"; else echo "could not remove $ref"; status=1; fi
   done
-  remove_snapshots || status=1
+  remove_snapshots "${snapshots[@]}" || status=1
   echo "== docker builder prune --keep-storage 20GB -f"
   docker builder prune --keep-storage 20GB -f || status=1
   df -h / || true
@@ -119,7 +127,7 @@ apply() {
 }
 
 auto() {
-  local use remove
+  local use remove stale tag snapshots=()
   use="$(root_use_percent)"
   [[ "$use" =~ ^[0-9]+$ ]] || { echo "could not read the disk use of / (df -P /)"; return 1; }
   if ((use <= DISK_PRUNE_PERCENT)); then
@@ -129,8 +137,10 @@ auto() {
   echo "Disk: / is $use% used, over $DISK_PRUNE_PERCENT%: removing old images by the rules of release.sh prune."
   remove="$(removable)" || { echo "could not list the images or containers"; return 1; }
   [[ -n "$remove" ]] || echo "No image to remove."
+  stale="$(stale_snapshots)" || return 1
+  for tag in $stale; do snapshots+=("snapshot:$tag"); done
   # shellcheck disable=SC2086 # one image ref per word
-  apply $remove
+  apply $remove "${snapshots[@]}"
 }
 
 case "${1:-}" in

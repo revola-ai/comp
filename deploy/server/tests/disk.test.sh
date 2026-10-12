@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for the disk side of `deploy/server/release.sh`: the bounded prune a release runs after
 # itself when / is over 70% used, the warning `status` prints, and prune.sh apply checking each
-# image again. Run:
+# image and snapshot of the plan again. Run:
 # bash deploy/server/tests/disk.test.sh
 # Laptop and server share one sandbox (tests/release-lib.sh); nothing reaches AWS or the server.
 set -uo pipefail
@@ -80,7 +80,30 @@ check "prune apply: skips an image a container uses since the plan" grep -qxF "s
 check "prune apply: never removes an image that is not comp-*" grep -qxF "skipping busybox:latest: not a comp image" "$TMP/apply.out"
 check "prune apply: removes only the one still removable" test "$(sed -n 's/^docker image rm //p' "$FAKE_DOCKER_LOG")" = "comp-api:$TAG_E"
 check "prune apply: says so" grep -qxF "removed comp-api:$TAG_E" "$TMP/apply.out"
-check "prune apply: removes the snapshots of the tags no longer kept, whatever refs it got" \
-  test "$(files_in "$SERVER/releases")" = "$TAG_A $TAG_B $TAG_C $TAG_D"
+check "prune apply: removes no snapshot it was not given, stale or not" \
+  test "$(files_in "$SERVER/releases")" = "$TAG_A $TAG_B $TAG_C $TAG_D $TAG_E $TAG_F"
 check "prune apply: trims the build cache" has_line "$FAKE_DOCKER_LOG" "docker builder prune --keep-storage 20GB -f"
+
+# ---------------------------------------------------------------- a release lands between prune's plan and its apply
+prune_sh() { COMP_ROOT="$SERVER" bash "$SERVER/src/deploy/server/on-server/prune.sh" "$@"; }
+reset_server
+released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A" "$TAG_B" # kept: B, A, C, D
+prune_sh plan >"$TMP/plan.out" 2>&1
+check "prune plan: reports the snapshots it would remove" grep -qxF "comp-result: snapshots=$TAG_E $TAG_F" "$TMP/plan.out"
+released "$TAG_F" # kept now: F, B, A, C; D is no longer kept, E still is not
+prune_sh apply "snapshot:$TAG_E" "snapshot:$TAG_F" >"$TMP/late.out" 2>&1
+check "prune apply after a release: exits zero" test "$?" -eq 0
+check "prune apply after a release: removes a planned snapshot that is still stale, with its pin" bash -c "
+  test ! -e '$SERVER/releases/$TAG_E' && ! grep -q '^refs/comp/releases/$TAG_E ' '$FAKE_GIT_REFS' &&
+  grep -qxF 'removed the snapshot of $TAG_E' '$TMP/late.out'"
+check "prune apply after a release: skips a planned snapshot kept now" bash -c "
+  test -f '$SERVER/releases/$TAG_F/sha' && grep -q '^refs/comp/releases/$TAG_F ' '$FAKE_GIT_REFS' &&
+  grep -qxF 'skipping the snapshot of $TAG_F: kept now' '$TMP/late.out'"
+check "prune apply after a release: never removes one it did not plan, though stale now" bash -c "
+  test -f '$SERVER/releases/$TAG_D/sha' && grep -q '^refs/comp/releases/$TAG_D ' '$FAKE_GIT_REFS'"
+reset_server
+released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A" "$TAG_B"
+release_typed "prune" "$TMP/prune-args.out" prune
+check "prune: the laptop sends the planned snapshots to the apply step" \
+  grep -qE " prune apply( comp-[a-z]+:[0-9a-f]{12})* snapshot:$TAG_E snapshot:$TAG_F\$" <<<"$(ssm_call 2 args)"
 finish

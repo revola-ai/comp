@@ -75,17 +75,18 @@ cmd_prune() {
   need_terminal prune
   connect
   TAG=""
-  local run remove
+  local run remove snapshots tag
   run="$(run_id prune)"
   step prune-plan "$PRUNE_SECONDS" "$run" new - prune plan
   [[ "$REMOTE_CODE" -eq 0 ]] || die "could not list the images (above)"
-  remove="$(result_of remove)"
+  remove="$(result_of remove)" snapshots=""
+  for tag in $(result_of snapshots); do snapshots+=" snapshot:$tag"; done # the apply step removes only those
   echo
-  if ! confirmed prune "Type prune to remove ${remove:+the images listed above and }trim the build cache: "; then
+  if ! confirmed prune "Type prune to remove ${remove:+the images listed above and }${snapshots:+the snapshots listed above and }trim the build cache: "; then
     die "Nothing removed."
   fi
-  # shellcheck disable=SC2086 # one image ref per word
-  step prune "$PRUNE_SECONDS" "$run" new - prune apply $remove
+  # shellcheck disable=SC2086 # one image ref or snapshot per word
+  step prune "$PRUNE_SECONDS" "$run" new - prune apply $remove $snapshots
   [[ "$REMOTE_CODE" -eq 0 ]] || die "pruning did not finish cleanly (above)"
 }
 
