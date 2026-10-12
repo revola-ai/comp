@@ -15,8 +15,11 @@
 #    checks): "new" refuses while another run holds it, "own" needs it to be <run-id>'s.
 # 3. Writes everything after this to /opt/comp/logs/<log-name> (0600 in a 0700 directory).
 # 4. With a sha, the step runs from its own checkout of it, /opt/comp/work/<sha12> (a git
-#    worktree of /opt/comp/src, removed after the step), so /opt/comp/src itself stays at the
-#    serving release (a release's finish moves it). A "new" step first fetches every branch of
+#    worktree of /opt/comp/src, removed after the step, except that a release's up step leaves
+#    it to its run while the run holds its lease: finish and revert reuse it when it is still at
+#    the sha, so they need no new worktree, and finish, revert or unlock removes it), so
+#    /opt/comp/src itself stays at the serving release (a release's finish moves it).
+#    A "new" step first fetches every branch of
 #    the fork (by its URL, COMP_REPO_URL), refuses a sha its RELEASE_BRANCH lacks (release.sh
 #    checked it too; this holds when the step is run some other way) and refuses local changes
 #    in /opt/comp/src; an "own" step (finish, revert) reuses what its run fetched. The worktree
@@ -93,11 +96,17 @@ fetch_checked() { # fetch_checked <sha>: a new step's fetch and checks, or a ref
   fi
 }
 
-remove_worktrees() { # the step checkouts in /opt/comp/work (this step's, or those of steps cut short)
-  local tree
+remove_tree() { git -C "$COMP_SRC" worktree remove --force "$1" >/dev/null 2>&1 || rm -rf "$1"; }
+
+# remove_worktrees: the step checkouts in /opt/comp/work (this step's, or those of steps cut
+# short), except the one a release run keeps between its steps while it holds a live lease (its
+# up step's, for its finish, revert or unlock).
+remove_worktrees() {
+  local tree keep=""
+  if lease_live && [[ "$LEASE_WHAT" =~ ^release\ ([0-9a-f]{12})$ ]]; then keep="$COMP_WORK/${BASH_REMATCH[1]}"; fi
   for tree in "$COMP_WORK"/*; do
-    [[ -e "$tree" ]] || continue
-    git -C "$COMP_SRC" worktree remove --force "$tree" >/dev/null 2>&1 || rm -rf "$tree"
+    [[ -e "$tree" && "$tree" != "$keep" ]] || continue
+    remove_tree "$tree"
   done
   git -C "$COMP_SRC" worktree prune
 }
@@ -105,8 +114,14 @@ remove_worktrees() { # the step checkouts in /opt/comp/work (this step's, or tho
 step_checkout() { # step_checkout <sha> <dir>: the step's checkout of <sha>, or a refusal (subshell)
   local head
   umask 022
+  # finish and revert reuse their run's checkout: no new worktree (49 MB) that a full disk refuses
+  if [[ "$lease_mode" == own && -f "$2/.git" && "$(git -C "$2" rev-parse HEAD 2>/dev/null)" == "$1" ]]; then
+    echo "== reusing this run's checkout of $1 in $2"
+    return 0
+  fi
   [[ "$lease_mode" == own ]] || fetch_checked "$1" || return 1
   remove_worktrees
+  [[ ! -e "$2" ]] || remove_tree "$2" # the run's, at another commit
   if ! mkdir -p "$COMP_WORK" || ! git -C "$COMP_SRC" worktree add --quiet --detach "$2" "$1"; then
     echo "could not check $1 out in $2"
     return 1
@@ -138,7 +153,7 @@ run_step() {
 
 status=0
 run_step "$@" >"$log" 2>&1 </dev/null || status=$?
-[[ "$sha" == - ]] || remove_worktrees >>"$log" 2>&1 </dev/null
+remove_worktrees >>"$log" 2>&1 </dev/null # unlock's too: the lease is gone, so is the run's checkout
 tail -n 200 "$log" | tail -c 20000
 [[ -z "$(tail -c 1 "$log")" ]] || echo # so comp-meta-begin starts a line
 meta "$status" "$log"

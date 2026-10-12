@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests for the checkouts on the server: /opt/comp/src following the serving release (the
 # laptop warning when a finish step could not move it, status showing it, rollback refusing
-# while it lags behind) and the released commits pinned in it (refs/comp/releases/<tag>).
+# while it lags behind), the released commits pinned in it (refs/comp/releases/<tag>) and the
+# worktree a release run keeps from its up step to its finish or revert.
 # Run: bash deploy/server/tests/checkout.test.sh
 # Laptop and server share one sandbox (tests/release-lib.sh); nothing reaches AWS or the server.
 set -uo pipefail
@@ -90,6 +91,49 @@ check "prune unpins the tags whose snapshots it removes, and a pin left without 
   test "$(refs_of)" = "$TAG_A $TAG_B $TAG_C $TAG_D "
 check "prune says so" bash -c "grep -qxF 'removed the snapshot of $TAG_E' '$TMP/prune.out' &&
   grep -qxF 'unpinned $TAG_E (refs/comp/releases/$TAG_E)' '$TMP/prune.out' && grep -qxF 'unpinned $TAG_F (refs/comp/releases/$TAG_F)' '$TMP/prune.out'"
+
+# ---------------------------------------------------------------- the run's worktree, from up to finish or revert
+# The up step's checkout (/opt/comp/work/<sha12>) stays for the run while it holds its lease;
+# finish and revert reuse it, so they need no new worktree (FAKE_GIT_WORKTREE_ADDS: the build's
+# and the up step's succeed, any later one fails as on a full disk).
+adds() { grep -c ' worktree add ' "$FAKE_GIT_LOG"; }
+no_work() { test -z "$(ls -A "$SERVER/work" 2>/dev/null)"; }
+reset_server
+released "$TAG_A"
+FAKE_GIT_WORKTREE_ADDS=2 FAKE_CURL_BAD_TAG="$TAG_B" release_sh "$TMP/reuse-revert.out" release "$SHA_B"
+check "revert with no room for a new worktree: the previous tag serves again" \
+  test "$(serving):$(last_record)" = "comp-api:$TAG_A:release $TAG_B rolled-back"
+check "revert with no room for a new worktree: reuses the up step's (adds only for build and up)" test "$(adds)" -eq 2
+check "revert with no room for a new worktree: says so" grep -qF "== reusing this run's checkout of $SHA_B" "$TMP/reuse-revert.out"
+check "revert with no room for a new worktree: the checkout is gone afterwards" no_work
+reset_server
+released "$TAG_A"
+FAKE_GIT_WORKTREE_ADDS=2 release_sh "$TMP/reuse-finish.out" release "$SHA_B"
+check "finish reuses the up step's checkout: recorded, no third worktree" test "$?:$(last_record):$(adds)" = "0:release $TAG_B ok:2"
+check "finish reuses the up step's checkout: none left" no_work
+
+reset_server
+released "$TAG_A"
+chmod 444 "$SERVER/releases.log" # finish cannot record: the run keeps its lease
+release_sh "$TMP/kept.out" release "$SHA_B"
+chmod 644 "$SERVER/releases.log"
+check "a run that keeps its lease keeps its checkout" grep -qxF "HEAD: $SHA_B" "$SERVER/work/$TAG_B/.git"
+release_typed "unlock" "$TMP/kept-unlock.out" unlock
+check "unlock frees the lease" test "$?:$(last_record)" = "0:release $TAG_B unlocked"
+check "unlock removes the run's checkout" no_work
+
+# A tree at another commit is never reused: the own step checks HEAD and checks the SHA out again.
+entry() { COMP_ROOT="$SERVER" bash "$SERVER_DIR/on-server/entry.sh" "$@" >>"$TMP/entry.out" 2>&1; }
+RUN="20261007T120000Z-release-$TAG_B-0123abcd"
+reset_server
+released "$TAG_A"
+docker_state "s['images'] += ['comp-api:$TAG_B', 'comp-app:$TAG_B', 'comp-portal:$TAG_B', 'comp-migrate:$TAG_B']"
+entry "20261007T120000Z-release-$TAG_B.log" "$RUN" new "$SHA_B" release up release "$TAG_B"
+check "the up step leaves its checkout for the run" test "$?:$(adds):$(sed -n 's/^HEAD: //p' "$SERVER/work/$TAG_B/.git" 2>/dev/null)" = "0:1:$SHA_B"
+printf 'gitdir: x\nHEAD: %s\n' "$SHA_D" >"$SERVER/work/$TAG_B/.git"
+entry "20261007T120100Z-finish-$TAG_B.log" "$RUN" own "$SHA_B" release finish release "$TAG_B"
+check "a checkout at another commit is checked out again, not reused" \
+  test "$?:$(adds):$(last_record)" = "0:2:release $TAG_B ok"
 
 check "shellcheck -x: this suite" bash -c "cd '$ROOT' && shellcheck -x deploy/server/tests/checkout.test.sh"
 finish
