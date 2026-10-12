@@ -60,9 +60,16 @@ def fail(message: str, code: int = 1) -> NoReturn:
     done(code=code)
 
 
+def env_dir() -> str:
+    """release.sh always names the configuration's env files (COMP_ENV_DIR); never a default."""
+    if not os.environ.get('COMP_ENV_DIR'):
+        fail('fake docker: COMP_ENV_DIR is not set; compose would fall back to a default directory')
+    return os.environ['COMP_ENV_DIR']
+
+
 def env_file(name: str) -> None:
     """compose reads every env_file of a service it starts; a missing one is an error."""
-    path = os.path.join(os.environ.get('COMP_ENV_DIR', '/opt/comp/env'), f'{name}.env')
+    path = os.path.join(env_dir(), f'{name}.env')
     if not os.path.exists(path):
         fail(f'env file {path} not found: stat {path}: no such file or directory')
 
@@ -96,7 +103,7 @@ def compose(args: list[str]) -> NoReturn:
             fail(f'Error response from daemon: No such image: {missing[0]}')
         state['containers'] = {name: f'comp-{name}:{current}' for name in STACK}
         state['containers']['cloudflared'] = TUNNEL_IMAGE
-        state['up'] = {'file': compose_file, 'env': os.environ.get('COMP_ENV_DIR', '/opt/comp/env')}
+        state['up'] = {'file': compose_file, 'env': env_dir()}
         if current in os.environ.get('FAKE_DOCKER_FAIL_UP', '').split():
             fail('container comp-api-1 is unhealthy')
         done('Container comp-api-1 Healthy\nContainer comp-app-1 Healthy\nContainer comp-portal-1 Healthy')
@@ -130,7 +137,7 @@ def run(profiles: list[str], args: list[str]) -> NoReturn:
     if service == 'trigger':
         project = workdir.rsplit('/', 1)[-1]
         trigger_cli_check(argv_in, env)
-        with open(os.path.join(os.environ.get('COMP_ENV_DIR', '/opt/comp/env'), 'trigger.env')) as handle:
+        with open(os.path.join(env_dir(), 'trigger.env')) as handle:
             state['trigger_env'] = sorted(line.split('=', 1)[0] for line in handle.read().splitlines() if '=' in line)
         if os.environ.get('FAKE_DOCKER_FAIL_TRIGGER') == project:
             fail(f'Error: deploy of {project} failed (fake)')
@@ -183,7 +190,7 @@ def verified_url(argv_in: list[str]) -> None:
     the rendered migrate.env, as the container would; its stderr is what compose would show."""
     if argv_in[:2] != ['sh', '-c'] or 'exec bunx prisma' not in argv_in[2]:
         fail(f'fake docker: migrate runs sh -c "<url rewrite> exec bunx prisma ...", got {argv_in}')
-    path = os.path.join(os.environ.get('COMP_ENV_DIR', '/opt/comp/env'), 'migrate.env')
+    path = os.path.join(env_dir(), 'migrate.env')
     with open(path) as handle:
         values = dict(line.split('=', 1) for line in handle.read().splitlines() if '=' in line)
     check = argv_in[2].split('exec bunx prisma')[0] + \

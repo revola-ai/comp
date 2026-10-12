@@ -249,7 +249,7 @@ check "logs --release: exits zero" test "$?" -eq 0
 check "logs --release: the last 500 lines, in order" \
   test "$(grep -E '^line [0-9]+ ' "$TMP/fetched.out" | cut -d' ' -f2 | tr '\n' ' ')" = "$(seq 400 899 | tr '\n' ' ')"
 check "logs --release: fetched in pages under the SSM limit" test "$(ssm_sends)" -ge 6
-for bad in /opt/comp/env/api.env ../env/api.env "/opt/comp/logs/../env/api.env" "$log_name.bak"; do
+for bad in "/opt/comp/releases/$TAG_A/env/api.env" ../releases/api.env "/opt/comp/logs/../releases/$TAG_A/sha" "$log_name.bak"; do
   release_sh "$TMP/badlog.out" logs --release "$bad"
   check "logs --release $bad: refused" test "$?" -ne 0
 done

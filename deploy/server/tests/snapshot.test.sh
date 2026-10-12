@@ -135,18 +135,32 @@ check "rollback: $TAG_D with its own snapshot" test "$(up_configs)" = "$TAG_D up
 check "rollback: /opt/comp/src at $TAG_D" src_at "$SHA_D"
 check "rollback: says it uses the tag's snapshot" said "$TMP/back.out" "the env files and compose.yaml it was released with (its snapshot"
 
-# ---------------------------------------------------------------- a server released before snapshots
+# ---------------------------------------------------------------- the serving tag has no snapshot
+# Every release keeps one, and prune keeps the serving tag's, so it is gone only by hand: a
+# release is refused before any change, because a failure could not bring that tag back.
 reset_server
-released "$TAG_A"
-rm -rf "${SERVER:?}/releases"
-mkdir -p "$SERVER/env"
-for name in api app portal cloudflared migrate trigger; do echo "LEGACY_OF=$TAG_A" >"$SERVER/env/$name.env"; done
-FAKE_CURL_BAD_TAG="$TAG_B" release_sh "$TMP/legacy.out" release "$SHA_B"
-check "first release after the upgrade fails: $TAG_A comes back with the configuration it ran with" \
-  test "$(up_configs)" = "$(lines "$TAG_B up stage" "$TAG_A up releases/$TAG_A")"
-check "first release after the upgrade fails: that configuration became $TAG_A's snapshot" \
-  test "$(cat "$SERVER/releases/$TAG_A/env/api.env"):$(cat "$SERVER/releases/$TAG_A/sha")" = "LEGACY_OF=$TAG_A:$SHA_A"
-check "first release after the upgrade fails: serving $TAG_A" test "$(serving)" = "comp-api:$TAG_A"
+released "$TAG_D" "$TAG_A"
+rm -rf "${SERVER:?}/releases/$TAG_A"
+before="$(fingerprint "$SERVER/releases")"
+release_sh "$TMP/nosnap-current.out" release "$SHA_B"
+check "serving tag without a snapshot: release refused" test "$?" -ne 0
+check "serving tag without a snapshot: says why" said "$TMP/nosnap-current.out" \
+  "Refusing: the serving tag $TAG_A has no snapshot ($SERVER/releases/$TAG_A), so a failed release could not bring it back"
+check "serving tag without a snapshot: points at a rollback" said "$TMP/nosnap-current.out" \
+  "roll back to a tag that has one (deploy/server/release.sh status lists them); releases work again once it serves"
+check "serving tag without a snapshot: says nothing changed" said "$TMP/nosnap-current.out" \
+  "No container, snapshot or checkout was changed; still serving $TAG_A."
+check "serving tag without a snapshot: before any container changed" said "$TMP/nosnap-current.out" "before any container changed"
+check "serving tag without a snapshot: no container changed, nothing rendered" \
+  bash -c "test -z \"\$(grep -E ' (up|stop)( |\$)' '$FAKE_DOCKER_LOG')\" && ! grep -qF render-env '$SERVER'/logs/*-release-$TAG_B.log"
+check "serving tag without a snapshot: the snapshots are unchanged" test "$(fingerprint "$SERVER/releases")" = "$before"
+check "serving tag without a snapshot: recorded failed" test "$(last_record)" = "release $TAG_B failed"
+check "serving tag without a snapshot: /opt/comp/src stays" src_at "$SHA_A"
+release_sh "$TMP/nosnap-out.out" rollback
+check "serving tag without a snapshot: a rollback to a tag with one is the way out" \
+  test "$?:$(up_configs)" = "0:$TAG_D up releases/$TAG_D"
+check "/opt/comp/env is used nowhere (compose.yaml's default aside, which release.sh always overrides)" bash -c \
+  "! grep -rnF --exclude-dir=node_modules --exclude-dir=plans --exclude=compose.yaml --exclude=snapshot.test.sh /opt/comp/env '$SERVER_DIR' '$ROOT/docs'"
 
 # ---------------------------------------------------------------- migrate, trigger and steps without a SHA
 reset_server

@@ -4,7 +4,8 @@
 # a rollback's and unlock from /opt/comp/src, the serving release's checkout:
 #
 #   release.sh up release <sha12>     after the build step (on-server/build.sh): refuses when
-#                                     an image of the tag is missing, renders the run's
+#                                     the serving tag has no snapshot (a failure could not bring
+#                                     it back) or an image of the tag is missing, renders the run's
 #                                     configuration into /opt/comp/stage (lib/server-config.sh),
 #                                     refuses pending or failed migrations, then compose up --wait
 #                                     with it
@@ -135,8 +136,10 @@ case "$step" in
   up)
     current="$(current_tag)"
     rm -rf "$COMP_STAGE" # configurations of runs that stopped (no other run holds a lease)
-    adopt_legacy
     if [[ "$action" == release ]]; then
+      # A failure would bring $current back with its snapshot: without one, nothing could.
+      [[ -z "$current" ]] || snapshot_of "$current" >/dev/null ||
+        failed_before_change 1 "Refusing: the serving tag $current has no snapshot ($COMP_RELEASES/$current), so a failed release could not bring it back; roll back to a tag that has one (deploy/server/release.sh status lists them); releases work again once it serves."
       missing="$(missing_images "$tag" "${STACK_IMAGES[@]}" migrate)"
       [[ -z "$missing" ]] ||
         failed_before_change 1 "Refusing: missing images: $(tr '\n' ' ' <<<"$missing")(removed since the build step?); release $tag again, which builds them."
@@ -149,7 +152,7 @@ case "$step" in
       missing="$(missing_images "$tag" "${STACK_IMAGES[@]}")"
       [[ -z "$missing" ]] || failed_before_change 1 "Refusing: missing images: $(tr '\n' ' ' <<<"$missing")(pruned?); rollback needs all three."
       config="$(snapshot_of "$tag")" ||
-        failed_before_change 1 "Refusing: there is no snapshot of $tag ($COMP_RELEASES/$tag): it was released before snapshots were kept, or pruned; roll back to a tag that has one (deploy/server/release.sh status lists them), or release its SHA again."
+        failed_before_change 1 "Refusing: there is no snapshot of $tag ($COMP_RELEASES/$tag; pruned?); roll back to a tag that has one (deploy/server/release.sh status lists them), or release its SHA again."
       use_config "$config"
     fi
     bring_up

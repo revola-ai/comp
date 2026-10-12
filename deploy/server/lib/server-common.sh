@@ -17,7 +17,6 @@ COMP_SRC="$COMP_ROOT/src"            # the checkout of the serving release (user
 COMP_WORK="$COMP_ROOT/work"          # a step with a SHA runs from a worktree of it here, removed after
 COMP_RELEASES="$COMP_ROOT/releases"  # a snapshot per released tag: sha, compose.yaml, env/ (0700/0600)
 COMP_STAGE="$COMP_ROOT/stage"        # a run's rendered configuration, until it is kept or dropped
-LEGACY_ENV_DIR="$COMP_ROOT/env"      # where releases rendered the env files before snapshots
 COMP_LOGS="$COMP_ROOT/logs"          # one root-only log per release.sh step
 RELEASES_LOG="$COMP_ROOT/releases.log"
 RELEASE_LOCK="$COMP_ROOT/release.lock"

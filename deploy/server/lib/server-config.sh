@@ -34,7 +34,7 @@ stage_config() {
 }
 
 # snapshot_of <tag>: prints the snapshot directory of <tag>; fails when it is missing or
-# incomplete (the tag was released before snapshots were kept, or pruned).
+# incomplete (pruned, or removed by hand).
 snapshot_of() {
   local dir="$COMP_RELEASES/$1" sha=""
   [[ -f "$dir/sha" && -f "$dir/compose.yaml" && -d "$dir/env" ]] || return 1
@@ -62,28 +62,6 @@ keep_snapshot() {
   fi
   rm -rf "$old"
   echo "== kept the configuration of $2 as its snapshot ($target)"
-}
-
-# adopt_legacy: a tag released before snapshots were kept ran with /opt/comp/env and the
-# compose.yaml of /opt/comp/src. While it is the serving tag and /opt/comp/src is still at it,
-# that configuration becomes its snapshot, so a revert can bring it back; it happens once, at
-# the first release or rollback after the upgrade, before anything else changes.
-adopt_legacy() {
-  local tag head dir
-  tag="$(current_tag)"
-  [[ -n "$tag" ]] || return 0
-  ! snapshot_of "$tag" >/dev/null || return 0
-  head="$(git -C "$COMP_SRC" rev-parse HEAD 2>/dev/null)" || return 0
-  [[ "${head:0:12}" == "$tag" && -f "$LEGACY_ENV_DIR/api.env" ]] || return 0
-  dir="$COMP_STAGE/adopted-$tag"
-  if (umask 077 && rm -rf "$dir" && mkdir -p "$dir/env" && cp "$LEGACY_ENV_DIR"/*.env "$dir/env/" &&
-    cp "$COMP_SRC/deploy/server/compose.yaml" "$dir/compose.yaml" && printf '%s\n' "$head" >"$dir/sha") &&
-    keep_snapshot "$dir" "$tag"; then
-    echo "== $tag was released before snapshots: its env files ($LEGACY_ENV_DIR) and compose.yaml ($COMP_SRC) are its snapshot now"
-    return 0
-  fi
-  rm -rf "$dir"
-  echo "Warning: could not keep the configuration of $tag as its snapshot (above); bringing it back would be refused."
 }
 
 # serve_checkout <sha>: moves /opt/comp/src to <sha> (under umask 022, world-readable), so the

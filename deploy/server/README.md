@@ -84,11 +84,11 @@ The image's entrypoint is `cloudflared --no-autoupdate`; the stack runs `tunnel 
 sudo deploy/server/render-env.sh --out-dir <dir>   # writes <dir>/<service>.env
 ```
 
-It reads the Secrets Manager secret `comp/production/config` (one JSON object) in `us-east-2` with the instance profile and, for each `env/<service>.keys`, writes `<dir>/<service>.env` (mode 0600 in a 0700 directory; the default `<dir>` is `/opt/comp/env`, where releases rendered before snapshots) with exactly the listed keys followed by the lines of `env/<service>.public.env`.
+It reads the Secrets Manager secret `comp/production/config` (one JSON object) in `us-east-2` with the instance profile and, for each `env/<service>.keys`, writes `<dir>/<service>.env` (mode 0600 in a 0700 directory; `--out-dir` is required) with exactly the listed keys followed by the lines of `env/<service>.public.env`.
 It checks every service before writing any file, and refuses by name a listed key that is missing from the secret, empty, not a string, containing a line break or a NUL character, or with leading or trailing whitespace; on a refusal the previous files stay as they were.
 It never prints a value, never passes one as a command-line argument and writes each file through a temporary file in the same directory.
 Writes are atomic per file, not per run: an IO failure partway through can leave some files from the new secret and some from the old, so a release that fails to render drops the whole staged configuration.
-compose reads the env files from `COMP_ENV_DIR` (default `/opt/comp/env`); `release.sh` always sets it to the configuration it runs.
+compose reads the env files from `COMP_ENV_DIR`, which `release.sh` always sets to the configuration it runs (`compose.yaml`'s default is never used).
 
 A `.keys` line is a key name, or `NAME from KEY` when the container variable differs from the key in the secret (the app's `AUTH_SECRET from SECRET_KEY`, and each project's `TRIGGER_SECRET_KEY`).
 Names start with a letter and the line has single spaces and nothing around it; besides those, a line is empty or a comment starting with `#` in the first column.

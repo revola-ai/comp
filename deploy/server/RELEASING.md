@@ -48,7 +48,8 @@ Each release keeps the configuration it was verified with as the snapshot of its
 A release renders its configuration into `/opt/comp/stage/<run>/`, checks the migrations and brings the stack up with it, and only when the smoke checks pass does it become the tag's snapshot (a release of the same tag replaces the older one).
 Bringing a tag back (after a failed health or smoke check, an interrupt, or `rollback`) always uses that tag's own snapshot, so a bad secret, a `.keys` change or a `compose.yaml` change of the new commit leaves with it.
 `status` lists the tags that have one; `prune` removes a tag's snapshot together with its images and keeps those of the current tag and the rollback target.
-A server released before snapshots existed has none: its serving tag's configuration (`/opt/comp/env` and the `compose.yaml` of `/opt/comp/src`, while that is still at the tag) becomes its snapshot at the first release or rollback after the upgrade; older tags have none, so `rollback` refuses them.
+A tag has no snapshot only when it was pruned (or removed by hand); prune always keeps the serving tag's, so a release is refused, before anything changes, when the serving tag has none: a failure could not bring it back.
+Roll back to a tag that has one first (that is not refused); releases work again once it serves.
 
 ## release
 
@@ -85,7 +86,7 @@ A laptop that stops without a signal (sleep, a dropped network) leaves the lease
 
 `releases.log`'s ok lines form a serving history, a stack: `release X` pushes X, `rollback X` pops back to X; the current tag is the top.
 `rollback` brings back the entry below the top (so rolling back twice walks further back, never forward), or the given SHA's tag, with the same `up --wait`, smoke checks and recovery.
-It refuses, before anything changes, a tag whose three images are gone (pruned), a tag without a snapshot (released before snapshots were kept, or pruned) and the tag that already serves.
+It refuses, before anything changes, a tag whose three images are gone (pruned), a tag without a snapshot (pruned) and the tag that already serves.
 It does not build, migrate or check out a new commit: it brings the tag back with its images as built and its snapshot, the env files and `compose.yaml` it was released and verified with; once recorded, `/opt/comp/src` moves to its SHA.
 The database keeps any newer migrations.
 A secret rotated since that release is not in its snapshot: the snapshot is the tag's known-good configuration, so a rollback brings back the values the tag was verified with.

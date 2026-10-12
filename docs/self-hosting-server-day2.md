@@ -53,7 +53,7 @@ deploy/server/release.sh rollback <sha>      # a specific earlier release whose 
 ```
 
 A rollback uses the images as they were built and the tag's snapshot (the env files and `compose.yaml` it was released with), and does not undo migrations, so a release whose migration is not backward compatible cannot be rolled back past it.
-It refuses a tag without a snapshot (released before snapshots were kept, or pruned); `status` lists the tags that have one.
+It refuses a tag without a snapshot (pruned); `status` lists the tags that have one.
 A secret rotated since that release is not in the snapshot: the rollback brings back the value the tag was verified with.
 If that old value no longer works (revoked at the provider), release the rolled-back SHA again right after: a release renders the current secret into a new snapshot.
 

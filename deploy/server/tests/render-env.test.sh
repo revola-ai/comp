@@ -137,6 +137,14 @@ check "aws failure: says the secret could not be read" \
   grep -qF "could not read comp/production/config" "$TMP/aws-failed.log"
 check "aws failure: writes no env file" bash -c "! ls '$TMP/aws-failed'/*.env >/dev/null 2>&1"
 
+write_fixture "$TMP/secret.json"
+: >"$AWS_STUB_LOG"
+bash "$RENDER_SCRIPT" >"$TMP/no-dir.log" 2>&1
+status=$?
+check "no --out-dir: refused with the usage (there is no default directory)" \
+  test "$status:$(cat "$TMP/no-dir.log")" = "2:usage: render-env.sh --out-dir DIR"
+check "no --out-dir: never reads the secret" test ! -s "$AWS_STUB_LOG"
+
 printf 'not json fakesecret' >"$TMP/secret.json"
 render "$TMP/not-json" "$TMP/not-json.log"
 status=$?

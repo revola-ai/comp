@@ -2,7 +2,7 @@
 # Writes the env files the compose stack reads (deploy/server/compose.yaml). Runs on the
 # server as root, before every `docker compose up`:
 #
-#   deploy/server/render-env.sh [--out-dir /opt/comp/env]
+#   deploy/server/render-env.sh --out-dir <dir>
 #
 # For each deploy/server/env/<service>.keys it writes <out-dir>/<service>.env (mode 0600 in a
 # 0700 directory) holding exactly the listed keys, valued from the Secrets Manager secret
@@ -17,10 +17,10 @@ set -euo pipefail
 SECRET_ID="comp/production/config"
 REGION="us-east-2"
 KEYS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env"
-OUT_DIR="/opt/comp/env"
+OUT_DIR="" # required: a release renders into its staged configuration (lib/server-config.sh)
 
 usage() {
-  echo "usage: $(basename "$0") [--out-dir DIR]   (default $OUT_DIR)"
+  echo "usage: $(basename "$0") --out-dir DIR"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -40,6 +40,7 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+[[ -n "$OUT_DIR" ]] || { usage >&2; exit 2; }
 
 for tool in aws python3; do
   command -v "$tool" >/dev/null || { echo "render-env: $tool is not installed" >&2; exit 1; }
