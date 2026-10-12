@@ -13,14 +13,18 @@ Knobs (environment):
   FAKE_DOCKER_FAIL_UP       `compose up` with this TAG replaces the containers, then fails
   FAKE_DOCKER_FAIL_BUILD    `buildx bake` of this target fails
   FAKE_DOCKER_FAIL_TRIGGER  `trigger.dev deploy` in this apps/<project> fails
+  FAKE_DOCKER_TRIGGER_CLI   the trigger.dev version the tools image holds ("missing": none;
+                            default: apps/api/package.json's, as bun.lock installs it)
   FAKE_DOCKER_FAIL_PRUNE    `builder prune` fails
 Nothing here runs a container.
 """
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 from typing import NoReturn
 
 argv = sys.argv[1:]
@@ -117,12 +121,51 @@ def run(profiles: list[str], args: list[str]) -> NoReturn:
         migrate(command, env)
     if service == 'trigger':
         project = workdir.rsplit('/', 1)[-1]
-        if 'trigger.dev@' not in command or 'deploy --env prod' not in command:
-            fail(f'fake docker: unexpected trigger command {command}')
+        trigger_cli_check(argv_in, env)
         if os.environ.get('FAKE_DOCKER_FAIL_TRIGGER') == project:
             fail(f'Error: deploy of {project} failed (fake)')
         done(f'Successfully deployed version 20261007.1 of {project} (fake)')
     fail(f'fake docker: unknown tools service {service}')
+
+
+IMAGE_CLI = 'exec "$cli" deploy --env prod'
+
+
+def trigger_cli_check(argv_in: list[str], env: dict[str, str]) -> None:
+    """Refuses a command that could fetch the CLI from npm, then runs the container's own CLI
+    check (everything before `exec "$cli"`) with real sh and node against a stand-in /repo
+    holding the trigger.dev of FAKE_DOCKER_TRIGGER_CLI; its output is what compose would show."""
+    if argv_in[:2] != ['sh', '-c'] or len(argv_in) != 3 or not argv_in[2].endswith(IMAGE_CLI):
+        fail(f'fake docker: trigger runs sh -c "<cli check> ... {IMAGE_CLI}", got {argv_in}')
+    script = argv_in[2]
+    if 'npx' in script or 'trigger.dev@' in script:
+        fail(f'fake docker: the trigger command could fetch the CLI from npm: {script}')
+    version = os.environ.get('FAKE_DOCKER_TRIGGER_CLI') or pinned_trigger_cli()
+    repo = tempfile.mkdtemp(prefix='fake-repo-')
+    try:
+        if version != 'missing':
+            os.makedirs(os.path.join(repo, 'node_modules', '.bin'))
+            os.makedirs(os.path.join(repo, 'node_modules', 'trigger.dev'))
+            cli = os.path.join(repo, 'node_modules', '.bin', 'trigger')
+            with open(cli, 'w') as handle:
+                handle.write('#!/bin/sh\nexit 0\n')
+            os.chmod(cli, 0o755)
+            with open(os.path.join(repo, 'node_modules', 'trigger.dev', 'package.json'), 'w') as handle:
+                json.dump({'name': 'trigger.dev', 'version': version}, handle)
+        check = script.split(IMAGE_CLI)[0].replace('/repo/', f'{repo}/') + 'exit 0'
+        run = subprocess.run(['sh', '-c', check], capture_output=True, text=True,
+                             env={**os.environ, **env})
+    finally:
+        shutil.rmtree(repo)
+    if run.returncode != 0:
+        fail(run.stderr + run.stdout)
+
+
+def pinned_trigger_cli() -> str:
+    """The trigger.dev devDependency of apps/api, the version bun.lock puts in the image."""
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..')
+    with open(os.path.join(root, 'apps', 'api', 'package.json')) as handle:
+        return json.load(handle)['devDependencies']['trigger.dev']
 
 
 def verified_url(argv_in: list[str]) -> None:

@@ -8,7 +8,8 @@
 # 0700 directory) holding exactly the listed keys, valued from the Secrets Manager secret
 # comp/production/config (one JSON object), then the committed non-secret lines of
 # <service>.public.env. Every service is checked before any file is written: a listed key
-# that is missing, empty, not a string or contains a line break stops the run, by name.
+# that is missing, empty, not a string, contains a line break or NUL or has leading or trailing
+# whitespace stops the run, by name.
 # Values are never printed, never passed as arguments and never written outside <out-dir>.
 # Files are written verbatim, one NAME=VALUE per line (compose reads them with format: raw).
 set -euo pipefail
@@ -60,6 +61,8 @@ import json, os, re, sys, tempfile
 
 keys_dir, out_dir, secret_id = sys.argv[1:4]
 NAME = re.compile(r'[A-Z][A-Z0-9_]*\Z')
+# The one .keys grammar, the same as KEYS_LINE in secrets/keys.ts (secrets/keys-grammar.test.ts
+# runs both): nothing is stripped, and only empty lines and first-column # lines are skipped.
 KEYS_LINE = re.compile(r'([A-Z][A-Z0-9_]*)(?: from ([A-Z][A-Z0-9_]*))?\Z')
 
 
@@ -72,6 +75,14 @@ def content_lines(path):
     with open(path) as handle:
         for number, line in enumerate(handle.read().splitlines(), start=1):
             if line.strip() and not line.startswith('#'):
+                yield number, line
+
+
+def keys_lines(path):
+    # newline='' keeps a carriage return, which the grammar then refuses, as keys.ts does.
+    with open(path, encoding='utf-8', newline='') as handle:
+        for number, line in enumerate(handle.read().split('\n'), start=1):
+            if line and not line.startswith('#'):
                 yield number, line
 
 
@@ -90,7 +101,7 @@ problems, rendered = [], {}
 for service in services:
     lines, seen = [], set()
     keys_path = os.path.join(keys_dir, f'{service}.keys')
-    for number, line in content_lines(keys_path):
+    for number, line in keys_lines(keys_path):
         match = KEYS_LINE.match(line)
         if not match:
             problems.append(f'{service}.keys line {number} is not NAME or "NAME from KEY"')
@@ -108,6 +119,8 @@ for service in services:
             problems.append(f'{service}: {key} is empty in {secret_id}')
         elif any(char in value for char in '\r\n\0'):
             problems.append(f'{service}: {key} contains a line break or NUL in {secret_id}')
+        elif value != value.strip():
+            problems.append(f'{service}: {key} has leading or trailing whitespace in {secret_id}')
         else:
             lines.append(f'{name}={value}')
     secret_count = len(lines)

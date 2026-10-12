@@ -138,7 +138,7 @@ bun deploy/server/push-secrets.ts --source <main checkout>
 
 It builds `comp/production/config` (Secrets Manager, `us-east-2`) for exactly the keys in `deploy/server/env/*.keys`, each copied from one file (`deploy/server/secrets/keys.ts`): the env files of `apps/api`, `apps/app`, `apps/portal` and `packages/db`, plus `deploy/server/.env.production.local`.
 The env files are parsed in memory; the output names keys and files, never values.
-It refuses, by key name: a production-only token equal to its laptop value; a database URL that is not the production database (`packages/db/production-target.json`), that does not parse or read back as written (percent-encode `/`, `?`, `#` and `@` in the password), or that uses port 6543; a service or forwarded-IP token under 32 characters; a value naming `localhost`, `127.0.0.1` or `host.docker.internal`; an empty value or one with a line break or NUL; a `tr_dev_` key; a value that disagrees with its copy in another env file; a linked worktree as `--source`; a changed `ENCRYPTION_KEY` or `SECRET_KEY` (they encrypt stored credentials and sign sessions, so they never change once set).
+It refuses, by key name: a production-only token equal to its laptop value; a database URL that is not the production database (`packages/db/production-target.json`), that also names another project or a database other than `postgres` (a `comp_dev` or worktree `compdev_*` database on the production project included), that does not parse or read back as written (percent-encode `/`, `?`, `#` and `@` in the password), that uses port 6543, or that carries a query parameter other than `sslmode` and `connect_timeout` (and `sslaccept` in `DATABASE_MIGRATION_URL`), because pg lets `?user=`, `?host=`, `?port=` and the rest replace what the URL names; a service or forwarded-IP token under 32 characters; a value naming `localhost`, `127.0.0.1` or `host.docker.internal`; an empty value or one with a line break, a NUL or leading or trailing whitespace; a `tr_dev_` key; a value that disagrees with its copy in another env file; a linked worktree as `--source`; a changed `ENCRYPTION_KEY` or `SECRET_KEY` (they encrypt stored credentials and sign sessions, so they never change once set).
 
 Success, dry run: `comp/production/config does not exist yet; the push creates it`, `added (35): ...`, `dry run: nothing written`.
 Success, real run: it prints the `aws secretsmanager create-secret` command (default `aws/secretsmanager` key, tag `Project=comp`, the value from a 0600 temporary file), asks `Type push to write comp/production/config`, and after `push` prints `created comp/production/config version <id>`.
@@ -215,12 +215,13 @@ Success: step 10's sign-in completes; a `redirect_uri_mismatch` page from Google
 deploy/server/release.sh trigger <sha>
 ```
 
-Type `trigger`; it deploys `apps/api`, then `apps/app`, to their prod environments with `npx trigger.dev@4.4.3 deploy --env prod`, in a one-off container of the tools image that runs as the `node` user.
+Type `trigger`; it deploys `apps/api`, then `apps/app`, to their prod environments with the image's `trigger.dev` 4.4.3 CLI (`trigger deploy --env prod`, installed from `bun.lock`, never fetched from npm), in a one-off container of the tools image that runs as the `node` user.
 This is the first run of that path, so watch for:
 
 - A permission error (`EACCES`, `EPERM`, a failed `chown`), most likely from the Prisma extension running `prisma generate` into the root-owned `node_modules/.prisma`.
   Nothing is deployed for that project; the fix belongs in the image (generate that client at build time, or give that one directory to `node`), followed by a release and this step again.
-- A network or build error from `npx` or Trigger.dev's remote build, shown in the log `release.sh` prints.
+- `REFUSING: the image has trigger.dev ...`: the image's CLI is missing or not the pinned version; bump `TRIGGER_CLI` in `deploy/server/on-server/trigger.sh` with `trigger.dev` in both `package.json` files and `bun.lock`.
+- A network or build error from the CLI or Trigger.dev's remote build, shown in the log `release.sh` prints.
 
 Success: the CLI reports a deployed version for each project, and the Trigger.dev dashboard lists it under Deployments, Production.
 Once both are deployed, the laptop that ran the schedules with `COMP_RUN_SCHEDULES_IN_DEV=true` removes that variable (`docs/self-hosting-local.md`, Local runs write production data).

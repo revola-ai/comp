@@ -16,8 +16,16 @@ const REPO_ROOT = join(import.meta.dir, '../../..');
 
 describe('parseKeysFile', () => {
   test('reads NAME and NAME from KEY lines, skipping comments and blank lines', () => {
-    const text = '# comment\nDATABASE_URL\n\nAUTH_SECRET from SECRET_KEY\n  # indented comment\n';
+    const text = '# comment\nDATABASE_URL\n\nAUTH_SECRET from SECRET_KEY\n#last\n';
     expect(parseKeysFile({ text, file: 'x.keys' })).toEqual(['DATABASE_URL', 'SECRET_KEY']);
+  });
+
+  test('refuses an indented comment and surrounding whitespace (keys-grammar.test.ts)', () => {
+    for (const line of ['  # indented comment', ' DATABASE_URL', 'DATABASE_URL ', 'A  from B']) {
+      expect(() => parseKeysFile({ text: `${line}\n`, file: 'x.keys' })).toThrow(
+        'x.keys line 1 is neither NAME nor NAME from KEY',
+      );
+    }
   });
 
   test('refuses a malformed line by file and line number', () => {

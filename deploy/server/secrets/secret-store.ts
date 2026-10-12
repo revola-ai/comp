@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { aws, AwsError, type AwsRunner, stopAwsChildren } from './aws-cli.ts';
+import { aws, AwsError, type AwsRunner, REGION, stopAwsChildren } from './aws-cli.ts';
 import { withPrivateFile } from './private-file.ts';
 
 // comp/production/config through the AWS CLI. The current value is read from the CLI's stdout
@@ -68,7 +68,7 @@ export function awsSecretStore({ run }: { run: AwsRunner }): SecretStore {
       return { kind: 'present', values: values.data };
     },
     describeWrite: ({ create }) =>
-      ['aws', ...writeArgs({ create, file: FILE_PLACEHOLDER }), '--region', 'us-east-2'].join(' '),
+      ['aws', ...writeArgs({ create, file: FILE_PLACEHOLDER }), '--region', REGION].join(' '),
     write: ({ json, create }) =>
       withPrivateFile({
         prefix: 'comp-secret-',

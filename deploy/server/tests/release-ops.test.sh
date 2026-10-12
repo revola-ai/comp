@@ -94,11 +94,15 @@ release_typed "migrate" "$TMP/unpushed.out" migrate "$SHA_C"
 check "migrate <unpushed>: refused before any AWS call" test ! -s "$FAKE_AWS_LOG"
 
 # ---------------------------------------------------------------- trigger
-deploy_line() { # deploy_line <project>: the one-off run that deploys it
+# CLI_CHECK of on-server/trigger.sh, verbatim; the fake docker runs it against a stand-in /repo.
+CLI_CHECK="$(bash -c 'eval "$(grep "^CLI_CHECK=" "$1")"; printf %s "$CLI_CHECK"' _ "$SERVER_DIR/on-server/trigger.sh")"
+deploy_line() { # deploy_line <project>: the one-off run that deploys it with the image's CLI
   local suffix
   suffix="$(tr '[:lower:]' '[:upper:]' <<<"$1")"
-  printf '%s\n' "TAG=$TAG_B $TOOLS -w /repo/apps/$1 trigger sh -c 'export TRIGGER_PROJECT_REF=\"\$TRIGGER_PROJECT_REF_$suffix\"; exec npx --yes trigger.dev@4.4.3 deploy --env prod'"
+  printf '%s\n' "TAG=$TAG_B $TOOLS -e TRIGGER_CLI_VERSION=4.4.3 -w /repo/apps/$1 trigger sh -c '${CLI_CHECK}export TRIGGER_PROJECT_REF=\"\$TRIGGER_PROJECT_REF_$suffix\"; exec \"\$cli\" deploy --env prod'"
 }
+check "trigger: the CLI check reads the image's trigger.dev" \
+  grep -qF '/repo/node_modules/trigger.dev/package.json' <<<"$CLI_CHECK"
 reset_server
 released "$TAG_A"
 release_typed "trigger" "$TMP/trigger.out" trigger "$SHA_B"
@@ -106,6 +110,8 @@ check "trigger: exits zero" test "$?" -eq 0
 check "trigger: asks for the word trigger" grep -qF "Type trigger to deploy" "$TMP/trigger.out"
 check "trigger: deploys api, then app, in the tools image" \
   test "$(grep ' trigger sh -c ' "$FAKE_DOCKER_LOG")" = "$(deploy_line api; deploy_line app)"
+check "trigger: never runs npx or names a registry package" \
+  bash -c "! grep -qE 'npx|trigger\.dev@' '$FAKE_DOCKER_LOG'"
 check "trigger: one SSM command, up to an hour" test "$(ssm_sends):$(ssm_call 1 timeout)" = "1:3600"
 check "trigger: no ref or token on any command line" \
   bash -c "! grep -qE 'fakesecret|TRIGGER_ACCESS_TOKEN=' '$FAKE_DOCKER_LOG' '$FAKE_AWS_LOG'"
@@ -149,7 +155,20 @@ for upstream in "TRIGGER_PROJECT_REF_API proj_zhioyrusqertqgafqgpj" "TRIGGER_PRO
   check "upstream ${upstream% *}: names the key" grep -qF "${upstream% *} is still the upstream" "$TMP/upstream.out"
   check "upstream ${upstream% *}: deploys nothing" bash -c "! grep -q ' trigger sh -c ' '$FAKE_DOCKER_LOG'"
 done
-check "trigger CLI pin equals apps/api and apps/app" test "$(grep -h '"trigger.dev":' "$ROOT/apps/api/package.json" "$ROOT/apps/app/package.json" | sort -u | tr -d ' ,')" = '"trigger.dev":"4.4.3"'
+for image_cli in 4.4.2 missing; do # the image's CLI is not the pinned one: nothing is deployed
+  reset_server
+  released "$TAG_A"
+  FAKE_DOCKER_TRIGGER_CLI="$image_cli" release_typed "trigger" "$TMP/cli-$image_cli.out" trigger "$SHA_B"
+  check "image CLI $image_cli: refused" test "$?" -ne 0
+  check "image CLI $image_cli: names both versions" \
+    grep -qF "REFUSING: the image has trigger.dev $image_cli, not 4.4.3" "$TMP/cli-$image_cli.out"
+  check "image CLI $image_cli: deploys nothing" bash -c "! grep -q 'Successfully deployed' '$TMP/cli-$image_cli.out'"
+  check "image CLI $image_cli: app is not tried" test "$(grep -c ' trigger sh -c ' "$FAKE_DOCKER_LOG")" -eq 1
+  check "image CLI $image_cli: recorded failed" test "$(last_record)" = "trigger $TAG_B failed"
+done
+pin="$(sed -n 's/^TRIGGER_CLI=trigger\.dev@\([^ ]*\) .*/\1/p' "$SERVER_DIR/on-server/trigger.sh")"
+check "TRIGGER_CLI pins a version" test -n "$pin"
+check "TRIGGER_CLI equals trigger.dev in apps/api and apps/app" test "$(grep -h '"trigger.dev":' "$ROOT/apps/api/package.json" "$ROOT/apps/app/package.json" | sort -u | tr -d ' ,')" = "\"trigger.dev\":\"$pin\""
 
 # ---------------------------------------------------------------- prune
 TAG_E=eeeeeeeeeeee TAG_F=ffffffffffff TAG_G=000000000001

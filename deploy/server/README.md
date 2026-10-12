@@ -84,13 +84,15 @@ sudo deploy/server/render-env.sh            # writes /opt/comp/env/<service>.env
 ```
 
 It reads the Secrets Manager secret `comp/production/config` (one JSON object) in `us-east-2` with the instance profile and, for each `env/<service>.keys`, writes `/opt/comp/env/<service>.env` (mode 0600 in a 0700 directory) with exactly the listed keys followed by the lines of `env/<service>.public.env`.
-It checks every service before writing any file, and refuses by name a listed key that is missing from the secret, empty, not a string or containing a line break or a NUL character; on a refusal the previous files stay as they were.
+It checks every service before writing any file, and refuses by name a listed key that is missing from the secret, empty, not a string, containing a line break or a NUL character, or with leading or trailing whitespace; on a refusal the previous files stay as they were.
 It never prints a value, never passes one as a command-line argument and writes each file through a temporary file in the same directory.
 Writes are atomic per file, not per run: an IO failure partway through can leave some files from the new secret and some from the old, so rerun `render-env.sh` until it succeeds before any `up`.
 Env files of a service removed from `env/` are not deleted; remove them by hand.
 `--out-dir DIR` writes elsewhere (the tests use it); compose reads `COMP_ENV_DIR` (default `/opt/comp/env`).
 
 A `.keys` line is a key name, or `NAME from KEY` when the container variable differs from the key in the secret (the app's `AUTH_SECRET from SECRET_KEY`, and each project's `TRIGGER_SECRET_KEY`).
+Names start with a letter and the line has single spaces and nothing around it; besides those, a line is empty or a comment starting with `#` in the first column.
+`push-secrets` and `render-env.sh` read this one grammar (`secrets/keys-grammar.test.ts` runs both over the same lines and the committed files).
 Lines starting with `#` are comments.
 The files are written verbatim, one `NAME=VALUE` per line, and compose reads them with `format: raw`, so a value may contain `$`, quotes, `#` or spaces.
 
@@ -273,7 +275,8 @@ The tools containers run as `node` with `HOME` on a tmpfs at `/tmp`, and can use
 ### trigger
 
 `trigger <sha>` deploys the Trigger.dev tasks of `apps/api`, then `apps/app` (or only `--project api|app`) to their prod environments, after the typed word `trigger`.
-It runs `npx --yes trigger.dev@4.4.3 deploy --env prod` from `/repo/apps/<project>` in a one-off container of `comp-migrate:<sha12>`; the CLI bundles there and builds the deploy image remotely on Trigger.dev.
+It runs `trigger deploy --env prod` from `/repo/apps/<project>` in a one-off container of `comp-migrate:<sha12>`, with the `trigger.dev` CLI `bun.lock` installed in the image (`/repo/node_modules/.bin/trigger`), never one `npx` would fetch from npm; the container refuses before deploying when that CLI is missing or is not the version `TRIGGER_CLI` in `on-server/trigger.sh` pins (which equals `trigger.dev` in `apps/api` and `apps/app` `package.json`).
+The CLI bundles there and builds the deploy image remotely on Trigger.dev.
 `trigger.env` holds `TRIGGER_ACCESS_TOKEN` (a personal access token) and both project refs, which must be in `comp/production/config` before the first `release` (render-env refuses missing keys); the container sets `TRIGGER_PROJECT_REF` from `TRIGGER_PROJECT_REF_API` or `TRIGGER_PROJECT_REF_APP`, which overrides the upstream ref in `trigger.config.ts`; it refuses, before deploying anything, a ref that is still an upstream Comp AI project (`proj_zhioyrusqertqgafqgpj`, `proj_lhxjliiqgcdyqbgtucda`).
 
 The tasks' own env vars are set in the Trigger.dev dashboard (each project, Environment Variables, Production), not by `release.sh`; the list per project is in `docs/self-hosting-server.md`.
