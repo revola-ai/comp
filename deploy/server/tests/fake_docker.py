@@ -14,7 +14,9 @@ trigger_env (the names in trigger.env when a Trigger.dev deploy ran).
 Knobs (environment):
   FAKE_DOCKER_FAIL_UP       `compose up` with one of these TAGs (space-separated) replaces the
                             containers, then fails
-  FAKE_DOCKER_FAIL_BUILD    `buildx bake` of this target fails
+  FAKE_DOCKER_UNHEALTHY_ENV `compose up` with an api.env holding this text replaces the
+                            containers, then fails (a configuration that no longer works)
+  FAKE_DOCKER_FAIL_BUILD   `buildx bake` of this target fails
   FAKE_DOCKER_FAIL_TRIGGER  `trigger.dev deploy` in this apps/<project> fails
   FAKE_DOCKER_TRIGGER_CLI   the trigger.dev version the tools image holds ("missing": none;
                             default: apps/api/package.json's, as bun.lock installs it)
@@ -106,6 +108,11 @@ def compose(args: list[str]) -> NoReturn:
         state['up'] = {'file': compose_file, 'env': env_dir()}
         if current in os.environ.get('FAKE_DOCKER_FAIL_UP', '').split():
             fail('container comp-api-1 is unhealthy')
+        unhealthy = os.environ.get('FAKE_DOCKER_UNHEALTHY_ENV')
+        if unhealthy:
+            with open(os.path.join(env_dir(), 'api.env')) as handle:
+                if unhealthy in handle.read():
+                    fail('container comp-api-1 is unhealthy')
         done('Container comp-api-1 Healthy\nContainer comp-app-1 Healthy\nContainer comp-portal-1 Healthy')
     if command == 'stop':
         state['containers'] = {}

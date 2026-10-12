@@ -21,7 +21,7 @@ SMOKE_SECONDS=$((LEASE_SECONDS / 2))
 SMOKE_DEADLINE=0   # epoch seconds, set by smoke
 # After a finish or revert the server refused (the run's lease ran out, or the lock stayed busy).
 LEASE_HINT="Check deploy/server/release.sh status (a lease it lists is freed with deploy/server/release.sh unlock)"
-UP_SECONDS=1800    # render, migration status, compose up --wait (600 s), a restore's (600 s)
+UP_SECONDS=2400    # render, migration status, compose up --wait (600 s), a restore with the snapshot (600 s) and rendered again (600 s)
 BUILD_SECONDS=7200 # builds of up to four images (the build step, which changes nothing live)
 
 # smoke_one <url> <200|access>: retries until the URL answers 200, or for "access" a 302 to
@@ -86,6 +86,10 @@ after_restore() {
       smoke "$serving" || echo "Its smoke checks still fail: the site may be down (deploy/server/release.sh status)."
       ;;
     4:?*)
+      if [[ "$(result_of restore)" == fresh ]]; then
+        echo "$serving came back with its configuration rendered again from its own commit and the current comp/production/config, not with its snapshot, which failed its health checks (above)."
+        echo "Its snapshot stays as it was: once the cause is clear (a credential revoked since it was released?), release $serving again so its snapshot holds a configuration that works."
+      fi
       if smoke "$serving"; then
         echo "Now serving $serving (it passes the smoke checks); $TAG is not released."
       else
@@ -94,7 +98,11 @@ after_restore() {
       ;;
     5:*) echo "THE SITE IS DOWN: $what and there was no earlier release to bring back." ;;
     6:*)
-      echo "COULD NOT BRING THE PREVIOUS RELEASE BACK: $what, and restoring the release before it failed too (above); the site may be down."
+      if [[ "$(result_of restore)" == fresh-failed ]]; then
+        echo "COULD NOT BRING THE PREVIOUS RELEASE BACK: $what, and restoring the release before it failed too (above), with its snapshot and with its configuration rendered again from the current secret; the site may be down."
+      else
+        echo "COULD NOT BRING THE PREVIOUS RELEASE BACK: $what, and restoring the release before it failed too (above); the site may be down."
+      fi
       echo "Check what serves with: deploy/server/release.sh status"
       ;;
     *) unknown_state "$what" ;;

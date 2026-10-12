@@ -9,7 +9,8 @@
 # keeps it as the tag's snapshot, $COMP_RELEASES/<tag> (keep_snapshot). A refused or failed
 # release drops it, so the snapshots, the running containers and /opt/comp/src stay as they were.
 # Bringing a tag back (a revert, a failed up, a rollback) uses that tag's own snapshot: the env
-# files and compose.yaml it was released and verified with, never newer ones. compose.yaml finds
+# files and compose.yaml it was released and verified with, never newer ones; only when that
+# snapshot fails its health checks does a revert render it again (fresh_config). compose.yaml finds
 # its env files through COMP_ENV_DIR; its build sections (never used here: the stack runs
 # --no-build) resolve against the directory two levels above it, which exists.
 
@@ -17,17 +18,18 @@ use_config() { # use_config <dir>: compose runs with <dir>/compose.yaml and <dir
   COMPOSE_FILE="$1/compose.yaml" COMP_ENV_DIR="$1/env"
 }
 
-# stage_config <dir>: renders this checkout's env files into <dir>/env and keeps its compose.yaml
-# and SHA (COMP_SHA, from entry.sh) beside them; changes nothing live. Fails, saying why.
+# stage_config <dir> <checkout> <sha>: renders the env files of <checkout> (of commit <sha>) into
+# <dir>/env and keeps its compose.yaml and <sha> beside them; changes nothing live. Fails, saying
+# why. A step stages its own checkout ($REPO, $COMP_SHA from entry.sh).
 stage_config() {
-  local dir="$1"
+  local dir="$1" checkout="$2" sha="$3"
   if ! rm -rf "$dir" || ! mkdir -p "$dir" || ! chmod 700 "$dir"; then
     echo "could not create $dir"
     return 1
   fi
-  [[ "${COMP_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || { echo "no full SHA for this checkout (COMP_SHA)"; return 1; }
-  render_env "$dir/env" || return 1
-  if ! (umask 077 && cp "$REPO/deploy/server/compose.yaml" "$dir/compose.yaml" && printf '%s\n' "$COMP_SHA" >"$dir/sha"); then
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "no full SHA for $checkout"; return 1; }
+  render_env "$dir/env" "$checkout" || return 1
+  if ! (umask 077 && cp "$checkout/deploy/server/compose.yaml" "$dir/compose.yaml" && printf '%s\n' "$sha" >"$dir/sha"); then
     echo "could not write $dir/compose.yaml and $dir/sha"
     return 1
   fi
@@ -62,6 +64,26 @@ keep_snapshot() {
   fi
   rm -rf "$old"
   echo "== kept the configuration of $2 as its snapshot ($target)"
+}
+
+# fresh_config <tag> <snapshot> <dir>: renders <tag>'s configuration again into <dir>, for a
+# revert whose snapshot of <tag> no longer comes up: the commit the snapshot records, checked out
+# from its pin (refs/comp/releases/<tag>) in a worktree removed afterwards, with that commit's
+# render-env.sh and compose.yaml, and the current comp/production/config. Fails, saying why.
+fresh_config() {
+  local tag="$1" sha="" tree="$COMP_WORK/fresh-$1" status=0
+  read -r sha <"$2/sha" || true
+  git -C "$COMP_SRC" worktree remove --force "$tree" >/dev/null 2>&1 || rm -rf "$tree" # a stopped step's
+  git -C "$COMP_SRC" worktree prune
+  if ! mkdir -p "$COMP_WORK" || ! git -C "$COMP_SRC" worktree add --quiet --detach "$tree" "refs/comp/releases/$tag" ||
+    [[ "$(git -C "$tree" rev-parse HEAD 2>/dev/null)" != "$sha" ]]; then
+    echo "could not check out $tag's commit ${sha:-?} from refs/comp/releases/$tag in $tree"
+    status=1
+  else
+    stage_config "$3" "$tree" "$sha" || status=1
+  fi
+  git -C "$COMP_SRC" worktree remove --force "$tree" >/dev/null 2>&1 || rm -rf "$tree"
+  return "$status"
 }
 
 # pin_release <tag> <sha>: refs/comp/releases/<tag> in /opt/comp/src points at the released

@@ -42,9 +42,9 @@ up_wait() { # up_wait <tag>: replaces the stack's containers and waits until all
   compose "$1" up -d --no-build --wait --wait-timeout 600
 }
 
-render_env() { # render_env <out-dir>: this checkout's render-env.sh, from comp/production/config
-  echo "== render-env.sh"
-  "$REPO/deploy/server/render-env.sh" --out-dir "$1"
+render_env() { # render_env <out-dir> <checkout>: that checkout's render-env.sh, from comp/production/config
+  echo "== render-env.sh ($2)"
+  "$2/deploy/server/render-env.sh" --out-dir "$1"
 }
 
 missing_images() { # missing_images <tag> <name>...: prints each comp-<name>:<tag> that is not here

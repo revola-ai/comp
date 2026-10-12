@@ -184,6 +184,56 @@ release_typed "no" "$TMP/prune-b.out" prune
 check "once $TAG_B is released, steps without a SHA run its scripts" said "$TMP/prune-b.out" "prune.sh as of B"
 no_secret "snapshots" "$TMP"/*.out
 
+# ---------------------------------------------------------------- a snapshot that no longer comes up: once more, rendered fresh
+# The previous tag's snapshot fails its health checks (a credential in it revoked since): the
+# revert renders that tag's configuration again, from its own pinned commit and the current secret.
+COMPOSE_A="# compose.yaml as $TAG_A has it"
+{ cat "$TMP/tree/deploy/server/compose.yaml"; echo "$COMPOSE_A"; } >"$TMP/compose-a.yaml"
+reset_server
+released "$TAG_D" "$TAG_A"
+overlay "$SHA_A" deploy/server/compose.yaml <"$TMP/compose-a.yaml"
+before="$(fingerprint "$SERVER/releases/$TAG_A")"
+FAKE_DOCKER_UNHEALTHY_ENV="SNAPSHOT_OF=$TAG_A" FAKE_CURL_BAD_TAG="$TAG_B" release_sh "$TMP/fresh.out" release "$SHA_B"
+check "snapshot fails, fresh render works: exits non-zero" test "$?" -ne 0
+check "snapshot fails, fresh render works: $TAG_A up with its snapshot, then with a fresh configuration" \
+  test "$(up_configs)" = "$(lines "$TAG_B up stage" "$TAG_A up releases/$TAG_A" "$TAG_A up stage")"
+check "snapshot fails, fresh render works: from $TAG_A's pinned commit" grep -qxF \
+  "git -C $SERVER/src worktree add --quiet --detach $SERVER/work/fresh-$TAG_A refs/comp/releases/$TAG_A" "$FAKE_GIT_LOG"
+check "snapshot fails, fresh render works: with $TAG_A's own compose.yaml" grep -qxF "$COMPOSE_A" "$(up_state file)"
+check "snapshot fails, fresh render works: with the current secret" \
+  test "$(value_of "$(up_state env)/api.env" RESEND_API_KEY)" = "$(fake_value RESEND_API_KEY)"
+check "snapshot fails, fresh render works: serving $TAG_A, recorded as rolled back fresh" \
+  test "$(serving):$(last_record)" = "comp-api:$TAG_A:release $TAG_B rolled-back-fresh"
+check "snapshot fails, fresh render works: the server reports it" grep -qxF "comp-result: restore=fresh" "$SERVER"/logs/*-revert-"$TAG_B".log
+check "snapshot fails, fresh render works: the laptop says it uses the current secret" said "$TMP/fresh.out" \
+  "$TAG_A came back with its configuration rendered again from its own commit and the current comp/production/config, not with its snapshot, which failed its health checks (above)."
+check "snapshot fails, fresh render works: and passes the smoke checks" said "$TMP/fresh.out" "Now serving $TAG_A (it passes the smoke checks)"
+check "snapshot fails, fresh render works: $TAG_A's snapshot is unchanged" test "$(fingerprint "$SERVER/releases/$TAG_A")" = "$before"
+check "snapshot fails, fresh render works: no checkout left" empty_dir "$SERVER/work"
+
+reset_server
+released "$TAG_D" "$TAG_A"
+FAKE_DOCKER_FAIL_UP="$TAG_B $TAG_A" release_sh "$TMP/fresh-fails.out" release "$SHA_B"
+check "both fail: exits non-zero, recorded failed" test "$?:$(last_record)" = "1:release $TAG_B failed"
+check "both fail: tried the snapshot, then a fresh configuration" \
+  test "$(up_configs)" = "$(lines "$TAG_B up stage" "$TAG_A up releases/$TAG_A" "$TAG_A up stage")"
+check "both fail: the laptop says the site may be down, and what was tried" said "$TMP/fresh-fails.out" \
+  "COULD NOT BRING THE PREVIOUS RELEASE BACK: $TAG_B failed, and restoring the release before it failed too (above), with its snapshot and with its configuration rendered again from the current secret; the site may be down."
+reset_server
+released "$TAG_D" "$TAG_A"
+printf 'KEY_ONLY_A_READS\n' | cat "$TMP/tree/deploy/server/env/api.keys" - | overlay "$SHA_A" deploy/server/env/api.keys
+FAKE_DOCKER_UNHEALTHY_ENV="SNAPSHOT_OF=$TAG_A" FAKE_CURL_BAD_TAG="$TAG_B" release_sh "$TMP/fresh-refused.out" release "$SHA_B"
+check "the fresh render refused: never brought up" test "$(grep -cE ' up -d ' "$FAKE_DOCKER_LOG")" -eq 2
+check "the fresh render refused: the server says both failed" said "$TMP/fresh-refused.out" \
+  "BRINGING $TAG_A BACK FAILED TOO (with its snapshot, and with its configuration rendered again): the site may be down"
+check "the fresh render refused: names the key" said "$TMP/fresh-refused.out" "KEY_ONLY_A_READS is missing from comp/production/config"
+check "the fresh render refused: the laptop says the site may be down" said "$TMP/fresh-refused.out" "COULD NOT BRING THE PREVIOUS RELEASE BACK"
+reset_server
+released "$TAG_A"
+FAKE_DOCKER_UNHEALTHY_ENV="SNAPSHOT_OF=$TAG_A" FAKE_CURL_BAD_TAG="$TAG_A" release_sh "$TMP/same-fresh.out" release "$SHA_A"
+check "the serving tag released again: no fresh render (that is the configuration that failed)" \
+  test "$(up_configs)" = "$(lines "$TAG_A up stage" "$TAG_A up releases/$TAG_A")"
+
 # ---------------------------------------------------------------- staged configurations a stopped step left
 # A migrate or trigger that SSM killed never ran its EXIT trap: its rendered env files stay in
 # /opt/comp/stage until the next step that may change something clears them, under the lock.

@@ -31,7 +31,7 @@ step="$1" tag="$2"
 stage="$COMP_STAGE/${COMP_RUN_ID:?}"
 trap 'rm -rf "$stage"' EXIT
 build_images "$tag" migrate || exit 1
-stage_config "$stage" || exit 1
+stage_config "$stage" "$REPO" "${COMP_SHA:-}" || exit 1
 use_config "$stage"
 migration_status "$tag"
 case "$MIGRATIONS" in

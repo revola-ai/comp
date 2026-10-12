@@ -28,7 +28,7 @@ check "rollback: comes up with the tag's own snapshot" test "$(up_configs)" = "$
 check "rollback: once recorded, /opt/comp/src is at the tag's SHA" test "$(cat "$FAKE_GIT_HEAD")" = "$SHA_A"
 check "rollback: no migration check" bash -c "! grep -q 'run --rm' '$FAKE_DOCKER_LOG'"
 check "rollback: smoke-checked" test -s "$FAKE_CURL_LOG"
-check "rollback: up step allows 30 minutes (two 600 s waits and render)" test "$(ssm_call 2 timeout)" = 1800
+check "rollback: up step allows 40 minutes (three 600 s waits and a render)" test "$(ssm_call 2 timeout)" = 2400
 no_secret "rollback" "$TMP/back.out"
 
 # The serving history is a stack: release pushes, rollback pops back to its tag.

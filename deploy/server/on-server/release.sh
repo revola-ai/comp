@@ -15,14 +15,16 @@
 #                                     /opt/comp/src (these scripts) is not at the serving tag
 #   release.sh finish <action> <sha12>  after the laptop's smoke checks passed: pins a release's
 #                                     commit (refs/comp/releases/<tag>, lib/server-config.sh) and
-#                                     keeps its configuration as the tag's snapshot, records ok and says so
-#                                     (recorded=ok), moves /opt/comp/src to the tag's SHA
-#                                     (checkout=failed when it cannot, which the laptop warns of); after a
-#                                     release, then prunes old images when / is over 70% used, for
+#                                     keeps its configuration as the tag's snapshot, records ok
+#                                     and says so (recorded=ok), moves /opt/comp/src to the tag's
+#                                     SHA (checkout=failed when it cannot: the laptop warns); after
+#                                     a release, then prunes old images when / is over 70% used, for
 #                                     at most 600 s (prune=ok|failed|timed-out), which never fails
 #                                     the step
 #   release.sh revert <action> <sha12>  after they failed: brings the previous tag back with its
-#                                     own snapshot
+#                                     own snapshot, or, when that fails its health checks, with
+#                                     its configuration rendered again from its pinned commit
+#                                     and the current secret (comp-result: restore=snapshot|fresh)
 #   release.sh unlock <action> <sha12>  `release.sh unlock` on the laptop: removes the lease of
 #                                     a run whose laptop stopped (entry.sh checked it is that
 #                                     run's and holds the lock, so no step runs); records it
@@ -31,13 +33,14 @@
 # the previous ok tag back by itself. Before the containers change nothing live does: an up
 # refused before then drops its staged configuration, so the snapshots, the containers and
 # /opt/comp/src stay as they were (comp-result: changed=no). Every attempt adds one line to
-# /opt/comp/releases.log, "<utc> <action> <sha12> ok|failed|rolled-back|unlocked" (migrate.sh
+# /opt/comp/releases.log, "<utc> <action> <sha12> <outcome>", the outcome ok, failed,
+# rolled-back, rolled-back-fresh or unlocked (migrate.sh
 # and trigger.sh add "migrate" and "trigger" lines, ok or failed); the current tag is the top of
 # the serving history (lib/server-common.sh). The serving tag after a step is printed as
 # "comp-result: serving=<tag>" (none: the site is down; unknown: see the log).
-# Exit: 0 done; 1 failed before any container changed (or finish could not keep the
-# configuration); 3 migrations pending or failed; 4 the
-# previous tag serves again; 5 nothing serves (no earlier release); 6 restoring failed too.
+# Exit: 0 done; 1 failed before any container changed (or finish could not pin the commit or
+# keep the configuration); 3 migrations pending or failed; 4 the previous tag serves again; 5
+# nothing serves (no earlier release); 6 restoring failed too.
 # shellcheck source=deploy/server/lib/server-common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/server-common.sh"
 # shellcheck source=deploy/server/lib/server-stack.sh
@@ -85,6 +88,7 @@ restore() {
   if up_wait "$previous"; then
     record "$action" "$tag" rolled-back
     result "serving=$previous"
+    result "restore=snapshot"
     if [[ "$previous" == "$tag" ]]; then
       echo "$tag was already serving: only the env files changed, re-rendered from comp/production/config: a change in the secret is the likely cause; it serves again with the env files of its snapshot."
     else
@@ -92,10 +96,32 @@ restore() {
     fi
     return 4
   fi
+  # A snapshot that no longer comes up (a credential in it revoked since): once more with the
+  # current secret. Not for the serving tag released again: that configuration just failed.
+  local how="with its snapshot"
+  if [[ "$previous" != "$tag" ]]; then
+    restore_fresh "$previous" "$snapshot" && return 4
+    result "restore=fresh-failed"
+    how="with its snapshot, and with its configuration rendered again"
+  fi
   record "$action" "$tag" failed
   result "serving=unknown"
-  echo "BRINGING $previous BACK FAILED TOO: the site may be down; check deploy/server/release.sh status."
+  echo "BRINGING $previous BACK FAILED TOO ($how): the site may be down; check deploy/server/release.sh status."
   return 6
+}
+
+# restore_fresh <previous> <snapshot>: brings <previous> back with its configuration rendered
+# again (fresh_config, lib/server-config.sh) after its snapshot failed its health checks.
+restore_fresh() {
+  local fresh="$COMP_STAGE/${COMP_RUN_ID:-none}-fresh" # cleared by the next step (entry.sh)
+  echo "== $1 did not come back with its snapshot (above); once more with its configuration rendered again: its own commit's render-env.sh and compose.yaml, and the CURRENT comp/production/config"
+  fresh_config "$1" "$2" "$fresh" || { echo "Rendering the configuration of $1 again failed (above)."; return 1; }
+  use_config "$fresh"
+  up_wait "$1" || return 1
+  record "$action" "$tag" rolled-back-fresh
+  result "serving=$1"
+  result "restore=fresh"
+  echo "$1 is serving again, with its configuration rendered again from its own commit and the CURRENT comp/production/config; its snapshot failed its health checks (above) and stays as it was; $tag is not."
 }
 
 # bring_up: replaces the stack with $tag (the chosen configuration); on success holds the lease
@@ -145,7 +171,7 @@ case "$step" in
       missing="$(missing_images "$tag" "${STACK_IMAGES[@]}" migrate)"
       [[ -z "$missing" ]] ||
         failed_before_change 1 "Refusing: missing images: $(tr '\n' ' ' <<<"$missing")(removed since the build step?); release $tag again, which builds them."
-      stage_config "$stage" || failed_before_change 1 "Rendering the configuration of $tag failed (above)."
+      stage_config "$stage" "$REPO" "${COMP_SHA:-}" || failed_before_change 1 "Rendering the configuration of $tag failed (above)."
       use_config "$stage"
       migration_status "$tag"
       [[ "$MIGRATIONS" == up-to-date ]] || failed_before_change 3 "$(migrations_refusal "$tag")"

@@ -74,7 +74,7 @@ check "release: finds the one running comp-server" test "$(sed -n 2p "$FAKE_AWS_
 check "release: three SSM commands (build, up, finish)" test "$(ssm_sends)" -eq 3
 check "release: send-command shape" grep -qE "^aws ssm send-command --instance-ids $INSTANCE --document-name AWS-RunShellScript --comment 'comp release.sh release $TAG_B' --timeout-seconds 600 --parameters '.*' --query Command.CommandId --output text --region us-east-2\$" "$FAKE_AWS_LOG"
 check "release: the build step may take 2 hours" test "$(ssm_call 1 timeout)" = 7200
-check "release: the up step 30 minutes (render, migration status, two 600 s waits)" test "$(ssm_call 2 timeout)" = 1800
+check "release: the up step 40 minutes (two renders, migration status, three 600 s waits)" test "$(ssm_call 2 timeout)" = 2400
 check "release: delivery timeout 600 s" test "$(ssm_call 1 delivery)" = 600
 check "release: step 1 builds from the checkout of the full SHA" grep -qE \
   "^[0-9]{8}T[0-9]{6}Z-build-$TAG_B\.log [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} new $SHA_B build $TAG_B\$" <<<"$(ssm_call 1 args)"

@@ -23,6 +23,7 @@ When a release changes Trigger.dev task code, deploy it too (Trigger.dev below).
 Releasing the SHA that already serves again is how a changed secret reaches the containers: `render-env.sh` re-reads `comp/production/config` and compose recreates the containers whose env changed.
 If that release fails its checks, it says so: only the env files changed, so the secret is the likely cause; the tag serves again with the env files it had before (its snapshot), so fix the secret and release again.
 Every release keeps the configuration it was verified with (env files and `compose.yaml`) as its tag's snapshot, and a failed release brings the previous tag back with its own; a refused release changes nothing on the server.
+When that snapshot no longer comes up (a credential in it was revoked), the previous tag comes back with its configuration rendered from the current secret instead, and `release.sh` says so; release that tag again once the cause is clear.
 
 ### Interrupted releases
 
@@ -129,7 +130,8 @@ It lists what it keeps (the serving tag, the 3 most recent other ok tags, the de
 1. Change the value in the one env file `push-secrets` reads it from (`deploy/server/secrets/keys.ts` names it), in the main checkout, and in every other env file that holds a copy (`push-secrets` refuses copies that disagree).
 2. `bun deploy/server/push-secrets.ts --source <main checkout> --dry-run`, then without `--dry-run`; the diff names the changed keys.
 3. Release the serving SHA again (Release above), so the containers get the new value.
-4. If Trigger.dev tasks use the key (the table in `docs/self-hosting-server.md`), change it in both projects' Production env vars too.
+4. When rotating a credential, verify the release (its smoke checks, and the feature that uses the key) before revoking the old value at the provider: until then a failed release's revert can still bring the previous tag back with its snapshot.
+5. If Trigger.dev tasks use the key (the table in `docs/self-hosting-server.md`), change it in both projects' Production env vars too.
 
 ### Rotating a service token
 
