@@ -74,7 +74,9 @@ export const crosswalkSchema = z
   .superRefine((crosswalk, ctx) => {
     // A csfLinks entry for a control no subcategory maps would become a dead scoped row:
     // syncCsfCrosswalk only reconciles scoped links for controls mapped by >= 1 subcategory.
-    const mappedControlIds = new Set(crosswalk.subcategories.flatMap((s) => s.controls.map((c) => c.id)));
+    const mappedControlIds = new Set(
+      crosswalk.subcategories.flatMap((s) => s.controls.map((c) => c.id)),
+    );
     crosswalk.csfLinks.policies.forEach((link, index) => {
       if (mappedControlIds.has(link.controlTemplateId)) return;
       ctx.addIssue({

@@ -3,8 +3,12 @@ import { isScratchDatabaseUrl } from './scratch-db';
 
 describe('isScratchDatabaseUrl', () => {
   it('accepts a local database whose name ends in _test', () => {
-    expect(isScratchDatabaseUrl('postgresql://postgres:postgres@127.0.0.1:5432/comp_test')).toBe(true);
-    expect(isScratchDatabaseUrl('postgresql://postgres:postgres@localhost:5432/comp_test?schema=public')).toBe(true);
+    expect(isScratchDatabaseUrl('postgresql://postgres:postgres@127.0.0.1:5432/comp_test')).toBe(
+      true,
+    );
+    expect(
+      isScratchDatabaseUrl('postgresql://postgres:postgres@localhost:5432/comp_test?schema=public'),
+    ).toBe(true);
   });
 
   it('rejects the working database', () => {
@@ -13,7 +17,9 @@ describe('isScratchDatabaseUrl', () => {
 
   it('rejects urls where "test" appears outside the database name', () => {
     expect(isScratchDatabaseUrl('postgresql://tester:pw@latest-db.internal:5432/comp')).toBe(false);
-    expect(isScratchDatabaseUrl('postgresql://postgres:pw@127.0.0.1:5432/comp?application_name=test')).toBe(false);
+    expect(
+      isScratchDatabaseUrl('postgresql://postgres:pw@127.0.0.1:5432/comp?application_name=test'),
+    ).toBe(false);
   });
 
   it('rejects prod and staging hosts even with a _test database name', () => {

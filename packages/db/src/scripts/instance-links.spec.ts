@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { execSync } from 'node:child_process';
 import path from 'node:path';
+import { backfillInstanceLinksFromManifests } from '../../prisma/seed/instance-links-from-manifests';
 import { db } from '../client';
 import type { FrameworkManifest } from '../framework-manifest';
 import { CSF_FRAMEWORK_ID, loadCrosswalk } from './csf-crosswalk';
-import { backfillInstanceLinksFromManifests } from '../../prisma/seed/instance-links-from-manifests';
 import { isScratchDatabaseUrl } from './scratch-db';
 
 const isScratchDb = isScratchDatabaseUrl(process.env.DATABASE_URL);
@@ -24,7 +24,13 @@ function runSeed(): void {
   execSync(`bun ${SEED}`, { stdio: 'pipe', env: process.env });
 }
 
-function findManifestControl({ manifest, controlTemplateId }: { manifest: FrameworkManifest; controlTemplateId: string }) {
+function findManifestControl({
+  manifest,
+  controlTemplateId,
+}: {
+  manifest: FrameworkManifest;
+  controlTemplateId: string;
+}) {
   const control = manifest.controls.find((c) => c.id === controlTemplateId);
   if (!control) throw new Error(`Control template ${controlTemplateId} not found in manifest`);
   return control;
@@ -52,8 +58,14 @@ describe.skipIf(!isScratchDb)('instance links from pinned manifests', () => {
     ]);
     const soc2Manifest = soc2Version.manifest as unknown as FrameworkManifest;
     const csfManifest = csfVersion.manifest as unknown as FrameworkManifest;
-    const soc2Control = findManifestControl({ manifest: soc2Manifest, controlTemplateId: CONTROL_TEMPLATE_ID });
-    const csfControl = findManifestControl({ manifest: csfManifest, controlTemplateId: CONTROL_TEMPLATE_ID });
+    const soc2Control = findManifestControl({
+      manifest: soc2Manifest,
+      controlTemplateId: CONTROL_TEMPLATE_ID,
+    });
+    const csfControl = findManifestControl({
+      manifest: csfManifest,
+      controlTemplateId: CONTROL_TEMPLATE_ID,
+    });
 
     // Fixture sanity: the CSF-only task is on the CSF manifest control, not the SOC 2 one.
     expect(loadCrosswalk().csfLinks.tasks).toContainEqual({
@@ -68,20 +80,38 @@ describe.skipIf(!isScratchDb)('instance links from pinned manifests', () => {
 
     const [soc2Instance, csfInstance] = await Promise.all([
       db.frameworkInstance.create({
-        data: { organizationId: org.id, frameworkId: SOC2_FRAMEWORK_ID, currentVersionId: soc2Version.id },
+        data: {
+          organizationId: org.id,
+          frameworkId: SOC2_FRAMEWORK_ID,
+          currentVersionId: soc2Version.id,
+        },
       }),
       db.frameworkInstance.create({
-        data: { organizationId: org.id, frameworkId: CSF_FRAMEWORK_ID, currentVersionId: csfVersion.id },
+        data: {
+          organizationId: org.id,
+          frameworkId: CSF_FRAMEWORK_ID,
+          currentVersionId: csfVersion.id,
+        },
       }),
     ]);
 
     const control = await db.control.create({
-      data: { organizationId: org.id, name: 'Access Rights', description: 'test', controlTemplateId: CONTROL_TEMPLATE_ID },
+      data: {
+        organizationId: org.id,
+        name: 'Access Rights',
+        description: 'test',
+        controlTemplateId: CONTROL_TEMPLATE_ID,
+      },
     });
     const policies = await Promise.all(
       soc2Control.policyIds.map((policyTemplateId) =>
         db.policy.create({
-          data: { organizationId: org.id, name: `policy-${policyTemplateId}`, content: [], policyTemplateId },
+          data: {
+            organizationId: org.id,
+            name: `policy-${policyTemplateId}`,
+            content: [],
+            policyTemplateId,
+          },
         }),
       ),
     );
@@ -91,34 +121,54 @@ describe.skipIf(!isScratchDb)('instance links from pinned manifests', () => {
     const tasks = await Promise.all(
       csfControl.taskIds.map((taskTemplateId) =>
         db.task.create({
-          data: { organizationId: org.id, title: `task-${taskTemplateId}`, description: 'test', taskTemplateId },
+          data: {
+            organizationId: org.id,
+            title: `task-${taskTemplateId}`,
+            description: 'test',
+            taskTemplateId,
+          },
         }),
       ),
     );
     const taskRowByTemplateId = new Map(tasks.map((t) => [t.taskTemplateId as string, t.id]));
-    const policyRowByTemplateId = new Map(policies.map((p) => [p.policyTemplateId as string, p.id]));
+    const policyRowByTemplateId = new Map(
+      policies.map((p) => [p.policyTemplateId as string, p.id]),
+    );
 
     await db.frameworkControlPolicyLink.create({
-      data: { frameworkInstanceId: soc2Instance.id, controlId: control.id, policyId: customPolicy.id },
+      data: {
+        frameworkInstanceId: soc2Instance.id,
+        controlId: control.id,
+        policyId: customPolicy.id,
+      },
     });
 
     await backfillInstanceLinksFromManifests({ prisma: db });
 
-    const expectedSoc2TaskIds = soc2Control.taskIds.map((id) => taskRowByTemplateId.get(id)!).sort();
+    const expectedSoc2TaskIds = soc2Control.taskIds
+      .map((id) => taskRowByTemplateId.get(id)!)
+      .sort();
     const soc2TaskLinks = await db.frameworkControlTaskLink.findMany({
       where: { frameworkInstanceId: soc2Instance.id },
       select: { taskId: true },
     });
     expect(soc2TaskLinks.map((l) => l.taskId).sort()).toEqual(expectedSoc2TaskIds);
-    expect(soc2TaskLinks.map((l) => l.taskId)).not.toContain(taskRowByTemplateId.get(CSF_ONLY_TASK_TEMPLATE_ID));
+    expect(soc2TaskLinks.map((l) => l.taskId)).not.toContain(
+      taskRowByTemplateId.get(CSF_ONLY_TASK_TEMPLATE_ID),
+    );
 
     const csfTaskLinks = await db.frameworkControlTaskLink.findMany({
       where: { frameworkInstanceId: csfInstance.id },
       select: { taskId: true },
     });
-    expect(csfTaskLinks.map((l) => l.taskId)).toContain(taskRowByTemplateId.get(CSF_ONLY_TASK_TEMPLATE_ID));
+    expect(csfTaskLinks.map((l) => l.taskId)).toContain(
+      taskRowByTemplateId.get(CSF_ONLY_TASK_TEMPLATE_ID),
+    );
 
-    const expectedSoc2PolicyIds = [...soc2Control.policyIds.map((id) => policyRowByTemplateId.get(id)!), customPolicy.id].sort();
+    const expectedSoc2PolicyIds = [
+      ...soc2Control.policyIds.map((id) => policyRowByTemplateId.get(id)!),
+      customPolicy.id,
+    ].sort();
     const soc2PolicyLinks = await db.frameworkControlPolicyLink.findMany({
       where: { frameworkInstanceId: soc2Instance.id },
       select: { policyId: true },
@@ -126,13 +176,21 @@ describe.skipIf(!isScratchDb)('instance links from pinned manifests', () => {
     expect(soc2PolicyLinks.map((l) => l.policyId).sort()).toEqual(expectedSoc2PolicyIds);
 
     const countsBefore = await Promise.all([
-      db.frameworkControlTaskLink.count({ where: { frameworkInstanceId: { in: [soc2Instance.id, csfInstance.id] } } }),
-      db.frameworkControlPolicyLink.count({ where: { frameworkInstanceId: { in: [soc2Instance.id, csfInstance.id] } } }),
+      db.frameworkControlTaskLink.count({
+        where: { frameworkInstanceId: { in: [soc2Instance.id, csfInstance.id] } },
+      }),
+      db.frameworkControlPolicyLink.count({
+        where: { frameworkInstanceId: { in: [soc2Instance.id, csfInstance.id] } },
+      }),
     ]);
     await backfillInstanceLinksFromManifests({ prisma: db });
     const countsAfter = await Promise.all([
-      db.frameworkControlTaskLink.count({ where: { frameworkInstanceId: { in: [soc2Instance.id, csfInstance.id] } } }),
-      db.frameworkControlPolicyLink.count({ where: { frameworkInstanceId: { in: [soc2Instance.id, csfInstance.id] } } }),
+      db.frameworkControlTaskLink.count({
+        where: { frameworkInstanceId: { in: [soc2Instance.id, csfInstance.id] } },
+      }),
+      db.frameworkControlPolicyLink.count({
+        where: { frameworkInstanceId: { in: [soc2Instance.id, csfInstance.id] } },
+      }),
     ]);
     expect(countsAfter).toEqual(countsBefore);
 
