@@ -72,7 +72,10 @@ remove_snapshots() {
   stale="$(stale_snapshots)" || return 1
   pins="$(pinned_tags)" || return 1
   for tag in "$@"; do
-    grep -qxF -- "$tag" <<<"$stale" || { echo "skipping the snapshot of $tag: kept now"; continue; }
+    if ! grep -qxF -- "$tag" <<<"$stale"; then
+      if kept_tags | grep -qxF -- "$tag"; then echo "skipping the snapshot of $tag: kept now"; else echo "skipping the snapshot of $tag: gone already"; fi
+      continue
+    fi
     if [[ -e "$COMP_RELEASES/$tag" ]]; then
       if rm -rf "${COMP_RELEASES:?}/$tag"; then echo "removed the snapshot of $tag"; else echo "could not remove the snapshot of $tag"; status=1; fi
     fi

@@ -101,6 +101,8 @@ check "prune apply after a release: skips a planned snapshot kept now" bash -c "
   grep -qxF 'skipping the snapshot of $TAG_F: kept now' '$TMP/late.out'"
 check "prune apply after a release: never removes one it did not plan, though stale now" bash -c "
   test -f '$SERVER/releases/$TAG_D/sha' && grep -q '^refs/comp/releases/$TAG_D ' '$FAKE_GIT_REFS'"
+prune_sh apply "snapshot:$TAG_E" >"$TMP/again.out" 2>&1
+check "prune apply of a snapshot removed since: says it is gone, not kept" grep -qxF "skipping the snapshot of $TAG_E: gone already" "$TMP/again.out"
 reset_server
 released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A" "$TAG_B"
 release_typed "prune" "$TMP/prune-args.out" prune
