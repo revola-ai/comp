@@ -106,9 +106,9 @@ check "release: builds four images one at a time; the up step finds them, checks
   test "$actual_docker" = "$EXPECTED_DOCKER"
 check "release: prisma runs with TLS verified against the CA" \
   grep -qF "sslaccept\",\"strict\")" "$FAKE_DOCKER_LOG"
-check "release: smoke checks the four public URLs" test "$(sort -u "$FAKE_CURL_LOG")" = "$(printf '%s\n' \
-  https://api.comp.revola.ai/v1/health/ready https://app.comp.revola.ai/ \
-  https://app.comp.revola.ai/api/health/live https://portal.comp.revola.ai/api/health)"
+check "release: smoke checks the five public URLs, Access on both hosts last" test "$(cat "$FAKE_CURL_LOG")" = "$(printf '%s\n' \
+  https://api.comp.revola.ai/v1/health/ready https://app.comp.revola.ai/api/health/live \
+  https://portal.comp.revola.ai/api/health https://app.comp.revola.ai/ https://portal.comp.revola.ai/)"
 check "release: serves the new tag" test "$(serving)" = "comp-api:$TAG_B"
 check "release: recorded ok" test "$(last_record)" = "release $TAG_B ok"
 check "release: releases nothing else" test "$(wc -l <"$SERVER/releases.log")" -eq 2
@@ -239,6 +239,12 @@ released "$TAG_A"
 FAKE_CURL_NO_ACCESS=1 release_sh "$TMP/access.out" release "$SHA_B"
 check "Access off: the release is rolled back" test "$(last_record)" = "release $TAG_B rolled-back"
 check "Access off: says the app is not behind Access" grep -qF "cloudflareaccess.com" "$TMP/access.out"
+reset_server
+released "$TAG_A"
+FAKE_CURL_NO_ACCESS=portal release_sh "$TMP/portal-access.out" release "$SHA_B"
+check "Access off on the portal only: the release is rolled back" test "$(last_record)" = "release $TAG_B rolled-back"
+check "Access off on the portal only: names the portal" \
+  grep -qF "FAIL  https://portal.comp.revola.ai/ answered 200" "$TMP/portal-access.out"
 
 reset_server
 released "$TAG_A"

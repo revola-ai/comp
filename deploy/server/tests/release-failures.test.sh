@@ -118,5 +118,27 @@ check "up cannot take the lease: serving the previous tag, recorded as rolled ba
 check "up cannot take the lease: no smoke check of $TAG_B, no finish (build and up only)" test "$(ssm_sends)" -eq 2
 check "up cannot take the lease: says which tag serves" grep -qF "Now serving $TAG_A" "$TMP/nolease.out"
 
+# ---------------------------------------------------------------- slow smoke checks and the lease
+# Every check passes, but only on its 24th try after 23 timeouts (10 s each, 5 s apart): five
+# checks would take about 1,775 s, more than the 1,200 s lease. Time is fake (FAKE_CLOCK).
+reset_server
+released "$TAG_A"
+date +%s >"$TMP/clock"
+FAKE_CLOCK="$TMP/clock" FAKE_CURL_SLOW=23 release_sh "$TMP/slow.out" release "$SHA_B"
+check "slow smoke checks: exits non-zero" test "$?" -ne 0
+check "slow smoke checks: stop at their deadline, half the lease" grep -qF \
+  "when the smoke checks' deadline passed (600 s for all of them: half the 1200-second lease)" "$TMP/slow.out"
+check "slow smoke checks: the revert is accepted under the run's lease" bash -c "! grep -qF 'no longer holds the server' '$TMP/slow.out'"
+check "slow smoke checks: the previous tag serves again" test "$(serving):$(last_record)" = "comp-api:$TAG_A:release $TAG_B rolled-back"
+check "slow smoke checks: no lease left" test ! -e "$SERVER/release.lease"
+check "slow smoke checks: a try never runs past the deadline (curl --max-time is capped)" \
+  bash -c "! grep -qF 'answered 000 on 24 tries' '$TMP/slow.out'"
+reset_server
+released "$TAG_A"
+FAKE_CURL_BAD_TAG="$TAG_B" release_sh "$TMP/bad-api.out" release "$SHA_B"
+check "a failing check says how long it tried, from the constants" \
+  grep -qF "FAIL  https://api.comp.revola.ai/v1/health/ready answered 502 on all 24 tries, 5 seconds apart" "$TMP/bad-api.out"
+check "a failing check never claims 2 minutes" bash -c "! grep -qF 'for 2 minutes' '$TMP/bad-api.out'"
+
 check "shellcheck -x: this suite" bash -c "cd '$ROOT' && shellcheck -x deploy/server/tests/release-failures.test.sh"
 finish

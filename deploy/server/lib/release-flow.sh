@@ -6,39 +6,61 @@
 # steps all name its SHA, so the server runs each from its own checkout of it; a rollback's run
 # from the serving release's checkout.
 
-SMOKE_TRIES=24 # each check, 5 seconds apart: about 2 minutes
+SMOKE_TRIES=24     # tries of each check, SMOKE_PAUSE seconds apart
 SMOKE_PAUSE=5
+SMOKE_MAX_TIME=10  # curl --max-time of one try
+# The checks share one deadline, SMOKE_SECONDS after they start: half the lease the server holds
+# for the run (LEASE_SECONDS, lib/server-common.sh). One check alone may take SMOKE_TRIES *
+# SMOKE_MAX_TIME + (SMOKE_TRIES - 1) * SMOKE_PAUSE = 24 * 10 + 23 * 5 = 355 s, and five of them
+# 1,775 s, past the 1,200 s lease: finish or revert would then be refused (lease expired) and a
+# failing tag would keep serving. No try starts after the deadline, and each try's --max-time and
+# each pause are capped at the time left, so the checks end within SMOKE_SECONDS = 600 s. The
+# other 600 s of the lease cover the poll that saw the up step end (POLL_SECONDS), sending finish
+# or revert, and that step's bounded wait for the server lock (on-server/entry.sh).
+SMOKE_SECONDS=$((LEASE_SECONDS / 2))
+SMOKE_DEADLINE=0   # epoch seconds, set by smoke
 UP_SECONDS=1800    # render, migration status, compose up --wait (600 s), a restore's (600 s)
 BUILD_SECONDS=7200 # builds of up to four images (the build step, which changes nothing live)
 
 # smoke_one <url> <200|access>: retries until the URL answers 200, or for "access" a 302 to
-# Cloudflare Access (proof that Access guards the app); false after SMOKE_TRIES answers.
+# Cloudflare Access (proof that Access guards the host); false after SMOKE_TRIES answers or at
+# the deadline, saying which.
 smoke_one() {
-  local url="$1" want="$2" try answer code location
-  for ((try = 1; try <= SMOKE_TRIES; try++)); do
-    answer="$(curl -sS -o /dev/null --max-time 10 -w '%{http_code} %{redirect_url}' "$url" 2>/dev/null)" || answer="000 "
+  local url="$1" want="$2" try=0 answer code="000" location="" left over
+  while ((try < SMOKE_TRIES)); do
+    left=$((SMOKE_DEADLINE - $(date +%s)))
+    ((left > 0)) || break
+    try=$((try + 1))
+    answer="$(curl -sS -o /dev/null --max-time "$((left < SMOKE_MAX_TIME ? left : SMOKE_MAX_TIME))" \
+      -w '%{http_code} %{redirect_url}' "$url" 2>/dev/null)" || answer="000 "
     code="${answer%% *}" location="${answer#* }"
     if [[ "$want" == 200 && "$code" == 200 ]] ||
       [[ "$want" == access && "$code" == 302 && "$location" =~ ^https://[A-Za-z0-9-]+\.cloudflareaccess\.com(/|$) ]]; then
       echo "  ok    $url ($code)"
       return 0
     fi
-    ((try == SMOKE_TRIES)) || sleep "$SMOKE_PAUSE"
+    left=$((SMOKE_DEADLINE - $(date +%s)))
+    ((try == SMOKE_TRIES || left <= 0)) || sleep "$((left < SMOKE_PAUSE ? left : SMOKE_PAUSE))"
   done
+  over="on all $SMOKE_TRIES tries, $SMOKE_PAUSE seconds apart"
+  ((try == SMOKE_TRIES)) ||
+    over="after $try tries, when the smoke checks' deadline passed ($SMOKE_SECONDS s for all of them: half the $LEASE_SECONDS-second lease)"
   if [[ "$want" == access ]]; then
-    echo "  FAIL  $url answered $code ${location:-} for 2 minutes, not a 302 to <team>.cloudflareaccess.com (is Access off?)"
+    echo "  FAIL  $url answered $code ${location:+$location }$over, not a 302 to <team>.cloudflareaccess.com (is Access off?)"
   else
-    echo "  FAIL  $url answered $code for 2 minutes"
+    echo "  FAIL  $url answered $code $over"
   fi
   return 1
 }
 
 smoke() { # smoke <tag>: the public checks, stopping at the first that fails
   echo "Smoke checks of $1 from this machine:"
+  SMOKE_DEADLINE=$(($(date +%s) + SMOKE_SECONDS))
   smoke_one https://api.comp.revola.ai/v1/health/ready 200 &&
     smoke_one https://app.comp.revola.ai/api/health/live 200 &&
     smoke_one https://portal.comp.revola.ai/api/health 200 &&
-    smoke_one https://app.comp.revola.ai/ access
+    smoke_one https://app.comp.revola.ai/ access &&
+    smoke_one https://portal.comp.revola.ai/ access
 }
 
 # after_restore [what]: reports a server step that ended with the previous tag back (4),

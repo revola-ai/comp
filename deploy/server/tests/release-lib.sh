@@ -4,9 +4,10 @@
 # (tests/fake_aws.py) runs each SSM command at once, locally, with /bin/sh and
 # COMP_ROOT=$SERVER (the server's /opt/comp; src/ holds a copy of deploy/server, which the fake
 # git also writes into each worktree, with a commit's overlays), as SSM would run it as root on
-# the server. docker, git, curl, flock, df, timeout and sleep are fakes on PATH, and
+# the server. docker, git, curl, flock, df, timeout, sleep and date are fakes on PATH, and
 # awk can signal mid-print, so nothing reaches AWS, GitHub, Docker, Trigger.dev, a database or the
-# internet.
+# internet. With FAKE_CLOCK naming a file that holds epoch seconds, time is fake on both sides:
+# `date +%s` answers it, and sleep (and a slow curl, FAKE_CURL_SLOW) advance it instead of waiting.
 
 SHA_A=aaaaaaaaaaaa1111111111111111111111111111 # pushed to the fork; released before the tests start
 SHA_B=bbbbbbbbbbbb2222222222222222222222222222 # pushed to the fork; the release under test
@@ -62,7 +63,13 @@ echo "timeout $*" >>"$FAKE_TIMEOUT_LOG"
 shift
 exec "$@"
 SH
-  chmod 755 "$bin/docker" "$bin/curl" "$bin/flock" "$bin/git" "$bin/df" "$bin/awk" "$bin/timeout"
+  # shellcheck disable=SC2016 # expanded by the fakes when they run
+  printf '%s\n' '#!/usr/bin/env bash' 'echo "$*" >>"$FAKE_AWS_LOG.sleeps"' \
+    '[[ -z "${FAKE_CLOCK:-}" ]] || echo $(($(cat "$FAKE_CLOCK") + ${1%.*})) >"$FAKE_CLOCK"' >"$bin/sleep"
+  # shellcheck disable=SC2016 # expanded by the fakes when they run
+  printf '%s\n' '#!/usr/bin/env bash' \
+    'if [[ "$*" == +%s && -n "${FAKE_CLOCK:-}" ]]; then cat "$FAKE_CLOCK"; else exec /bin/date "$@"; fi' >"$bin/date"
+  chmod 755 "$bin/docker" "$bin/curl" "$bin/flock" "$bin/git" "$bin/df" "$bin/awk" "$bin/timeout" "$bin/sleep" "$bin/date"
   export FAKE_DOCKER_LOG="$TMP/docker.log" FAKE_DOCKER_STATE="$TMP/docker-state.json" \
     FAKE_GIT_LOG="$TMP/git.log" FAKE_GIT_HEAD="$TMP/git-head" FAKE_CURL_LOG="$TMP/curl.log" \
     FAKE_SSM_ROOT="$SERVER" FAKE_AWS_SECRET="$TMP/secret.json" \
@@ -94,7 +101,7 @@ reset_server() {
   unset FAKE_DOCKER_FAIL_UP FAKE_DOCKER_FAIL_BUILD FAKE_DOCKER_FAIL_TRIGGER FAKE_CURL_BAD_TAG \
     FAKE_CURL_NO_ACCESS FAKE_GIT_DIRTY FAKE_SSM_TRUNCATE FAKE_AWS_ACCOUNT FAKE_SSM_END FAKE_GIT_STALE \
     FAKE_AWS_INTERRUPT FAKE_SSM_CANCEL FAKE_CURL_INTERRUPT FAKE_DF_USE FAKE_DOCKER_FAIL_PRUNE \
-    FAKE_AWK_INTERRUPT FAKE_TIMEOUT_EXPIRE FAKE_CURL_BAD_ENV
+    FAKE_AWK_INTERRUPT FAKE_TIMEOUT_EXPIRE FAKE_CURL_BAD_ENV FAKE_CLOCK FAKE_CURL_SLOW
 }
 
 overlay() { # overlay <full sha> <path in the repository>: stdin is that file at <sha> (fake git)
