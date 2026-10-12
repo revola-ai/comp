@@ -28,6 +28,7 @@ cmd_migrate() {
   step migrate-status "$TOOLS_SECONDS" "$run" new "$FULL_SHA" migrate status "$TAG"
   case "$(result_of migrations)" in
     ahead | failed) die "not applying: the status above is not just pending migrations" ;;
+    "") die "the migrate-status step of $TAG stopped before the migration status was read (above); nothing was applied" ;;
   esac
   [[ "$REMOTE_CODE" -eq 0 ]] || die "reading the migration status failed (above)"
   case "$(result_of migrations)" in

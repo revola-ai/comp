@@ -94,6 +94,18 @@ check "migrate, up to date: one SSM command" test "$(ssm_sends)" -eq 1
 
 reset_server
 released "$TAG_A"
+docker_state "s['migrations'] = 'pending'"
+write_fixture "$TMP/secret.json" --drop RESEND_API_KEY
+release_typed "migrate" "$TMP/nokey.out" migrate "$SHA_B"
+check "migrate, a key missing from the secret: refused, never asks" test "$?:$(grep -c 'Type migrate' "$TMP/nokey.out")" = "1:0"
+check "migrate, a key missing from the secret: names it" grep -qF "RESEND_API_KEY is missing from comp/production/config" "$TMP/nokey.out"
+check "migrate, a key missing from the secret: says the status was never read, nothing applied" grep -qF \
+  "the migrate-status step of $TAG_B stopped before the migration status was read (above); nothing was applied" "$TMP/nokey.out"
+check "migrate, a key missing from the secret: never says reading the status failed" \
+  bash -c "! grep -qF 'reading the migration status failed' '$TMP/nokey.out'"
+
+reset_server
+released "$TAG_A"
 docker_state "s['migrations'] = 'failed'"
 release_typed "migrate" "$TMP/failed.out" migrate "$SHA_B"
 check "migrate, a failed migration: refused" test "$?" -ne 0
