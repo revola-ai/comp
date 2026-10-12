@@ -5,6 +5,7 @@
 // because a URL naming production next to another project passes it. Ported from the parked
 // ECS design (revola/aws-infra packages/db/src/production-connection.ts). No Bun-only APIs:
 // prisma.config.ts loads this package's src under Node.
+import { parse } from 'pg-connection-string';
 import {
   connectionCandidates,
   hashProjectRef,
@@ -36,4 +37,27 @@ export function requiredProductionVerdict({
   const production = refs.filter((ref) => hashProjectRef(ref) === target.projectRefSha256);
   if (production.length === 0) return 'not_production';
   return production.length === refs.length ? 'production' : 'mixed';
+}
+
+/**
+ * The production database's name. production-target.json names only the project, so this is
+ * Supabase's default database, as in the parked ECS design (revola/aws-infra
+ * production-connection.ts): a worktree's `compdev_<slug>` or a laptop's `comp_dev` on the
+ * production project is refused as surely as another project.
+ */
+export const PRODUCTION_DATABASE = 'postgres';
+
+/**
+ * Whether the URL names PRODUCTION_DATABASE, read both the way pg reads it
+ * (pg-connection-string) and from the decoded path; false when either cannot be read.
+ */
+export function namesProductionDatabase({ databaseUrl }: { databaseUrl: string }): boolean {
+  if (!URL.canParse(databaseUrl)) return false;
+  try {
+    const parsed = parse(databaseUrl);
+    const path = decodeURIComponent(new URL(databaseUrl).pathname.replace(/^\//, ''));
+    return parsed.database === PRODUCTION_DATABASE && path === PRODUCTION_DATABASE;
+  } catch {
+    return false;
+  }
 }

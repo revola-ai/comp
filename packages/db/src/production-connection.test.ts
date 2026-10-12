@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { requiredProductionVerdict } from './production-connection';
+import { namesProductionDatabase, requiredProductionVerdict } from './production-connection';
 import { hashProjectRef } from './production-target';
 
 const REF = 'abcdefghijklmnopqrst';
@@ -46,5 +46,32 @@ describe('requiredProductionVerdict', () => {
 
   it('is unverifiable when the value is not a URL', () => {
     expect(verdict('not a url')).toBe('unverifiable');
+  });
+});
+
+function namesPostgres(databaseUrl: string): boolean {
+  return namesProductionDatabase({ databaseUrl });
+}
+
+describe('namesProductionDatabase', () => {
+  it('is true for the postgres database', () => {
+    expect(namesPostgres(PROD_POOLER_URL)).toBe(true);
+  });
+
+  it('is false for another database of the production project: a worktree compdev_* or comp_dev', () => {
+    for (const database of ['compdev_feature_x', 'comp_dev', 'postgres_test', 'Postgres', '']) {
+      const url = PROD_POOLER_URL.replace(/\/postgres$/, `/${database}`);
+      expect({ database, names: namesPostgres(url) }).toEqual({ database, names: false });
+    }
+  });
+
+  it('is false without a path, and for a URL pg or URL cannot read', () => {
+    expect(namesPostgres(PROD_POOLER_URL.replace(/\/postgres$/, ''))).toBe(false);
+    expect(namesPostgres(PROD_POOLER_URL.replace(/postgres$/, '%zz'))).toBe(false);
+    expect(namesPostgres('not a url')).toBe(false);
+  });
+
+  it('reads a percent-encoded name the way pg does', () => {
+    expect(namesPostgres(PROD_POOLER_URL.replace(/\/postgres$/, '/%70ostgres'))).toBe(true);
   });
 });
