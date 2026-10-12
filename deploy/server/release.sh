@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Releases Comp to the tunnel server (deploy/server/README.md, Releasing), from a laptop with
+# Releases Comp to the tunnel server (deploy/server/RELEASING.md), from a laptop with
 # AWS credentials for account 455986776194:
 #
 #   deploy/server/release.sh release <sha>                    build, check migrations, up, smoke

@@ -25,7 +25,7 @@ check "Ctrl-C during up: exits non-zero" test "$?" -ne 0
 check "Ctrl-C during up: says so" said "$TMP/up.out" "interrupted (INT)"
 check "Ctrl-C during up: never cancels the up step" test "$(cancels)" -eq 0
 check "Ctrl-C during up: waits for it, then reverts under the same run" grep -qE \
-  "^$LOG_RE $RUN_RE own - release revert release $TAG_B\$" <<<"$(ssm_call 2 args)"
+  "^$LOG_RE $RUN_RE own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 2 args)"
 check "Ctrl-C during up: no finish (up, then revert)" test "$(ssm_sends)" -eq 2
 check "Ctrl-C during up: the new tag came up, then the previous one" test "$(container_changes)" = \
   "$(printf '%s\n' "TAG=$TAG_B $COMPOSE_ARGV $UP" "TAG=$TAG_A $COMPOSE_ARGV $UP")"
@@ -39,14 +39,14 @@ released "$TAG_A"
 FAKE_CURL_INTERRUPT=TERM release_sh "$TMP/smoke.out" release "$SHA_B"
 check "SIGTERM during the smoke checks: exits non-zero" test "$?" -ne 0
 check "SIGTERM during the smoke checks: says so" said "$TMP/smoke.out" "interrupted (TERM)"
-check "SIGTERM during the smoke checks: reverts" grep -qE " own - release revert release $TAG_B\$" <<<"$(ssm_call 2 args)"
+check "SIGTERM during the smoke checks: reverts" grep -qE " own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 2 args)"
 check "SIGTERM during the smoke checks: serving the previous tag" test "$(serving)" = "comp-api:$TAG_A"
 check "SIGTERM during the smoke checks: recorded as rolled back" test "$(last_record)" = "release $TAG_B rolled-back"
 
 reset_server
 FAKE_AWS_INTERRUPT="HUP@fake-command-0" release_sh "$TMP/first.out" release "$SHA_B"
 check "closed terminal during a first release: exits non-zero" test "$?" -ne 0
-check "closed terminal during a first release: reverts" grep -qE " own - release revert release $TAG_B\$" <<<"$(ssm_call 2 args)"
+check "closed terminal during a first release: reverts" grep -qE " own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 2 args)"
 check "closed terminal during a first release: stops the stack" test "$(serving)" = none
 check "closed terminal during a first release: says the site is down" said "$TMP/first.out" "THE SITE IS DOWN"
 check "closed terminal during a first release: recorded as failed" test "$(last_record)" = "release $TAG_B failed"

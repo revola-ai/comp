@@ -23,7 +23,9 @@ check "rollback: serving it" test "$(serving)" = "comp-api:$TAG_A"
 check "rollback: recorded ok" test "$(last_record)" = "rollback $TAG_A ok"
 check "rollback: says what it will do first" grep -qF "Rolling back from $TAG_B to $TAG_A" "$TMP/back.out"
 check "rollback: reads the tags, then up, then finish (3 SSM commands)" test "$(ssm_sends)" -eq 3
-check "rollback: never checks out or builds" bash -c "! grep -qE 'checkout|fetch' '$FAKE_GIT_LOG' && ! grep -q bake '$FAKE_DOCKER_LOG'"
+check "rollback: never fetches or builds" bash -c "! grep -qE 'fetch|worktree add' '$FAKE_GIT_LOG' && ! grep -q bake '$FAKE_DOCKER_LOG'"
+check "rollback: comes up with the tag's own snapshot" test "$(up_configs)" = "$TAG_A up releases/$TAG_A"
+check "rollback: once recorded, /opt/comp/src is at the tag's SHA" test "$(cat "$FAKE_GIT_HEAD")" = "$SHA_A"
 check "rollback: no migration check" bash -c "! grep -q 'run --rm' '$FAKE_DOCKER_LOG'"
 check "rollback: smoke-checked" test -s "$FAKE_CURL_LOG"
 check "rollback: up step allows 30 minutes (two 600 s waits and render)" test "$(ssm_call 2 timeout)" = 1800
@@ -184,6 +186,7 @@ release_sh "$TMP/status.out" status
 check "status: exits zero" test "$?" -eq 0
 check "status: current tag" grep -qF "current: $TAG_A" "$TMP/status.out"
 check "status: previous tag" grep -qF "previous: $TAG_D" "$TMP/status.out"
+check "status: the tags with a snapshot" grep -qxF "snapshots (rollback targets, with their images): $TAG_A $TAG_D" "$TMP/status.out"
 check "status: last releases" grep -qF "release $TAG_D ok" "$TMP/status.out"
 check "status: container health" grep -qF "(healthy)" "$TMP/status.out"
 check "status: disk use of /" grep -qE "^Filesystem" "$TMP/status.out"

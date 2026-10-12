@@ -13,8 +13,11 @@ COMP_REPO_URL=https://github.com/revola-ai/comp
 RELEASE_BRANCH=revola/self-host # releases, migrations and Trigger.dev deploys come only from it
 # COMP_ROOT is /opt/comp on the server (the tests point it at a sandbox).
 COMP_ROOT="${COMP_ROOT:-/opt/comp}"
-COMP_SRC="$COMP_ROOT/src"            # the checkout user-data.sh cloned
-COMP_ENV_DIR="$COMP_ROOT/env"        # render-env.sh output, read by compose
+COMP_SRC="$COMP_ROOT/src"            # the checkout of the serving release (user-data.sh cloned it)
+COMP_WORK="$COMP_ROOT/work"          # a step with a SHA runs from a worktree of it here, removed after
+COMP_RELEASES="$COMP_ROOT/releases"  # a snapshot per released tag: sha, compose.yaml, env/ (0700/0600)
+COMP_STAGE="$COMP_ROOT/stage"        # a run's rendered configuration, until it is kept or dropped
+LEGACY_ENV_DIR="$COMP_ROOT/env"      # where releases rendered the env files before snapshots
 COMP_LOGS="$COMP_ROOT/logs"          # one root-only log per release.sh step
 RELEASES_LOG="$COMP_ROOT/releases.log"
 RELEASE_LOCK="$COMP_ROOT/release.lock"
@@ -37,6 +40,15 @@ root_use_percent() { df -P / | awk 'NR == 2 { sub(/%$/, "", $5); print $5 }'; }
 
 # record <action> <sha12> <outcome>: one line per attempt in releases.log.
 record() { printf '%s %s %s %s\n' "$(utc_now)" "$1" "$2" "$3" >>"$RELEASES_LOG"; }
+
+# readable_tree <dir>: every file and directory of a checkout (not .git, never through a
+# symlink) world-readable, so the images' node user can read what BuildKit copies; it also heals
+# a tree an earlier run checked out under umask 077.
+readable_tree() {
+  find "$1" -path "$1/.git" -prune -o ! -type l -exec chmod a+rX {} + && return 0
+  echo "could not make $1 world-readable"
+  return 1
+}
 
 # serving_stack: the serving history, top (the current tag) first. Read from the ok lines of
 # releases.log in order: `release X ok` pushes X (unless X is on top already), `rollback X ok`

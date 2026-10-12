@@ -3,7 +3,8 @@
 # `logs --release`. release.sh sends lib/server-common.sh and this file as the text of one SSM
 # command; it runs as root, takes no lock and writes nothing:
 #
-#   status.sh show                 current and previous tag, the lease, the comp containers with
+#   status.sh show                 current and previous tag, the tags with a snapshot (what
+#                                  rollback can bring back), the lease, the comp containers with
 #                                  their health, the last 10 lines of releases.log, disk use of /
 #                                  (with a warning line above 70%)
 #   status.sh tags                 only comp-result: current=... and previous=...
@@ -21,6 +22,11 @@ set -uo pipefail
 show() {
   echo "current: $(current_tag)"
   echo "previous: $(previous_tag)"
+  local dir snapshots=""
+  for dir in "$COMP_RELEASES"/*; do
+    [[ -d "$dir" && "${dir##*/}" =~ $TAG_RE ]] && snapshots+=" ${dir##*/}"
+  done
+  echo "snapshots (rollback targets, with their images):${snapshots:- none}"
   if lease_live; then
     echo "between steps: $LEASE_WHAT (run $LEASE_HOLDER), for up to $((LEASE_EXPIRES - $(date +%s))) more seconds"
   fi

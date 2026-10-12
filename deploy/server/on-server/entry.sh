@@ -11,15 +11,18 @@
 # 2. Checks the lease a release keeps between its steps (while the laptop runs the smoke
 #    checks): "new" refuses while another run holds it, "own" needs it to be <run-id>'s.
 # 3. Writes everything after this to /opt/comp/logs/<log-name> (0600 in a 0700 directory).
-# 4. With a sha: fetches every branch of the fork (by its URL, COMP_REPO_URL) into
-#    /opt/comp/src, refuses a sha its RELEASE_BRANCH lacks (release.sh checked it too; this
-#    holds when the step is run some other way), refuses local changes, and checks the sha out
-#    detached, under umask 022
-#    (the public source is not secret, and the images' node user must read what BuildKit
-#    copies); then makes every file and directory of the checkout (not .git, never through a
-#    symlink) world-readable, which also heals a tree an earlier run checked out under umask
-#    077. Logs, env files, lock and lease stay 077.
-# 5. Runs deploy/server/on-server/<script>.sh [args...] from the checkout, with COMP_RUN_ID.
+# 4. With a sha, the step runs from its own checkout of it, /opt/comp/work/<sha12> (a git
+#    worktree of /opt/comp/src, removed after the step), so /opt/comp/src itself stays at the
+#    serving release (a release's finish moves it). A "new" step first fetches every branch of
+#    the fork (by its URL, COMP_REPO_URL), refuses a sha its RELEASE_BRANCH lacks (release.sh
+#    checked it too; this holds when the step is run some other way) and refuses local changes
+#    in /opt/comp/src; an "own" step (finish, revert) reuses what its run fetched. The worktree
+#    is written under umask 022 (the public source is not secret, and the images' node user
+#    must read what BuildKit copies), then made world-readable (readable_tree). Logs, env
+#    files, snapshots, lock and lease stay 077. Without a sha, the step runs from /opt/comp/src:
+#    the scripts of the serving release.
+# 5. Runs deploy/server/on-server/<script>.sh [args...] from that checkout, with COMP_RUN_ID and
+#    COMP_SHA (the full sha, or empty).
 # 6. Prints the end of the log (200 lines, at most 20000 bytes: SSM keeps 24000 characters),
 #    then the lines release.sh reads (see `meta`), and exits with the script's status.
 # Exit 75: the lock or the lease belongs to another run; nothing was done. Whenever a step
@@ -67,9 +70,8 @@ elif [[ "$lease_mode" == own ]]; then
 fi
 [[ ! -e "$log" ]] || refuse 1 "$log exists already; rerun the command"
 
-checkout() { # checkout <sha>: the full checkout at <sha>, or a refusal (run in a subshell)
-  local changes head
-  umask 022
+fetch_checked() { # fetch_checked <sha>: a new step's fetch and checks, or a refusal
+  local changes
   git -C "$COMP_SRC" fetch --quiet "$COMP_REPO_URL" '+refs/heads/*:refs/remotes/origin/*' || {
     echo "git fetch in $COMP_SRC failed"
     return 1
@@ -83,33 +85,54 @@ checkout() { # checkout <sha>: the full checkout at <sha>, or a refusal (run in 
     printf 'refusing: %s has local changes (commit or discard them by hand):\n%s\n' "$COMP_SRC" "$changes"
     return 1
   fi
-  git -C "$COMP_SRC" checkout --quiet --detach "$1" || return 1
-  head="$(git -C "$COMP_SRC" rev-parse HEAD)" || return 1
-  [[ "$head" == "$1" ]] || { echo "the checkout is at $head, not $1"; return 1; }
-  find "$COMP_SRC" -path "$COMP_SRC/.git" -prune -o ! -type l -exec chmod a+rX {} + || {
-    echo "could not make $COMP_SRC world-readable"
+}
+
+remove_worktrees() { # the step checkouts in /opt/comp/work (this step's, or those of steps cut short)
+  local tree
+  for tree in "$COMP_WORK"/*; do
+    [[ -e "$tree" ]] || continue
+    git -C "$COMP_SRC" worktree remove --force "$tree" >/dev/null 2>&1 || rm -rf "$tree"
+  done
+  git -C "$COMP_SRC" worktree prune
+}
+
+step_checkout() { # step_checkout <sha> <dir>: the step's checkout of <sha>, or a refusal (subshell)
+  local head
+  umask 022
+  [[ "$lease_mode" == own ]] || fetch_checked "$1" || return 1
+  remove_worktrees
+  if ! mkdir -p "$COMP_WORK" || ! git -C "$COMP_SRC" worktree add --quiet --detach "$2" "$1"; then
+    echo "could not check $1 out in $2"
     return 1
-  }
-  echo "== checked out $1 in $COMP_SRC"
+  fi
+  head="$(git -C "$2" rev-parse HEAD)" || return 1
+  [[ "$head" == "$1" ]] || { echo "the checkout in $2 is at $head, not $1"; return 1; }
+  readable_tree "$2" || return 1
+  echo "== checked out $1 in $2"
 }
 
 run_step() {
   echo "== $script $* (run $run_id, $(utc_now))"
-  if [[ "$sha" != - ]] && ! (checkout "$sha"); then
-    result "changed=no"
-    return 1
+  local tree="$COMP_SRC"
+  if [[ "$sha" != - ]]; then
+    tree="$COMP_WORK/${sha:0:12}"
+    if ! (step_checkout "$sha" "$tree"); then
+      result "changed=no"
+      return 1
+    fi
   fi
-  local path="$COMP_SRC/deploy/server/on-server/$script.sh"
+  local path="$tree/deploy/server/on-server/$script.sh"
   if [[ ! -f "$path" ]]; then
-    echo "$COMP_SRC has no deploy/server/on-server/$script.sh; release a commit that has it first"
+    echo "$tree has no deploy/server/on-server/$script.sh; release a commit that has it first"
     result "changed=no"
     return 1
   fi
-  cd "$COMP_SRC" && COMP_RUN_ID="$run_id" bash "$path" "$@"
+  (cd "$tree" && COMP_RUN_ID="$run_id" COMP_SHA="${sha#-}" bash "$path" "$@")
 }
 
 status=0
 run_step "$@" >"$log" 2>&1 </dev/null || status=$?
+[[ "$sha" == - ]] || remove_worktrees >>"$log" 2>&1 </dev/null
 tail -n 200 "$log" | tail -c 20000
 [[ -z "$(tail -c 1 "$log")" ]] || echo # so comp-meta-begin starts a line
 meta "$status" "$log"

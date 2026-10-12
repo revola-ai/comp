@@ -11,7 +11,7 @@
 # keeps running; a lease left behind on the server is removed with `release.sh unlock`.
 
 STAGE=""               # up: the up step may be in flight; verify: it succeeded; done: reporting
-UP_RUN="" UP_ACTION="" # the run and the action (release or rollback) of that up step
+UP_RUN="" UP_ACTION="" UP_SHA="" # the run, the action (release or rollback) and SHA (or -) of that up step
 READ_ONLY_STEPS='^(status|migrate-status|prune-plan)$' # what an interrupt may cancel
 TOOLS_POLLS=$(((TOOLS_SECONDS + DELIVERY_SECONDS + 300) / POLL_SECONDS)) # migrate, trigger, prune
 
@@ -118,7 +118,7 @@ after_up_ended() { # the up step ended (REMOTE_*): revert it, or say why there i
 revert_now() { # brings the previous release back under the run's lease; never returns
   STAGE=done
   echo "Bringing the previous release back (the revert step)."
-  step revert "$UP_SECONDS" "$UP_RUN" own - release revert "$UP_ACTION" "$TAG"
+  step revert "$UP_SECONDS" "$UP_RUN" own "$UP_SHA" release revert "$UP_ACTION" "$TAG"
   after_restore "$TAG was interrupted"
 }
 

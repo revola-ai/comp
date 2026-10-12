@@ -1,20 +1,25 @@
 #!/usr/bin/env bash
 # Server side of `deploy/server/release.sh trigger`, run as root by on-server/entry.sh (which
-# holds the server lock) from /opt/comp/src checked out at the commit:
+# holds the server lock) from its worktree of the commit:
 #
 #   trigger.sh <sha12> <api|app>...
 #
 # Deploys each project's Trigger.dev tasks to its prod environment, in that order, with the
 # pinned CLI in a one-off container of comp-migrate:<sha12> (built when missing), from
-# /repo/apps/<project>. The CLI builds remotely by default. Its env comes from trigger.env:
+# /repo/apps/<project>. The CLI builds remotely by default. Its env comes from the trigger.env of
+# the commit's configuration, rendered into /opt/comp/stage/<run-id> and removed when the step
+# ends (nothing live changes and /opt/comp/src stays at the serving release):
 # TRIGGER_ACCESS_TOKEN, and TRIGGER_PROJECT_REF set from TRIGGER_PROJECT_REF_<API|APP> inside
 # the container, which overrides the upstream ref in trigger.config.ts; no value is ever on a
 # command line. Refuses before deploying anything when a ref is still an upstream Comp AI
-# project. The tasks' own env vars live in the Trigger.dev dashboard (README, Releasing).
+# project. The tasks' own env vars live in the Trigger.dev dashboard (deploy/server/RELEASING.md,
+# trigger).
 # shellcheck source=deploy/server/lib/server-common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/server-common.sh"
 # shellcheck source=deploy/server/lib/server-stack.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/server-stack.sh"
+# shellcheck source=deploy/server/lib/server-config.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/server-config.sh"
 set -uo pipefail
 
 TRIGGER_CLI=trigger.dev@4.4.3 # equals "trigger.dev" in apps/api and apps/app package.json
@@ -31,8 +36,11 @@ for project in "$@"; do
   [[ "$project" == api || "$project" == app ]] || usage
 done
 
+stage="$COMP_STAGE/${COMP_RUN_ID:?}"
+trap 'rm -rf "$stage"' EXIT
 build_images "$tag" migrate || exit 1
-render_env || exit 1
+stage_config "$stage" || exit 1
+use_config "$stage"
 
 for project in "$@"; do # every ref is checked before anything is deployed
   name="TRIGGER_PROJECT_REF_${project^^}"

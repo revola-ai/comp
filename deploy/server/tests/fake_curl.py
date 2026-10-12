@@ -5,7 +5,9 @@ It answers `curl ... -w '%{http_code} %{redirect_url}' URL` from the fake docker
 health routes answer 200 while the stack's containers run a tag other than
 $FAKE_CURL_BAD_TAG, and 502 (Cloudflare's answer for a dead origin) otherwise. The app's root
 answers Cloudflare Access's 302 at the edge whatever the server does, unless
-$FAKE_CURL_NO_ACCESS is set (200: Access is off). Every URL is appended to $FAKE_CURL_LOG.
+$FAKE_CURL_NO_ACCESS is set (200: Access is off). With $FAKE_CURL_BAD_ENV set, the health
+routes also answer 502 while the api.env the containers run with (the fake docker state's
+"up") holds that text: a bad secret. Every URL is appended to $FAKE_CURL_LOG.
 With $FAKE_CURL_INTERRUPT set to INT, TERM or HUP, the first check sends that signal to the
 process group (the laptop's release.sh, as a Ctrl-C would) and dies of it.
 """
@@ -37,7 +39,10 @@ if url == 'https://app.comp.revola.ai/':
     sys.exit(0)
 
 with open(os.environ['FAKE_DOCKER_STATE']) as handle:
-    containers = json.load(handle).get('containers', {})
-serving = containers.get('api', ':').split(':', 1)[1]
+    docker = json.load(handle)
+serving = docker.get('containers', {}).get('api', ':').split(':', 1)[1]
 healthy = bool(serving) and serving != os.environ.get('FAKE_CURL_BAD_TAG')
+if healthy and os.environ.get('FAKE_CURL_BAD_ENV'):
+    with open(os.path.join(docker['up']['env'], 'api.env')) as handle:
+        healthy = os.environ['FAKE_CURL_BAD_ENV'] not in handle.read()
 print('200 ' if healthy else '502 ', end='')

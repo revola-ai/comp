@@ -56,7 +56,7 @@ cmd_trigger() {
   echo "Deploying Trigger.dev prod for ${projects[*]} (in that order) from $TAG on $INSTANCE_ID:"
   echo "npx trigger.dev@4.4.3 deploy --env prod in a one-off comp-migrate:$TAG container, with"
   echo "TRIGGER_ACCESS_TOKEN and TRIGGER_PROJECT_REF_<API|APP> from comp/production/config."
-  echo "The tasks' env vars come from the Trigger.dev dashboard (README, Releasing)."
+  echo "The tasks' env vars come from the Trigger.dev dashboard (deploy/server/RELEASING.md, trigger)."
   if ! confirmed trigger "Type trigger to deploy: "; then
     die "Not deployed."
   fi

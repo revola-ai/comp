@@ -1,10 +1,13 @@
 # shellcheck shell=bash
 # The compose stack and the images, for the scripts in deploy/server/on-server/ (sourced after
-# lib/server-common.sh, never run on its own). Runs as root on the server, from the checkout
-# in /opt/comp/src; REPO is that checkout.
+# lib/server-common.sh, never run on its own). Runs as root on the server, from a checkout (a
+# step's worktree of its SHA, or /opt/comp/src); REPO is that checkout.
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-COMPOSE_FILE="$REPO/deploy/server/compose.yaml"
 BAKE_FILE=deploy/aws/docker-bake.hcl # relative to REPO, where bake runs
+# The configuration compose runs with (use_config in lib/server-config.sh picks a snapshot or a
+# staged one): its compose.yaml and env files. Until one is picked, compose refuses to run.
+COMPOSE_FILE="$REPO/deploy/server/compose.yaml"
+COMP_ENV_DIR=""
 
 # The URL Prisma's schema engine reads, with TLS verified against the image's Supabase CA:
 # sslmode=require (TLS or no connection), sslcert=<the CA> (the root it verifies against) and
@@ -15,10 +18,14 @@ BAKE_FILE=deploy/aws/docker-bake.hcl # relative to REPO, where bake runs
 # shellcheck disable=SC2016 # expanded by the container's shell
 VERIFIED_URL='url="$(node -e '"'"'let u; try { u = new URL(process.env.DATABASE_URL); } catch { console.error("DATABASE_URL in migrate.env is not a valid URL"); process.exit(1); } u.searchParams.delete("sslrootcert"); u.searchParams.set("sslmode","require"); u.searchParams.set("sslcert",process.env.DATABASE_SSL_CA); u.searchParams.set("sslaccept","strict"); process.stdout.write(u.toString())'"'"')" && export DATABASE_URL="$url" && '
 
-# compose <tag> <compose args...>: compose of this checkout with TAG=<tag>, as root.
+# compose <tag> <compose args...>: compose of the chosen configuration with TAG=<tag>, as root.
 compose() {
   local tag="$1"
   shift
+  if [[ -z "$COMP_ENV_DIR" ]]; then
+    echo "no configuration chosen for compose (use_config); refusing to run it"
+    return 1
+  fi
   env TAG="$tag" COMP_ENV_DIR="$COMP_ENV_DIR" docker compose -f "$COMPOSE_FILE" "$@"
 }
 
@@ -35,9 +42,9 @@ up_wait() { # up_wait <tag>: replaces the stack's containers and waits until all
   compose "$1" up -d --no-build --wait --wait-timeout 600
 }
 
-render_env() {
+render_env() { # render_env <out-dir>: this checkout's render-env.sh, from comp/production/config
   echo "== render-env.sh"
-  "$REPO/deploy/server/render-env.sh" --out-dir "$COMP_ENV_DIR"
+  "$REPO/deploy/server/render-env.sh" --out-dir "$1"
 }
 
 missing_images() { # missing_images <tag> <name>...: prints each comp-<name>:<tag> that is not here

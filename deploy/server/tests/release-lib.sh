@@ -2,8 +2,9 @@
 # Shared setup of deploy/server/tests/release*.test.sh (sourced after tests/lib.sh, never run).
 # One sandbox plays both machines. The laptop runs deploy/server/release.sh; the fake aws
 # (tests/fake_aws.py) runs each SSM command at once, locally, with /bin/sh and
-# COMP_ROOT=$SERVER (the server's /opt/comp; src/ holds a copy of deploy/server), as SSM would run
-# it as root on the server. docker, git, curl, flock, df, timeout and sleep are fakes on PATH, and
+# COMP_ROOT=$SERVER (the server's /opt/comp; src/ holds a copy of deploy/server, which the fake
+# git also writes into each worktree, with a commit's overlays), as SSM would run it as root on
+# the server. docker, git, curl, flock, df, timeout and sleep are fakes on PATH, and
 # awk can signal mid-print, so nothing reaches AWS, GitHub, Docker, Trigger.dev, a database or the
 # internet.
 
@@ -18,7 +19,7 @@ TAG_A="${SHA_A:0:12}" TAG_B="${SHA_B:0:12}" TAG_C="${SHA_C:0:12}" TAG_D="${SHA_D
 INSTANCE=i-0fake000000000001
 SERVER="$TMP/server"
 TUNNEL_REF='cloudflare/cloudflared:<none>' # how `docker image ls` shows a digest-pinned pull
-COMPOSE_ARGV="docker compose -f $SERVER/src/deploy/server/compose.yaml"
+COMPOSE_ARGV="docker compose -f CONFIG" # any compose file, as docker_log shows it
 
 install_release_fakes() {
   install_fake_aws
@@ -67,7 +68,8 @@ SH
     FAKE_SSM_ROOT="$SERVER" FAKE_AWS_SECRET="$TMP/secret.json" \
     FAKE_AWK_COUNT="$TMP/awk-count" FAKE_TIMEOUT_LOG="$TMP/timeout.log" \
     FAKE_GIT_COMMITS="$SHA_A $SHA_B $SHA_C $SHA_D $SHA_U $SHA_X" FAKE_GIT_PUSHED="$SHA_A $SHA_B $SHA_D $SHA_X" \
-    FAKE_GIT_SELF_HOST="$SHA_A $SHA_B $SHA_D" FAKE_GIT_UPSTREAM="$SHA_U"
+    FAKE_GIT_SELF_HOST="$SHA_A $SHA_B $SHA_D" FAKE_GIT_UPSTREAM="$SHA_U" \
+    FAKE_GIT_TREE="$TMP/tree" FAKE_GIT_OVERLAYS="$TMP/overlays"
   mkdir -p "$TMP/cwd"
 }
 
@@ -75,9 +77,10 @@ SH
 # cloudflared image), an account with one running comp-server, the full fake secret, and
 # empty call logs; knobs from an earlier case are cleared.
 reset_server() {
-  rm -rf "$SERVER"
-  mkdir -p "$SERVER/src/deploy"
-  cp -Rp "$SERVER_DIR" "$SERVER/src/deploy/"
+  rm -rf "$SERVER" "$TMP/tree" "$TMP/overlays"
+  mkdir -p "$SERVER/src" "$TMP/tree/deploy"
+  cp -Rp "$SERVER_DIR" "$TMP/tree/deploy/"
+  cp -Rp "$TMP/tree/." "$SERVER/src/"
   write_fixture "$TMP/secret.json"
   printf '{"instances": ["%s"]}\n' "$INSTANCE" >"$FAKE_AWS_STATE"
   printf '{"images": ["%s"], "containers": {}, "migrations": "up-to-date"}\n' "$TUNNEL_REF" \
@@ -91,7 +94,34 @@ reset_server() {
   unset FAKE_DOCKER_FAIL_UP FAKE_DOCKER_FAIL_BUILD FAKE_DOCKER_FAIL_TRIGGER FAKE_CURL_BAD_TAG \
     FAKE_CURL_NO_ACCESS FAKE_GIT_DIRTY FAKE_SSM_TRUNCATE FAKE_AWS_ACCOUNT FAKE_SSM_END FAKE_GIT_STALE \
     FAKE_AWS_INTERRUPT FAKE_SSM_CANCEL FAKE_CURL_INTERRUPT FAKE_DF_USE FAKE_DOCKER_FAIL_PRUNE \
-    FAKE_AWK_INTERRUPT FAKE_TIMEOUT_EXPIRE
+    FAKE_AWK_INTERRUPT FAKE_TIMEOUT_EXPIRE FAKE_CURL_BAD_ENV
+}
+
+overlay() { # overlay <full sha> <path in the repository>: stdin is that file at <sha> (fake git)
+  mkdir -p "$(dirname "$TMP/overlays/$1/$2")"
+  cat >"$TMP/overlays/$1/$2"
+}
+
+full_sha() { # full_sha <tag>: the SHA of a tag of this file, or the tag padded with zeros
+  local sha
+  for sha in "$SHA_A" "$SHA_B" "$SHA_C" "$SHA_D" "$SHA_U" "$SHA_X"; do
+    [[ "${sha:0:12}" != "$1" ]] || { echo "$sha"; return; }
+  done
+  printf '%s0000000000000000000000000000\n' "$1"
+}
+
+# snapshot <tag>: the configuration <tag> was released with, as on-server/release.sh keeps it:
+# releases/<tag>/ with its SHA, compose.yaml and an env file per service ("SNAPSHOT_OF=<tag>").
+snapshot() {
+  local dir="$SERVER/releases/$1" name
+  mkdir -p "$dir/env"
+  full_sha "$1" >"$dir/sha"
+  cp -f "$TMP/tree/deploy/server/compose.yaml" "$dir/compose.yaml"
+  for name in api app portal cloudflared migrate trigger; do
+    printf 'SNAPSHOT_OF=%s\n' "$1" >"$dir/env/$name.env"
+  done
+  chmod 700 "$SERVER/releases" "$dir" "$dir/env"
+  chmod 600 "$dir/sha" "$dir/compose.yaml" "$dir"/env/*.env
 }
 
 docker_state() { # docker_state <python statements over `s`>: edits the fake docker state
@@ -102,16 +132,20 @@ exec(sys.argv[2])
 json.dump(s, open(path, "w"), indent=1)' "$FAKE_DOCKER_STATE" "$1"
 }
 
-# released <tag>...: each tag was released before (its four images exist and releases.log
-# has an ok line for it, oldest first); the last one is serving.
+# released <tag>...: each tag was released before (its four images and its snapshot exist and
+# releases.log has an ok line for it, oldest first); the last one is serving, with its snapshot,
+# and /opt/comp/src is at its SHA.
 released() {
   local tag
   for tag in "$@"; do
     docker_state "s['images'] += ['comp-api:$tag', 'comp-app:$tag', 'comp-portal:$tag', 'comp-migrate:$tag']"
     printf '2026-10-01T00:00:00Z release %s ok\n' "$tag" >>"$SERVER/releases.log"
+    snapshot "$tag"
   done
   docker_state "s['containers'] = {n: f'comp-{n}:$tag' for n in ('api', 'app', 'portal')}
-s['containers']['cloudflared'] = 'docker.io/cloudflare/cloudflared:2026.10.0@sha256:fake'"
+s['containers']['cloudflared'] = 'docker.io/cloudflare/cloudflared:2026.10.0@sha256:fake'
+s['up'] = {'file': '$SERVER/releases/$tag/compose.yaml', 'env': '$SERVER/releases/$tag/env'}"
+  full_sha "$tag" >"$FAKE_GIT_HEAD"
 }
 
 serving() { python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["containers"].get("api", "none"))' "$FAKE_DOCKER_STATE"; }
@@ -130,7 +164,14 @@ release_typed() {
   harness --typed "$typed" --cwd "$TMP/cwd" --out "$output" -- bash "$SERVER_DIR/release.sh" "$@"
 }
 
-container_changes() { grep -E "^TAG=[^ ]+ $COMPOSE_ARGV (up|stop)( |$)" "$FAKE_DOCKER_LOG"; }
+# docker_log: the fake docker's log with every compose file shown as CONFIG; up_configs: the
+# config of each compose up or stop, in order, as "<tag> <up|stop> <stage|releases/<tag>|...>".
+docker_log() { sed -E "s#^(TAG=[^ ]+ )?docker compose -f $SERVER/[^ ]+/compose\.yaml#\1$COMPOSE_ARGV#" "$FAKE_DOCKER_LOG"; }
+up_configs() {
+  sed -nE "s#^TAG=([^ ]+) docker compose -f $SERVER/(.+)/compose\.yaml (up|stop)( .*)?\$#\1 \3 \2#p" "$FAKE_DOCKER_LOG" |
+    sed -E 's# stage/[^ ]+$# stage#'
+}
+container_changes() { docker_log | grep -E "^TAG=[^ ]+ $COMPOSE_ARGV (up|stop)( |$)"; }
 ssm_sends() { grep -c '^aws ssm send-command ' "$FAKE_AWS_LOG"; }
 last_record() { tail -n 1 "$SERVER/releases.log" | cut -d' ' -f2-; }
 

@@ -1,7 +1,7 @@
 # Comp on the tunnel server: runbook
 
 This is the order in which Comp goes live on the tunnel server, from an empty account to the acceptance checks.
-The stack, its configuration and the scripts are described in `deploy/server/README.md`; running it day to day is in `docs/self-hosting-server-day2.md`.
+The stack, its configuration and the scripts are described in `deploy/server/README.md` and `deploy/server/RELEASING.md`; running it day to day is in `docs/self-hosting-server-day2.md`.
 
 Every step that changes AWS, Cloudflare, Google, Supabase or Trigger.dev is marked **Kyle runs**.
 The scripts print each command before it runs and read the typed confirmation from the terminal (`/dev/tty`), never from stdin, so an agent or a pipe cannot confirm on Kyle's behalf.

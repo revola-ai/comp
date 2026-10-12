@@ -1,7 +1,7 @@
 # Comp on the tunnel server: day 2
 
 Running Comp once it is live (`docs/self-hosting-server.md` takes it there).
-Every command runs on a laptop with the prerequisites of that runbook (AWS CLI on account `455986776194`, bash 4, Bun, a terminal); `deploy/server/README.md` describes what each one does in detail.
+Every command runs on a laptop with the prerequisites of that runbook (AWS CLI on account `455986776194`, bash 4, Bun, a terminal); `deploy/server/RELEASING.md` describes what each one does in detail.
 Every step that changes AWS, Cloudflare or Trigger.dev is marked **Kyle runs**; status and logs only read.
 
 ## Release
@@ -21,7 +21,8 @@ When `/` is more than 70% used after a release, the server removes old images by
 When a release changes Trigger.dev task code, deploy it too (Trigger.dev below).
 
 Releasing the SHA that already serves again is how a changed secret reaches the containers: `render-env.sh` re-reads `comp/production/config` and compose recreates the containers whose env changed.
-If that release fails its checks, it says so: only the env files changed, so the secret is the likely cause; fix it and release again.
+If that release fails its checks, it says so: only the env files changed, so the secret is the likely cause; the tag serves again with the env files it had before (its snapshot), so fix the secret and release again.
+Every release keeps the configuration it was verified with (env files and `compose.yaml`) as its tag's snapshot, and a failed release brings the previous tag back with its own; a refused release changes nothing on the server.
 
 ### Interrupted releases
 
@@ -50,7 +51,10 @@ deploy/server/release.sh rollback            # one step back in the serving hist
 deploy/server/release.sh rollback <sha>      # a specific earlier release whose images still exist
 ```
 
-A rollback uses the images as they were built and does not undo migrations, so a release whose migration is not backward compatible cannot be rolled back past it.
+A rollback uses the images as they were built and the tag's snapshot (the env files and `compose.yaml` it was released with), and does not undo migrations, so a release whose migration is not backward compatible cannot be rolled back past it.
+It refuses a tag without a snapshot (released before snapshots were kept, or pruned); `status` lists the tags that have one.
+A secret rotated since that release is not in the snapshot: the rollback brings back the value the tag was verified with.
+If that old value no longer works (revoked at the provider), release the rolled-back SHA again right after: a release renders the current secret into a new snapshot.
 
 ## Migrate
 

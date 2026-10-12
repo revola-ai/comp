@@ -2,7 +2,9 @@
 # `release` and `rollback` of deploy/server/release.sh (sourced, never run on its own; needs
 # lib/release-remote.sh). Both bring a tag up on the server (on-server/release.sh up), smoke-check
 # it from here, then record it (finish) or bring the previous tag back (revert). The server
-# holds a lease for the run between those steps, so nothing else starts in between.
+# holds a lease for the run between those steps, so nothing else starts in between. A release's
+# steps all name its SHA, so the server runs each from its own checkout of it; a rollback's run
+# from the serving release's checkout.
 
 SMOKE_TRIES=24 # each check, 5 seconds apart: about 2 minutes
 SMOKE_PAUSE=5
@@ -49,7 +51,7 @@ after_restore() {
   case "$REMOTE_CODE:$serving" in
     4:"$TAG")
       echo "$TAG was already serving, so only the env files changed, re-rendered from comp/production/config: a change in the secret is the likely cause."
-      echo "It serves with those env files now; fix the secret (deploy/server/push-secrets.ts), then release $TAG again."
+      echo "It serves again with the env files and compose.yaml of its snapshot, as before this release; fix the secret (deploy/server/push-secrets.ts), then release $TAG again."
       smoke "$serving" || echo "Its smoke checks still fail: the site may be down (deploy/server/release.sh status)."
       ;;
     4:?*)
@@ -85,7 +87,7 @@ bring_up() {
   if [[ "$action" == release ]]; then
     sha="$FULL_SHA" timeout="$RELEASE_SECONDS"
   fi
-  STAGE=up UP_RUN="$run" UP_ACTION="$action" # an interrupt from here on reverts (lib/release-interrupt.sh)
+  STAGE=up UP_RUN="$run" UP_ACTION="$action" UP_SHA="$sha" # an interrupt from here on reverts (lib/release-interrupt.sh)
   step "$action" "$timeout" "$run" new "$sha" release up "$action" "$TAG"
   if [[ "$REMOTE_STATUS" != Success ]] || [[ "$REMOTE_CODE" -ne 0 ]]; then
     STAGE=done
@@ -100,7 +102,7 @@ bring_up() {
   fi
   STAGE=verify
   if smoke "$TAG"; then
-    step finish "$UP_SECONDS" "$run" own - release finish "$action" "$TAG"
+    step finish "$UP_SECONDS" "$run" own "$sha" release finish "$action" "$TAG"
     STAGE=done
     [[ "$(result_of recorded)" == ok ]] ||
       die "$TAG is up and passes the smoke checks, but recording it failed (above); rerun: deploy/server/release.sh $action $TAG"
@@ -110,7 +112,7 @@ bring_up() {
     return 0
   fi
   echo "The smoke checks of $TAG failed; bringing the previous release back."
-  step revert "$UP_SECONDS" "$run" own - release revert "$action" "$TAG"
+  step revert "$UP_SECONDS" "$run" own "$sha" release revert "$action" "$TAG"
   after_restore
 }
 
@@ -141,8 +143,8 @@ cmd_rollback() {
   [[ -n "$TAG" ]] || TAG="$(result_of previous)"
   [[ -n "$TAG" ]] || die "there is no earlier ok release to roll back to (deploy/server/release.sh status)"
   [[ "$TAG" != "$current" ]] || die "already serving $TAG"
-  echo "Rolling back from ${current:-nothing} to $TAG on $INSTANCE_ID: its images as built, the env"
-  echo "files and compose.yaml of the server's current checkout (compose changes since are kept),"
+  echo "Rolling back from ${current:-nothing} to $TAG on $INSTANCE_ID: its images as built, with"
+  echo "the env files and compose.yaml it was released with (its snapshot; refused without one),"
   echo "no migration (the database keeps newer migrations); then the smoke checks from here."
   bring_up rollback
 }
