@@ -13,7 +13,9 @@
 #    dnf-automatic and the reboot check (user-data.sh) wait up to an hour for it.
 # 2. Checks the lease a release keeps between its steps (while the laptop runs the smoke
 #    checks): "new" refuses while another run holds it, "own" needs it to be <run-id>'s.
-# 3. Writes everything after this to /opt/comp/logs/<log-name> (0600 in a 0700 directory).
+# 3. Writes everything after this to /opt/comp/logs/<log-name> (0600 in a 0700 directory), and
+#    first clears the staged configurations steps that stopped left in /opt/comp/stage (all but
+#    the live lease holder's run).
 # 4. With a sha, the step runs from its own checkout of it, /opt/comp/work/<sha12> (a git
 #    worktree of /opt/comp/src, removed after the step, except that a release's up step leaves
 #    it to its run while the run holds its lease: finish and revert reuse it when it is still at
@@ -132,8 +134,21 @@ step_checkout() { # step_checkout <sha> <dir>: the step's checkout of <sha>, or 
   echo "== checked out $1 in $2"
 }
 
+# clear_stale_stage: the staged configurations (rendered env files) of steps that stopped without
+# removing theirs (SSM kills a migrate or trigger without running its EXIT trap), except the run's
+# that holds a live lease (a release between its up step and its finish or revert).
+clear_stale_stage() {
+  local dir keep=""
+  if lease_live; then keep="$COMP_STAGE/$LEASE_HOLDER"; fi
+  for dir in "$COMP_STAGE"/*; do
+    [[ -e "$dir" && "$dir" != "$keep" ]] || continue
+    if rm -rf "$dir"; then echo "== removed $dir, a configuration a stopped step left"; else echo "could not remove $dir"; fi
+  done
+}
+
 run_step() {
   echo "== $script $* (run $run_id, $(utc_now))"
+  clear_stale_stage
   local tree="$COMP_SRC"
   if [[ "$sha" != - ]]; then
     tree="$COMP_WORK/${sha:0:12}"

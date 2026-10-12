@@ -15,7 +15,7 @@ bash deploy/server/tests/rollback.test.sh     # rollback, lock, lease, account c
 bash deploy/server/tests/release-ops.test.sh  # migrate, trigger and prune with typed confirmations; a failed migrate deploy
 bash deploy/server/tests/disk.test.sh         # the prune a release runs above 70% disk use; the status warning; prune apply checks each image and snapshot of the plan again
 bash deploy/server/tests/interrupt.test.sh    # INT, TERM and HUP before and after the up step; unlock
-bash deploy/server/tests/snapshot.test.sh     # per-release configuration snapshots: revert, rollback, refusals (a key missing from the secret, a serving tag without one), prune
+bash deploy/server/tests/snapshot.test.sh     # per-release configuration snapshots: revert, rollback, refusals (a key missing from the secret, a serving tag without one), prune, staged configurations left behind
 bash deploy/server/tests/release-failures.test.sh   # abnormal endings, cut-short output, failed state writes, a lapsed lease, slow or lost SSM answers
 bash deploy/server/tests/checkout.test.sh     # /opt/comp/src following the serving release (a warning when it cannot, status, rollback refusing), pinned releases, the run worktree finish and revert reuse
 (cd deploy/server && bun test)                # push-secrets: sources, refusals, diff, create or put, terminal; workspace; one .keys grammar and one edge-whitespace set with render-env

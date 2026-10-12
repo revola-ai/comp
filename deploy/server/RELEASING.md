@@ -35,6 +35,7 @@ The server checks `revola/self-host` again after its own fetch, so a step run so
 Every step that may change something, on the server:
 
 - takes the server lock (`flock` on `/opt/comp/release.lock`): release, rollback, migrate, trigger, prune and unlock run one at a time, a new step never waits (a second caller fails at once), a run's own finish, revert or unlock waits up to 120 seconds (the reboot check or a security update may hold the lock briefly while it skips under the lease, and the laptop sends those steps once), and the security updates and the reboot check wait for it (`README.md`, First boot);
+- clears the staged configurations (`/opt/comp/stage/<run>/`, rendered env files) that steps which stopped left behind (SSM kills a `migrate` or `trigger` without its cleanup running), all but the one of the run that holds a live lease;
 - holds, for a release or rollback, a lease (`/opt/comp/release.lease`, 20 minutes) between bringing the tag up and recording it (while the laptop runs the smoke checks), so nothing starts in between; an expired lease is ignored; an up step that cannot write the lease brings the previous tag back at once, because without it the laptop could neither record nor revert the run;
 - with a SHA, checks it out in its own worktree under umask 022 and makes it (not `.git`, never through a symlink) world-readable, so the images' `node` user can read what BuildKit copies; the first step of a run first fetches every branch of `https://github.com/revola-ai/comp` (by URL) into `/opt/comp/src`, checks `revola/self-host` and refuses local changes in `/opt/comp/src`;
 - writes its full output to `/opt/comp/logs/<utc>-<step>-<sha12>.log` (0600 in a 0700 directory); `release.sh` prints the last 200 lines (at most 20,000 bytes, because SSM keeps 24,000 characters) and the log's path.
@@ -97,7 +98,7 @@ A rotated secret reaches a tag only through a new release: after rolling back pa
 
 ## migrate
 
-`migrate <sha>` checks the SHA out in its own worktree, builds `comp-migrate:<sha12>` if needed, renders that commit's configuration into `/opt/comp/stage/<run>/` (removed when the step ends) and shows the migration status; only pending migrations lead to the question, and only the typed word `migrate` applies them.
+`migrate <sha>` checks the SHA out in its own worktree, builds `comp-migrate:<sha12>` if needed, renders that commit's configuration into `/opt/comp/stage/<run>/` (removed when the step ends, or by the next step when SSM killed it) and shows the migration status; only pending migrations lead to the question, and only the typed word `migrate` applies them.
 Nothing live changes: no snapshot, no container of the stack, and `/opt/comp/src` stays at the serving release.
 A database ahead of the commit, a failed migration or an unreadable status is refused with the release gate's message, never applied.
 It then runs `prisma migrate deploy` in a one-off container (`docker compose --profile tools run --rm migrate`, which the unhealthy-container timer leaves alone) with `COMP_I_AM_TOUCHING_PROD=1`, and shows the status again; the guard in `packages/db/prisma.config.ts` still checks the target.

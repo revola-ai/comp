@@ -138,7 +138,6 @@ failed_before_change() { # failed_before_change <status> <message>
 case "$step" in
   up)
     current="$(current_tag)"
-    rm -rf "$COMP_STAGE" # configurations of runs that stopped (no other run holds a lease)
     if [[ "$action" == release ]]; then
       # A failure would bring $current back with its snapshot: without one, nothing could.
       [[ -z "$current" ]] || snapshot_of "$current" >/dev/null ||

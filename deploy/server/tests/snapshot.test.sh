@@ -184,6 +184,32 @@ release_typed "no" "$TMP/prune-b.out" prune
 check "once $TAG_B is released, steps without a SHA run its scripts" said "$TMP/prune-b.out" "prune.sh as of B"
 no_secret "snapshots" "$TMP"/*.out
 
+# ---------------------------------------------------------------- staged configurations a stopped step left
+# A migrate or trigger that SSM killed never ran its EXIT trap: its rendered env files stay in
+# /opt/comp/stage until the next step that may change something clears them, under the lock.
+left_behind() { # left_behind <run>: a staged configuration with a (fake) secret in it
+  mkdir -p "$SERVER/stage/$1/env" && echo "DATABASE_URL=fakesecret-left-behind" >"$SERVER/stage/$1/env/migrate.env"
+}
+reset_server
+released "$TAG_A"
+left_behind "20261007T110000Z-migrate-$TAG_B-0123abcd"
+release_typed "no" "$TMP/left-prune.out" prune
+check "a configuration a killed step left: the next step clears it (here prune's plan)" empty_dir "$SERVER/stage"
+check "a configuration a killed step left: says so" said "$TMP/left-prune.out" \
+  "== removed $SERVER/stage/20261007T110000Z-migrate-$TAG_B-0123abcd, a configuration a stopped step left"
+# Between a release's up step and its finish, the run's own staged configuration stays.
+entry() { COMP_ROOT="$SERVER" bash "$SERVER_DIR/on-server/entry.sh" "$@" >>"$TMP/entry.out" 2>&1; }
+RUN="20261007T120000Z-release-$TAG_B-0123abcd"
+reset_server
+released "$TAG_A"
+docker_state "s['images'] += ['comp-api:$TAG_B', 'comp-app:$TAG_B', 'comp-portal:$TAG_B', 'comp-migrate:$TAG_B']"
+entry "20261007T120000Z-release-$TAG_B.log" "$RUN" new "$SHA_B" release up release "$TAG_B"
+left_behind "20261007T110000Z-trigger-$TAG_B-0123abcd"
+entry "20261007T120100Z-finish-$TAG_B.log" "$RUN" own "$SHA_B" release finish release "$TAG_B"
+check "the lease holder's staged configuration is spared: finish keeps it as the snapshot" \
+  test "$?:$(last_record):$(cat "$SERVER/releases/$TAG_B/sha" 2>/dev/null)" = "0:release $TAG_B ok:$SHA_B"
+check "the lease holder's run spared, the other cleared" empty_dir "$SERVER/stage"
+
 check "shellcheck -x: the server scripts and this suite" \
   bash -c "cd '$ROOT' && shellcheck -x deploy/server/on-server/*.sh deploy/server/tests/snapshot.test.sh"
 finish
