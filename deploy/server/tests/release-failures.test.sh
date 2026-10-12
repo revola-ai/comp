@@ -140,6 +140,28 @@ check "a failing check says how long it tried, from the constants" \
   grep -qF "FAIL  https://api.comp.revola.ai/v1/health/ready answered 502 on all 24 tries, 5 seconds apart" "$TMP/bad-api.out"
 check "a failing check never claims 2 minutes" bash -c "! grep -qF 'for 2 minutes' '$TMP/bad-api.out'"
 
+# ---------------------------------------------------------------- the lease runs out before finish or revert
+# A laptop that slept during a check: the clock jumps 1,300 s, past the 1,200 s lease, during one
+# try (FAKE_CURL_JUMP), so the server refuses the run's finish or revert (its lease expired).
+for case in "finish:5:" "revert:1:$TAG_B"; do
+  IFS=: read -r own_step jump_at bad_tag <<<"$case"
+  reset_server
+  released "$TAG_A"
+  date +%s >"$TMP/clock"
+  FAKE_CLOCK="$TMP/clock" FAKE_CURL_JUMP="$jump_at:1300" FAKE_CURL_BAD_TAG="$bad_tag" release_sh "$TMP/lapsed.out" release "$SHA_B"
+  check "lease ran out before $own_step: exits non-zero" test "$?" -ne 0
+  check "lease ran out before $own_step: the server refuses it" grep -qF "no longer holds the server (its lease expired)" "$TMP/lapsed.out"
+  check "lease ran out before $own_step: nothing recorded" test "$(grep -c " $TAG_B " "$SERVER/releases.log")" -eq 0
+  check "lease ran out before $own_step: $TAG_B still serves" test "$(serving)" = "comp-api:$TAG_B"
+  check "lease ran out before $own_step: says the $own_step step was refused" grep -qF "The $own_step step of $TAG_B was refused (above)" "$TMP/lapsed.out"
+  check "lease ran out before $own_step: points at status and unlock" grep -qF \
+    "Check deploy/server/release.sh status (a lease it lists is freed with deploy/server/release.sh unlock)" "$TMP/lapsed.out"
+  check "lease ran out before $own_step: never claims the server did not report" bash -c "! grep -qF 'did not report how the step ended' '$TMP/lapsed.out'"
+  check "lease ran out before $own_step: never says released" bash -c "! grep -qF 'Released $TAG_B' '$TMP/lapsed.out'"
+done
+check "a check the deadline stopped after one try says so in the singular" \
+  grep -qF "answered 502 after 1 try, when the smoke checks' deadline passed" "$TMP/lapsed.out"
+
 # ---------------------------------------------------------------- SSM errors while waiting for a step
 polls_of() { grep -c "^aws ssm get-command-invocation --command-id $1 " "$FAKE_AWS_LOG"; }
 reset_server

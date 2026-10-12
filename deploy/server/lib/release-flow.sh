@@ -19,6 +19,8 @@ SMOKE_MAX_TIME=10  # curl --max-time of one try
 # or revert, and that step's bounded wait for the server lock (on-server/entry.sh).
 SMOKE_SECONDS=$((LEASE_SECONDS / 2))
 SMOKE_DEADLINE=0   # epoch seconds, set by smoke
+# After a finish or revert the server refused (the run's lease ran out, or the lock stayed busy).
+LEASE_HINT="Check deploy/server/release.sh status (a lease it lists is freed with deploy/server/release.sh unlock)"
 UP_SECONDS=1800    # render, migration status, compose up --wait (600 s), a restore's (600 s)
 BUILD_SECONDS=7200 # builds of up to four images (the build step, which changes nothing live)
 
@@ -26,7 +28,7 @@ BUILD_SECONDS=7200 # builds of up to four images (the build step, which changes 
 # Cloudflare Access (proof that Access guards the host); false after SMOKE_TRIES answers or at
 # the deadline, saying which.
 smoke_one() {
-  local url="$1" want="$2" try=0 answer code="000" location="" left over
+  local url="$1" want="$2" try=0 answer code="000" location="" left over tries
   while ((try < SMOKE_TRIES)); do
     left=$((SMOKE_DEADLINE - $(date +%s)))
     ((left > 0)) || break
@@ -42,9 +44,10 @@ smoke_one() {
     left=$((SMOKE_DEADLINE - $(date +%s)))
     ((try == SMOKE_TRIES || left <= 0)) || sleep "$((left < SMOKE_PAUSE ? left : SMOKE_PAUSE))"
   done
-  over="on all $SMOKE_TRIES tries, $SMOKE_PAUSE seconds apart"
+  over="on all $SMOKE_TRIES tries, $SMOKE_PAUSE seconds apart" tries=tries
+  ((try != 1)) || tries=try
   ((try == SMOKE_TRIES)) ||
-    over="after $try tries, when the smoke checks' deadline passed ($SMOKE_SECONDS s for all of them: half the $LEASE_SECONDS-second lease)"
+    over="after $try $tries, when the smoke checks' deadline passed ($SMOKE_SECONDS s for all of them: half the $LEASE_SECONDS-second lease)"
   if [[ "$want" == access ]]; then
     echo "  FAIL  $url answered $code ${location:+$location }$over, not a 302 to <team>.cloudflareaccess.com (is Access off?)"
   else
@@ -64,11 +67,17 @@ smoke() { # smoke <tag>: the public checks, stopping at the first that fails
 }
 
 # after_restore [what]: reports a server step that ended with the previous tag back (4),
-# nothing serving (5) or an unknown state; smoke-checks the restored tag. <what> says what
-# happened to $TAG (default: it failed). Always fails the command.
+# nothing serving (5), a revert the server refused (its lease ran out: nothing changed) or an
+# unknown state; smoke-checks the restored tag. <what> says what happened to $TAG (default: it
+# failed). Always fails the command.
 after_restore() {
   local what="${1:-$TAG failed}" serving
   STAGE=done
+  if unchanged; then
+    echo "The revert step of $TAG was refused (above), so nothing changed: $TAG still serves, unverified."
+    echo "$LEASE_HINT, then release the SHA that should serve."
+    exit 1
+  fi
   serving="$(result_of serving)"
   case "$REMOTE_CODE:$serving" in
     4:"$TAG")
@@ -108,7 +117,8 @@ not_recorded() {
     echo "The output of the finish step of $TAG was cut short, so whether it was recorded is unknown;"
     echo "check with deploy/server/release.sh status (its last releases list a recorded release)."
   elif unchanged; then
-    echo "The finish step of $TAG was refused (above), so it is not recorded and serves unverified; check deploy/server/release.sh status, then release $TAG again."
+    echo "The finish step of $TAG was refused (above), so it is not recorded and serves unverified."
+    echo "$LEASE_HINT, then release $TAG again."
   else
     echo "$TAG is up and passes the smoke checks, but the server could not record it (above); its lease stays, so no other step starts for up to 20 minutes."
     echo "Fix the cause (a full disk?), then run deploy/server/release.sh unlock and release $TAG again."

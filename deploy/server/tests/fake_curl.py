@@ -12,7 +12,9 @@ routes also answer 502 while the api.env the containers run with (the fake docke
 With $FAKE_CURL_INTERRUPT set to INT, TERM or HUP, the first check sends that signal to the
 process group (the laptop's release.sh, as a Ctrl-C would) and dies of it. With $FAKE_CURL_SLOW
 set to n, the first n tries of each URL time out: they answer 000 and exit 28, as curl does, and
-advance the fake clock ($FAKE_CLOCK) by their --max-time.
+advance the fake clock ($FAKE_CLOCK) by their --max-time. With $FAKE_CURL_JUMP set to
+"<n>:<seconds>", the n-th call of the run advances the fake clock by <seconds> first, as a laptop
+that slept during a try would see.
 """
 import json
 import os
@@ -34,7 +36,13 @@ if sys.argv[-3:-1] != ['-w', '%{http_code} %{redirect_url}'] or '--max-time' not
     print(f'fake curl: unexpected arguments {sys.argv[1:]}', file=sys.stderr)
     sys.exit(2)
 with open(os.environ['FAKE_CURL_LOG']) as log:
-    tries = sum(line.rstrip('\n') == url for line in log)
+    calls = log.read().splitlines()
+tries = sum(line == url for line in calls)
+jump_at, _, jump = os.environ.get('FAKE_CURL_JUMP', '').partition(':')
+if jump_at and len(calls) == int(jump_at):
+    clock = os.environ['FAKE_CLOCK']
+    seconds = int(open(clock).read()) + int(jump)
+    open(clock, 'w').write(f'{seconds}\n')
 if tries <= int(os.environ.get('FAKE_CURL_SLOW', '0')):
     clock = os.environ.get('FAKE_CLOCK')
     if clock:
