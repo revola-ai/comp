@@ -42,10 +42,38 @@ check "cut output of a failed up: never claims no container changed" \
 reset_server
 released "$TAG_A"
 FAKE_SSM_TRUNCATE=40 release_sh "$TMP/cut.out" release "$SHA_B"
+cut_status=$?
 check "cut output: the release still completes" test "$(last_record)" = "release $TAG_B ok"
 check "cut output: says the output was cut short" grep -qF "cut short" "$TMP/cut.out"
 check "cut output: prints where the full log is" grep -qE "/opt/comp/logs/$LOG_NAME_RE" "$TMP/cut.out"
 check "cut output: prints the command that fetches it" grep -qF "deploy/server/release.sh logs --release" "$TMP/cut.out"
+check "cut output of finish: whether it was recorded is unknown" \
+  grep -qF "The output of the finish step of $TAG_B was cut short, so whether it was recorded is unknown" "$TMP/cut.out"
+check "cut output of finish: points at status" \
+  grep -qF "check with deploy/server/release.sh status (its last releases list a recorded release)" "$TMP/cut.out"
+check "cut output of finish: never says to rerun or that recording failed" \
+  bash -c "! grep -qiE 'rerun|recording it failed|could not record' '$TMP/cut.out'"
+check "cut output of finish: exits 1 (the outcome is unknown)" test "$cut_status" -eq 1
+
+# ---------------------------------------------------------------- the previous tag cannot come back (exit 6)
+reset_server
+released "$TAG_D" "$TAG_A"
+docker_state "s['images'].remove('comp-app:$TAG_A')"
+FAKE_DOCKER_FAIL_UP="$TAG_B" release_sh "$TMP/gone.out" release "$SHA_B"
+check "previous images gone: exits non-zero" test "$?" -ne 0
+check "previous images gone: the server names them" grep -qF "the images of $TAG_A are gone (comp-app:$TAG_A" "$TMP/gone.out"
+check "previous images gone: the laptop says the restore failed and the site may be down" \
+  grep -qF "COULD NOT BRING THE PREVIOUS RELEASE BACK: $TAG_B failed, and restoring the release before it failed too (above); the site may be down" "$TMP/gone.out"
+check "previous images gone: never claims the server did not report" bash -c "! grep -qF 'did not report how the step ended' '$TMP/gone.out'"
+check "previous images gone: recorded as failed" test "$(last_record)" = "release $TAG_B failed"
+reset_server
+released "$TAG_D" "$TAG_A"
+FAKE_DOCKER_FAIL_UP="$TAG_B $TAG_A" release_sh "$TMP/both.out" release "$SHA_B"
+check "restore up fails too: exits non-zero" test "$?" -ne 0
+check "restore up fails too: the server says so" grep -qF "BRINGING $TAG_A BACK FAILED TOO" "$TMP/both.out"
+check "restore up fails too: the laptop says the site may be down" grep -qF "COULD NOT BRING THE PREVIOUS RELEASE BACK" "$TMP/both.out"
+check "restore up fails too: points at status" grep -qF "deploy/server/release.sh status" "$TMP/both.out"
+check "restore up fails too: never claims the server did not report" bash -c "! grep -qF 'did not report how the step ended' '$TMP/both.out'"
 
 # ---------------------------------------------------------------- the up step after the build step
 # Another step may run between the build and the up step (no lease yet): the up step checks again.

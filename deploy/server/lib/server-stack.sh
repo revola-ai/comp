@@ -99,3 +99,14 @@ migration_status() {
   fi
   result "migrations=$MIGRATIONS"
 }
+
+# migrations_refusal <tag>: why a release (or a Trigger.dev deploy) of <tag> is refused, for any
+# MIGRATIONS but up-to-date; the release gate, migrate and trigger say it in the same words.
+migrations_refusal() {
+  case "$MIGRATIONS" in
+    pending) echo "REFUSING: the database lacks migrations of $1 (listed above). Apply them first: deploy/server/release.sh migrate $1" ;;
+    ahead) echo "REFUSING: the database has migrations this commit lacks; release a commit that includes them (listed above)." ;;
+    failed) echo "REFUSING: the database has a failed migration (above). Resolve it by hand (prisma migrate resolve), then deploy/server/release.sh migrate $1" ;;
+    *) echo "REFUSING: could not read the migration status (above)." ;;
+  esac
+}

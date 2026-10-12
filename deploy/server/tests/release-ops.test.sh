@@ -88,6 +88,10 @@ release_typed "migrate" "$TMP/ahead.out" migrate "$SHA_B"
 check "migrate, the database is ahead of the commit: refused" test "$?" -ne 0
 check "migrate, the database is ahead of the commit: never asks" bash -c "! grep -qF 'Type migrate' '$TMP/ahead.out'"
 check "migrate, the database is ahead of the commit: never deploys" bash -c "! grep -q 'migrate deploy' '$FAKE_DOCKER_LOG'"
+check "migrate, the database is ahead of the commit: says so as the release gate does" grep -qF \
+  "REFUSING: the database has migrations this commit lacks; release a commit that includes them" "$TMP/ahead.out"
+check "migrate, the database is ahead of the commit: never says the status was unreadable" \
+  bash -c "! grep -qiF 'could not read the migration status' '$TMP/ahead.out' && ! grep -qF 'reading the migration status failed' '$TMP/ahead.out'"
 
 reset_server
 release_typed "migrate" "$TMP/unpushed.out" migrate "$SHA_C"
@@ -124,7 +128,21 @@ check "trigger: the app project gets no BETTER_AUTH_URL" \
 check "README points at the Trigger dashboard list" grep -qF "docs/self-hosting-server.md" "$SERVER_DIR/README.md"
 check "trigger: no container of the stack changed" test -z "$(container_changes)"
 check "trigger: recorded" test "$(last_record)" = "trigger $TAG_B ok"
+check "trigger: checks the migrations are up to date before deploying" grep -qF "comp-result: migrations=up-to-date" "$SERVER"/logs/*-trigger-"$TAG_B".log
 no_secret "trigger" "$TMP/trigger.out"
+
+for state in pending ahead failed unreachable; do
+  reset_server
+  released "$TAG_A"
+  docker_state "s['migrations'] = '$state'"
+  release_typed "trigger" "$TMP/trigger-gate-$state.out" trigger "$SHA_B"
+  check "trigger, migrations $state: refused" test "$?" -ne 0
+  check "trigger, migrations $state: deploys nothing" bash -c "! grep -q ' trigger sh -c ' '$FAKE_DOCKER_LOG'"
+  check "trigger, migrations $state: recorded failed" test "$(last_record)" = "trigger $TAG_B failed"
+  check "trigger, migrations $state: says why, as the release gate does" grep -qF "REFUSING: " "$TMP/trigger-gate-$state.out"
+done
+check "trigger, migrations pending: prints the migrate command" grep -qF \
+  "REFUSING: the database lacks migrations of $TAG_B (listed above). Apply them first: deploy/server/release.sh migrate $TAG_B" "$TMP/trigger-gate-pending.out"
 
 reset_server
 released "$TAG_A"

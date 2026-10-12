@@ -11,8 +11,9 @@
 # ends (nothing live changes and /opt/comp/src stays at the serving release):
 # TRIGGER_ACCESS_TOKEN, and TRIGGER_PROJECT_REF set from TRIGGER_PROJECT_REF_<API|APP> inside
 # the container, which overrides the upstream ref in trigger.config.ts; no value is ever on a
-# command line. Refuses before deploying anything when a ref is still an upstream Comp AI
-# project. The tasks' own env vars live in the Trigger.dev dashboard (deploy/server/RELEASING.md,
+# command line. Refuses before deploying anything when the database's migrations are not exactly
+# those of the commit (the release gate's check: its tasks would run against another schema) or
+# a ref is still an upstream Comp AI project. The tasks' own env vars live in the Trigger.dev dashboard (deploy/server/RELEASING.md,
 # trigger).
 # shellcheck source=deploy/server/lib/server-common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/server-common.sh"
@@ -41,6 +42,12 @@ trap 'rm -rf "$stage"' EXIT
 build_images "$tag" migrate || exit 1
 stage_config "$stage" || exit 1
 use_config "$stage"
+migration_status "$tag"
+if [[ "$MIGRATIONS" != up-to-date ]]; then
+  migrations_refusal "$tag"
+  record trigger "$tag" failed
+  exit 1
+fi
 
 for project in "$@"; do # every ref is checked before anything is deployed
   name="TRIGGER_PROJECT_REF_${project^^}"

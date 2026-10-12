@@ -143,13 +143,7 @@ case "$step" in
       stage_config "$stage" || failed_before_change 1 "Rendering the configuration of $tag failed (above)."
       use_config "$stage"
       migration_status "$tag"
-      case "$MIGRATIONS" in
-        up-to-date) ;;
-        pending) failed_before_change 3 "REFUSING: the database lacks migrations of $tag (listed above). Apply them first: deploy/server/release.sh migrate $tag" ;;
-        ahead) failed_before_change 3 "REFUSING: the database has migrations this commit lacks; release a commit that includes them (listed above)." ;;
-        failed) failed_before_change 3 "REFUSING: the database has a failed migration (above). Resolve it by hand (prisma migrate resolve), then deploy/server/release.sh migrate $tag" ;;
-        *) failed_before_change 3 "REFUSING: could not read the migration status (above)." ;;
-      esac
+      [[ "$MIGRATIONS" == up-to-date ]] || failed_before_change 3 "$(migrations_refusal "$tag")"
     else
       [[ "$tag" != "$current" ]] || failed_before_change 1 "Refusing: already serving $tag."
       missing="$(missing_images "$tag" "${STACK_IMAGES[@]}")"

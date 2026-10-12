@@ -37,8 +37,7 @@ migration_status "$tag"
 case "$MIGRATIONS" in
   up-to-date) echo "Nothing to apply: the database has every migration of $tag."; exit 0 ;;
   pending) [[ "$step" == deploy ]] || exit 0 ;;
-  failed) echo "A migration failed (above); resolve it by hand (prisma migrate resolve) first."; exit 1 ;;
-  *) echo "Could not read the migration status (above)."; exit 1 ;;
+  *) migrations_refusal "$tag"; exit 1 ;; # ahead, failed or unreadable: nothing to apply here
 esac
 
 echo "== prisma migrate deploy (comp-migrate:$tag, COMP_I_AM_TOUCHING_PROD=1)"

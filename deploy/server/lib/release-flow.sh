@@ -62,6 +62,10 @@ after_restore() {
       fi
       ;;
     5:*) echo "THE SITE IS DOWN: $what and there was no earlier release to bring back." ;;
+    6:*)
+      echo "COULD NOT BRING THE PREVIOUS RELEASE BACK: $what, and restoring the release before it failed too (above); the site may be down."
+      echo "Check what serves with: deploy/server/release.sh status"
+      ;;
     *) unknown_state "$what" ;;
   esac
   exit 1
@@ -74,10 +78,14 @@ after_prune() { # after a recorded release: a failed or slow post-release prune,
   esac
 }
 
-# not_recorded: after a finish step without recorded=ok: refused (nothing changed), or the
-# server could not record it, in which case the run's lease stays.
+# not_recorded: after a finish step without recorded=ok: its output was cut short (the server
+# may well have recorded it), refused (nothing changed), or the server could not record it, in
+# which case the run's lease stays.
 not_recorded() {
-  if unchanged; then
+  if [[ -z "$REMOTE_ENDED" ]]; then
+    echo "The output of the finish step of $TAG was cut short, so whether it was recorded is unknown;"
+    echo "check with deploy/server/release.sh status (its last releases list a recorded release)."
+  elif unchanged; then
     echo "The finish step of $TAG was refused (above), so it is not recorded and serves unverified; check deploy/server/release.sh status, then release $TAG again."
   else
     echo "$TAG is up and passes the smoke checks, but the server could not record it (above); its lease stays, so no other step starts for up to 20 minutes."

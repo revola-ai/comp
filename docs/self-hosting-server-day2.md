@@ -76,7 +76,7 @@ deploy/server/release.sh trigger <sha>                  # both projects
 deploy/server/release.sh trigger <sha> --project api    # or app
 ```
 
-After the typed word `trigger` it deploys the task code to the prod environments.
+After the typed word `trigger` it deploys the task code to the prod environments; it refuses, before deploying anything, unless the database has exactly the commit's migrations (run `migrate <sha>` first).
 Env vars of the tasks live in the Trigger.dev dashboard (**Kyle runs** any change there) (`docs/self-hosting-server.md`, Trigger.dev prod env vars); a change there applies to new runs without a deploy.
 
 ## Status and logs

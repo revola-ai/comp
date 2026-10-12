@@ -26,6 +26,9 @@ cmd_migrate() {
   run="$(run_id migrate "$TAG")"
   echo "Checking the migrations of $TAG against the production database (nothing is applied yet)."
   step migrate-status "$TOOLS_SECONDS" "$run" new "$FULL_SHA" migrate status "$TAG"
+  case "$(result_of migrations)" in
+    ahead | failed) die "not applying: the status above is not just pending migrations" ;;
+  esac
   [[ "$REMOTE_CODE" -eq 0 ]] || die "reading the migration status failed (above)"
   case "$(result_of migrations)" in
     up-to-date) echo "Nothing to apply."; return 0 ;;
