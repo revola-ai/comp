@@ -15,6 +15,9 @@ Knobs (environment):
                                "late" (it had ended already)
   FAKE_SSM_POLL_ERRORS         "<n>" or "<n>@<command id>": the first n get-command-invocation
                                calls (of that command) fail with a ThrottlingException
+  FAKE_SSM_NOT_YET             get-command-invocation of each new command answers
+                               InvocationDoesNotExist this many times first, as SSM may right
+                               after send-command
 A send-command can be interrupted (FAKE_AWS_INTERRUPT in tests/fake_aws.py) as "ssm send-command"
 (the first) or "ssm send-command fake-command-<n>" (that one), after its command ran.
 """
@@ -75,6 +78,10 @@ def invocation(fake) -> None:
         fake.error('ThrottlingException', 'GetCommandInvocation', 'Rate exceeded')
     command = fake.state['commands'].get(command_id)
     if command is None or command['instance'] != fake.required_opt('--instance-id'):
+        fake.error('InvocationDoesNotExist', 'GetCommandInvocation', 'no such invocation')
+    if command.setdefault('not_yet', 0) < int(os.environ.get('FAKE_SSM_NOT_YET', '0')):
+        command['not_yet'] += 1
+        fake.save()
         fake.error('InvocationDoesNotExist', 'GetCommandInvocation', 'no such invocation')
     fake.interrupt(command_id)
     command['polls'] += 1

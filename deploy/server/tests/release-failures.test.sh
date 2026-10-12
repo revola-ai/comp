@@ -184,5 +184,21 @@ check "polls failing during finish: points at status, the step's log and unlock"
   grep -qF 'The finish step is still running on the server; check it with deploy/server/release.sh status' '$TMP/lost-finish.out' &&
   grep -qF 'free it with deploy/server/release.sh unlock' '$TMP/lost-finish.out'"
 
+reset_server
+released "$TAG_A"
+FAKE_SSM_NOT_YET=12 release_sh "$TMP/not-yet.out" release "$SHA_B"
+check "SSM not knowing each new command for 12 polls (InvocationDoesNotExist): the release completes" \
+  test "$?:$(last_record)" = "0:release $TAG_B ok"
+check "SSM not knowing a new command yet: polled on (12 times not yet, once in progress, then done)" test "$(polls_of fake-command-1)" -eq 14
+reset_server
+released "$TAG_A"
+FAKE_SSM_PENDING_POLLS=1000 release_sh "$TMP/gave-up.out" status
+check "a step that never ends: exits non-zero" test "$?" -ne 0
+check "a step that never ends: gives up after its poll budget ((120 + 600 + 300) / 5), saying so" grep -qF \
+  "gave up waiting for SSM command fake-command-0 after 204 polls; it may still run (aws ssm get-command-invocation --command-id fake-command-0" "$TMP/gave-up.out"
+check "a step that never ends: polled exactly that often" test "$(polls_of fake-command-0)" -eq 204
+check "a step that never ends: points at status and unlock" grep -qF \
+  "Check the server with deploy/server/release.sh status; free a lease left behind with deploy/server/release.sh unlock." "$TMP/gave-up.out"
+
 check "shellcheck -x: this suite" bash -c "cd '$ROOT' && shellcheck -x deploy/server/tests/release-failures.test.sh"
 finish
