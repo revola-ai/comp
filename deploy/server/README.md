@@ -189,11 +189,12 @@ cloud-init runs `user-data.sh` once, as root (`sudo cloud-init status --long` re
   To bump one, change its version and checksum together, taking the checksum from the release's `checksums.txt`.
 - dnf-automatic applies security updates every day at 09:00 UTC and only then (a drop-in replaces the packaged schedule and removes its random delay and its catch-up run at boot, so after downtime the next 09:00 run catches up); `/etc/dnf/vars/releasever` is `latest`, because Amazon Linux 2023 otherwise stays on the AMI's release and finds no updates.
   Docker and containerd are patched too: an update restarts the Docker daemon, which briefly stops the containers, and they come back by themselves (`restart: unless-stopped`).
-  A drop-in (`dnf-automatic.service.d/comp-release-lock.conf`) runs the packaged command under the release lock, `flock -w 3600 /opt/comp/release.lock`, so an update waits up to an hour for a release step instead of restarting Docker under it; `user-data.sh` copies the packaged `ExecStart` and stops if it is not one line.
+  A drop-in (`dnf-automatic.service.d/comp-release-lock.conf`) runs the packaged command under the release lock, `flock -w 3600 /opt/comp/release.lock`, so an update waits up to an hour for a release step instead of restarting Docker under it, and through `/usr/local/sbin/comp-unless-leased`, which skips the run (saying so in its journal) while a release holds its lease between steps: the lock is free then, but the laptop is smoke-checking the new tag; the next day's window catches up.
+  `user-data.sh` copies the packaged `ExecStart` and stops if it is not one line.
 - `comp-reboot-if-needed.timer` runs every Sunday at 09:30 UTC, ordered after any running update: it reboots only when `needs-restarting -r` reports that installed updates (a kernel, glibc, systemd) need it, and logs either way (`journalctl -u comp-reboot-if-needed`).
   Docker is enabled at boot and every container is `restart: unless-stopped`, so the stack comes back after the reboot without a release.
   A missed window (the server was off) is not caught up at boot.
-  It also runs under the release lock, and skips the reboot (saying so in its journal) while a release holds its lease between steps.
+  It also runs under the release lock and `comp-unless-leased`, so it skips the reboot (saying so in its journal) while a release holds its lease between steps.
 - An 8 GiB swap file, `/swapfile`, for image builds (the containers themselves never swap).
 - `comp-restart-unhealthy.timer` (see The stack).
 - A clone of `https://github.com/revola-ai/comp` in `/opt/comp/src`.

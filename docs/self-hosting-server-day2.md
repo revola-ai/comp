@@ -105,7 +105,7 @@ A shell on the server is `aws ssm start-session --target <instance-id> --region 
 
 The server patches itself: dnf-automatic applies security updates every day at 09:00 UTC (Docker included; an update restarts the daemon and the containers come back by themselves).
 `comp-reboot-if-needed.timer` reboots on Sundays at 09:30 UTC only when an installed update needs it; the stack starts again at boot without a release.
-Both wait up to an hour for the release lock, so neither restarts Docker under a release step, and a release step tried meanwhile is refused (try again later); the reboot is skipped, until the next Sunday, while a release holds its lease.
+Both wait up to an hour for the release lock, so neither restarts Docker under a release step, and a release step tried meanwhile is refused (try again later); both are skipped while a release holds its lease (the update until the next day, the reboot until the next Sunday), so neither restarts Docker during a release's smoke checks either.
 To see what happened, in a Session Manager shell: `journalctl -u dnf-automatic` and `journalctl -u comp-reboot-if-needed`.
 Comp itself is patched by releasing a newer commit; the `cloudflared` image by bumping its digest in `deploy/server/compose.yaml` (README, The cloudflared image) and releasing.
 
