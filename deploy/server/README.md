@@ -11,7 +11,7 @@ The runbook, from an empty account to the acceptance checks, is `docs/self-hosti
 | `compose.yaml` | The stack: `api`, `app`, `portal` and `cloudflared` on one private network, plus the one-off tools `migrate` and `trigger` (profile `tools`) |
 | `env/<service>.keys` | Names of the secret keys each container gets from `comp/production/config` (never values) |
 | `env/<service>.public.env` | Committed non-secret values each container gets (URLs, pool sizes, cookie domain) |
-| `render-env.sh` | Writes `/opt/comp/env/<service>.env` from the secret and the public files |
+| `render-env.sh` | Writes `<dir>/<service>.env` from the secret and the public files (a release renders into its staged configuration, `/opt/comp/stage/<run>/env`; see Env files) |
 | `push-secrets.ts`, `secrets/*.ts` | Runs on a laptop: builds `comp/production/config` from the operator's env files (runbook step 5); `bun test` in `deploy/server` runs its tests |
 | `provision.sh`, `lib/provision-*.sh` | Creates the AWS resources of the server, one confirmed command at a time (see Provisioning) |
 | `RELEASING.md` | How to release, roll back, migrate and deploy Trigger.dev, and the per-release configuration snapshots |
@@ -125,7 +125,7 @@ In session mode every client connection holds one pooler slot, so the sum of eve
 | Session pool size | 40 (assumed; confirm in Supabase, Database settings, Connection pooling) | Kyle |
 | Headroom (migrations, SQL editor, Supabase's own clients) | 3 | proposed |
 | `DATABASE_POOL_MAX` api / app / portal on the server | 4 / 2 / 1 | `env/*.public.env` |
-| Readiness probe connections api / app / portal | 1 / 1 / 0 | `packages/db/src/readiness-probe.ts` |
+| Readiness probe connections api / app / portal, at most, at any time | 1 / 1 / 0 | `packages/db/src/readiness-probe.ts`, `packages/db/src/readiness.ts` |
 | `DATABASE_POOL_MAX` per Trigger.dev prod run | 2 | Trigger.dev prod env vars |
 | Trigger.dev prod concurrency `comp-api` / `comp-app` | 1 / 2 | Trigger.dev dashboard |
 | Local stacks at once | 2 | plan |
@@ -139,7 +139,9 @@ total   = 9 + 6 + 16                                   = 31  <=  40 - 3 = 37
 ```
 
 The server counts once: `docker compose up -d` stops a container before starting its replacement, so old and new pools never overlap (ECS needed twice the pool for rolling deploys).
-The readiness probes (`/v1/health/ready` on the api, `/api/health` on the app) each open one connection outside the pool while the release smoke checks run; the container healthchecks use the liveness routes and open none.
+The readiness routes (`/v1/health/ready` on the api, `/api/health` on the app) each open at most one connection outside the pool at any time, not only during a release: the api's is public, so anyone may call it whenever they like, and the app's sits behind Cloudflare Access.
+Overlapping calls share the one probe in flight and a result is reused for 2 seconds, so repeated calls never open more than that one connection.
+The release smoke checks call the api's readiness route and the app's liveness route `/api/health/live`; the liveness routes, which the container healthchecks and the Route 53 checks use too, open none.
 A local stack is the api, app, portal and framework-editor at one connection each, one `trigger dev` run per project holding its app's pool (1 + 1), and the two probes: 1 + 1 + 1 + 1 + (1 + 1) + (1 + 1) = 8.
 The one-off migration container of a release runs from the headroom.
 Change a pool size here and in `env/*.public.env` together (`tests/render-env.test.sh` pins 4 / 2 / 1).

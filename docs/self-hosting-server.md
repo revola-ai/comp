@@ -29,7 +29,7 @@ On the laptop that runs the scripts:
 1. Organization, Billing: the plan is Pro.
 2. Project Settings, Database, SSL Configuration: "Enforce SSL on incoming connections" is on.
 3. Project Settings, Database, Connection pooling: note the pool size of the session pooler.
-   The budget in `deploy/server/README.md` (Connection budget) assumes 40: the server holds 4 (api) + 2 (app) + 1 (portal) pool connections plus 2 readiness probes, Trigger.dev prod runs 2 per run at the configured concurrency, and each laptop stack about 8.
+   The budget in `deploy/server/README.md` (Connection budget) assumes 40: the server holds 4 (api) + 2 (app) + 1 (portal) pool connections plus at most one readiness-probe connection each for the api and the app (at any time, not only during a release), Trigger.dev prod runs 2 per run at the configured concurrency, and each laptop stack about 8.
    On this branch a laptop process that does not set `DATABASE_POOL_MAX=1` (anything not started by `scripts/local-run.sh` or the apps' `dev` scripts) opens up to 10 connections; count those too.
    If the pool size is smaller than the sum plus 3 of headroom, raise it (or the compute size) before the first release.
 4. `packages/db/.env` of the main checkout holds `DATABASE_MIGRATION_URL` on the session pooler (`aws-0-us-east-2.pooler.supabase.com:5432`, user `postgres.<ref>`).
@@ -194,7 +194,7 @@ deploy/server/release.sh release <sha>
 
 The first release builds `comp-api`, `comp-app` and `comp-portal` one at a time (the slowest step; the Next.js builds use most of the 16 GB), renders the env files, checks the migrations, starts the stack and runs the smoke checks from the laptop.
 Success: `Released <sha12>: it serves and passes the smoke checks`, and the tunnel shows Healthy in Cloudflare.
-`render-env.sh failed` means a key is missing from the secret: rerun `push-secrets` (step 5).
+A key missing from the secret stops `migrate` and `release` before anything changes, naming it (`render-env: <service>: <KEY> is missing from comp/production/config`, then `Rendering the configuration of <sha12> failed` in a release): rerun `push-secrets` (step 5).
 A failed first release stops the stack and says the site is down; fix the cause and release again.
 
 ## 8. Google sign-in

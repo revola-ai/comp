@@ -32,7 +32,8 @@ After a release's or rollback's up step was sent, it then brings the previous re
 A second Ctrl-C leaves at once and says what still runs on the server (`status`, and the step's `logs --release <log>` command).
 Leaving while the up step runs lets the server finish it, and the new tag may then serve unverified under a 20-minute lease: run `status`, then `unlock`, then release (or roll back to) the SHA that should serve.
 
-A laptop that went to sleep or lost the network sends no signal: its lease holds the server for up to 20 minutes, and every other command is refused meanwhile.
+A laptop that went to sleep or lost the network sends no signal: its lease holds the server for up to 20 minutes.
+Meanwhile every command that changes something (release, rollback, migrate, trigger and prune) is refused; `status` and `logs` still work, and `unlock` frees the lease.
 **Kyle runs**, once that laptop's `release.sh` has stopped:
 
 ```bash

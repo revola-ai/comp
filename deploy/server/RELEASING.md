@@ -20,6 +20,7 @@ It refuses other accounts and an `AWS_REGION` or `AWS_DEFAULT_REGION` other than
 `migrate`, `trigger`, `prune` and `unlock` read their typed word from the terminal (`/dev/tty`), never from stdin, and refuse before any AWS call without one; `release` and `rollback` ask nothing (running them is the decision) but print what they will do first.
 It never uses SSH: every server step is one SSM Run Command (`AWS-RunShellScript`, an explicit execution timeout, 600 seconds for delivery) that runs as root.
 While a step runs, `release.sh` polls it every 5 seconds; a poll that fails (throttling, a network blip) is retried, and only 12 failures in a row make it give up, saying what may still run on the server and what to do next (the same guidance as leaving with a second Ctrl-C).
+SSM's `InvocationDoesNotExist`, which it may answer right after the command was sent, is not counted as a failure; a step still running after its execution timeout, the 600 seconds for delivery and 5 more minutes of polls is given up the same way.
 The command's text is `lib/server-common.sh` with `on-server/entry.sh` (or `on-server/status.sh`), so it works whatever the server's checkout holds; the work itself runs from `deploy/server/on-server/` of a checkout.
 A step with a SHA (a release's steps, `migrate`, `trigger`) runs from its own worktree of that SHA, `/opt/comp/work/<sha12>`, removed when the step ends; a step without one (a rollback's steps, `prune`, `unlock`) runs from `/opt/comp/src`, the checkout of the serving release.
 `/opt/comp/src` moves only when a release or rollback is recorded, so a step without a SHA always runs the scripts of the release that serves, never those of a commit that was only migrated, deployed to Trigger.dev or refused.
@@ -36,7 +37,9 @@ Every step that may change something, on the server:
 - with a SHA, checks it out in its own worktree under umask 022 and makes it (not `.git`, never through a symlink) world-readable, so the images' `node` user can read what BuildKit copies; the first step of a run first fetches every branch of `https://github.com/revola-ai/comp` (by URL) into `/opt/comp/src`, checks `revola/self-host` and refuses local changes in `/opt/comp/src`;
 - writes its full output to `/opt/comp/logs/<utc>-<step>-<sha12>.log` (0600 in a 0700 directory); `release.sh` prints the last 200 lines (at most 20,000 bytes, because SSM keeps 24,000 characters) and the log's path.
   When the output still arrives cut short, it says so and prints the `logs --release` command that fetches the full log in pages.
-- adds one line per attempt to `/opt/comp/releases.log`, `<utc> <action> <sha12> <ok|failed|rolled-back>`; the current tag is the top of the serving history (see rollback).
+- adds one line per attempt to `/opt/comp/releases.log`, `<utc> <action> <sha12> <outcome>`: a `release` or `rollback` ends `ok`, `failed` (refused before any container changed, or nothing could be brought back), `rolled-back` (the previous tag serves again) or `unlocked` (`unlock` removed its lease); a `migrate` that applies migrations and a `trigger` end `ok` or `failed`.
+  Nothing else is recorded: not `status`, `logs` or `prune` (nor the prune after a release), not the migration status `migrate` shows before asking, a `migrate` with nothing to apply or refused for a status other than pending, a step the lock, the lease or its checkout refused, or a `migrate` or `trigger` that stopped while building its tools image or rendering its configuration.
+  The current tag is the top of the serving history (see rollback).
   Every write to it is checked: a finish step that cannot record its release (a full disk, a read-only file) says so, never reports `recorded=ok`, and keeps the run's lease, so nothing else starts until the cause is fixed and `unlock` frees it; then release the tag again.
 
 ## Configuration snapshots
@@ -93,6 +96,7 @@ A rotated secret reaches a tag only through a new release: after rolling back pa
 Nothing live changes: no snapshot, no container of the stack, and `/opt/comp/src` stays at the serving release.
 A database ahead of the commit, a failed migration or an unreadable status is refused with the release gate's message, never applied.
 It then runs `prisma migrate deploy` in a one-off container (`docker compose --profile tools run --rm migrate`, which the unhealthy-container timer leaves alone) with `COMP_I_AM_TOUCHING_PROD=1`, and shows the status again; the guard in `packages/db/prisma.config.ts` still checks the target.
+When `prisma migrate deploy` fails, or the status after it is not up to date, the step is recorded `migrate <sha12> failed`, shows the status and exits non-zero, and `release.sh` says applying the migrations failed.
 Prisma gets `DATABASE_URL` from `migrate.env` (the secret's `DATABASE_MIGRATION_URL`, the session pooler or the direct host, never port 6543), and the container adds `sslmode=require`, `sslcert=/app/certs/supabase-ca.crt` and `sslaccept=strict` to it, so the schema engine verifies the chain and the host against the Supabase CA (it accepts any certificate otherwise).
 The tools containers run as `node` with `HOME` on a tmpfs at `/tmp`, and can use up to 4 GiB each while they run, beside the stack's 5.25 GiB; the lock keeps them from overlapping an image build.
 
@@ -116,6 +120,7 @@ The tasks' own env vars are set in the Trigger.dev dashboard (each project, Envi
 
 `prune` lists what it keeps and what it would remove, then asks for the typed word `prune`; it keeps the images of the current tag, the 3 most recent other `ok` tags and the default rollback target (`rollback` needs them), the image of every container of the `comp` project, running or stopped, and the pinned `cloudflared` image, which is never a candidate (only `comp-api`, `comp-app`, `comp-portal` and `comp-migrate` images are removed), so it stays even when its container is gone.
 It removes the snapshot of every tag it no longer keeps, with its images, so the current tag's and the rollback target's always stay.
+The removal checks each listed image again when it runs: one kept by then (a release or a container since the list) is skipped as `kept now`, and anything but a `comp-*` image as `not a comp image`.
 It then trims the build cache to 20 GB (`docker builder prune --keep-storage 20GB -f`) and never runs `docker image prune`, which can delete the digest-pinned `cloudflared` image (Docker lists it untagged).
 A release does the same by itself, without asking, when `/` is more than 70% used after it is recorded (`prune.sh auto`, bounded by `timeout 600`); the server reports `recorded=ok` first, so a failed or timed-out prune leaves the release standing and the laptop says "released, but the post-release prune failed" (or timed out), never a recording failure.
 
