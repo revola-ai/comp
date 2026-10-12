@@ -6,13 +6,18 @@
 # it defines names and nothing else, and never depends on where it is.
 #
 # COMP_REPO_URL is the fork the server builds from: release.sh (which sources this file for it)
-# requires a SHA to be on one of its branches, entry.sh fetches from it, and user-data.sh clones
-# it (cloud-init runs that file alone, so it repeats the URL; tests/user-data.test.sh checks it).
+# requires a SHA to be on its RELEASE_BRANCH, entry.sh fetches from it and checks that branch
+# again, and user-data.sh clones it (cloud-init runs that file alone, so it repeats the URL;
+# tests/user-data.test.sh checks it).
 COMP_REPO_URL=https://github.com/revola-ai/comp
+RELEASE_BRANCH=revola/self-host # releases, migrations and Trigger.dev deploys come only from it
 # COMP_ROOT is /opt/comp on the server (the tests point it at a sandbox).
 COMP_ROOT="${COMP_ROOT:-/opt/comp}"
-COMP_SRC="$COMP_ROOT/src"            # the checkout user-data.sh cloned
-COMP_ENV_DIR="$COMP_ROOT/env"        # render-env.sh output, read by compose
+COMP_SRC="$COMP_ROOT/src"            # the checkout of the serving release (user-data.sh cloned it)
+COMP_WORK="$COMP_ROOT/work"          # a step with a SHA runs from a worktree of it here, removed after
+COMP_RELEASES="$COMP_ROOT/releases"  # a snapshot per released tag: sha, compose.yaml, env/ (0700/0600)
+COMP_STAGE="$COMP_ROOT/stage"        # a run's rendered configuration, until it is kept or dropped
+LEGACY_ENV_DIR="$COMP_ROOT/env"      # where releases rendered the env files before snapshots
 COMP_LOGS="$COMP_ROOT/logs"          # one root-only log per release.sh step
 RELEASES_LOG="$COMP_ROOT/releases.log"
 RELEASE_LOCK="$COMP_ROOT/release.lock"
@@ -33,8 +38,23 @@ utc_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # root_use_percent: the use of / in percent, digits only (df -P prints "73%").
 root_use_percent() { df -P / | awk 'NR == 2 { sub(/%$/, "", $5); print $5 }'; }
 
-# record <action> <sha12> <outcome>: one line per attempt in releases.log.
-record() { printf '%s %s %s %s\n' "$(utc_now)" "$1" "$2" "$3" >>"$RELEASES_LOG"; }
+# record <action> <sha12> <outcome>: one line per attempt in releases.log; fails, saying so,
+# when the line could not be written (a full disk, a read-only file). Every state write here
+# reports its own failure, so a caller only decides what the failure means for its step.
+record() {
+  printf '%s %s %s %s\n' "$(utc_now)" "$1" "$2" "$3" 2>/dev/null >>"$RELEASES_LOG" && return 0
+  echo "COULD NOT RECORD '$1 $2 $3' in $RELEASES_LOG (a full disk or a read-only file?)"
+  return 1
+}
+
+# readable_tree <dir>: every file and directory of a checkout (not .git, never through a
+# symlink) world-readable, so the images' node user can read what BuildKit copies; it also heals
+# a tree an earlier run checked out under umask 077.
+readable_tree() {
+  find "$1" -path "$1/.git" -prune -o ! -type l -exec chmod a+rX {} + && return 0
+  echo "could not make $1 world-readable"
+  return 1
+}
 
 # serving_stack: the serving history, top (the current tag) first. Read from the ok lines of
 # releases.log in order: `release X ok` pushes X (unless X is on top already), `rollback X ok`
@@ -74,9 +94,15 @@ lease_live() {
   [[ -n "$LEASE_HOLDER" ]] && ((LEASE_EXPIRES > $(date +%s)))
 }
 lease_take() { # lease_take <run-id> <what>
-  printf '%s %s %s\n' "$1" "$(($(date +%s) + LEASE_SECONDS))" "$2" >"$RELEASE_LEASE"
+  printf '%s %s %s\n' "$1" "$(($(date +%s) + LEASE_SECONDS))" "$2" 2>/dev/null >"$RELEASE_LEASE" && return 0
+  echo "COULD NOT WRITE the lease $RELEASE_LEASE (a full disk?)"
+  return 1
 }
-lease_drop() { rm -f "$RELEASE_LEASE"; }
+lease_drop() {
+  rm -f "$RELEASE_LEASE" 2>/dev/null && return 0
+  echo "COULD NOT REMOVE the lease $RELEASE_LEASE"
+  return 1
+}
 
 # meta <exit status> [log]: ends the output release.sh reads; everything before
 # comp-meta-begin is for the operator, everything after for release.sh.

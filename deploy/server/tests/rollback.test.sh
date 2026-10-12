@@ -23,7 +23,9 @@ check "rollback: serving it" test "$(serving)" = "comp-api:$TAG_A"
 check "rollback: recorded ok" test "$(last_record)" = "rollback $TAG_A ok"
 check "rollback: says what it will do first" grep -qF "Rolling back from $TAG_B to $TAG_A" "$TMP/back.out"
 check "rollback: reads the tags, then up, then finish (3 SSM commands)" test "$(ssm_sends)" -eq 3
-check "rollback: never checks out or builds" bash -c "! grep -qE 'checkout|fetch' '$FAKE_GIT_LOG' && ! grep -q bake '$FAKE_DOCKER_LOG'"
+check "rollback: never fetches or builds" bash -c "! grep -qE 'fetch|worktree add' '$FAKE_GIT_LOG' && ! grep -q bake '$FAKE_DOCKER_LOG'"
+check "rollback: comes up with the tag's own snapshot" test "$(up_configs)" = "$TAG_A up releases/$TAG_A"
+check "rollback: once recorded, /opt/comp/src is at the tag's SHA" test "$(cat "$FAKE_GIT_HEAD")" = "$SHA_A"
 check "rollback: no migration check" bash -c "! grep -q 'run --rm' '$FAKE_DOCKER_LOG'"
 check "rollback: smoke-checked" test -s "$FAKE_CURL_LOG"
 check "rollback: up step allows 30 minutes (two 600 s waits and render)" test "$(ssm_call 2 timeout)" = 1800
@@ -153,9 +155,49 @@ for bad in "../../env/api.env 20261007T120000Z-release-$TAG_B-0123abcd new - rel
   check "entry refuses: $bad" test "$?" -eq 2
 done
 check "entry refusals: nothing ran" test ! -s "$FAKE_DOCKER_LOG"
+entry 20261007T120000Z-release-"$TAG_X".log 20261007T120000Z-release-"$TAG_X"-0123abcd new "$SHA_X" release up release "$TAG_X"
+check "entry refuses a SHA only on a feature branch" test "$?" -eq 1
+check "entry refuses a SHA only on a feature branch: names revola/self-host" grep -qF "is not on revola/self-host" "$TMP/entry.out"
+check "entry refuses a SHA only on a feature branch: changed nothing" grep -qxF "comp-result: changed=no" "$TMP/entry.out"
+check "entry refuses a SHA only on a feature branch: never checks it out, no docker call" \
+  bash -c "! grep -q 'checkout' '$FAKE_GIT_LOG' && test ! -s '$FAKE_DOCKER_LOG'"
 printf 'stale\n' >"$SERVER/logs/20261007T120000Z-release-$TAG_B.log"
 entry 20261007T120000Z-release-"$TAG_B".log 20261007T120000Z-release-"$TAG_B"-0123abcd new - release up rollback "$TAG_B"
 check "entry never overwrites a log" test "$(cat "$SERVER/logs/20261007T120000Z-release-$TAG_B.log")" = stale
+
+# The server lock: finish, revert and unlock ("own" steps of a run) wait up to 120 s for it, so
+# the reboot check or a security update skipping under the lease cannot make them fail; a new
+# step never waits. The fake flock waits at most 2 real seconds.
+own_lease() { printf '20261007T120000Z-release-%s-0123abcd %s release %s\n' "$TAG_C" "$(($(date +%s) + 600))" "$TAG_C" >"$SERVER/release.lease"; }
+unlock_c() { entry "20261007T12010$1Z-unlock-$TAG_C.log" "20261007T120000Z-release-$TAG_C-0123abcd" own - release unlock release "$TAG_C"; }
+reset_server
+released "$TAG_A"
+own_lease
+export FAKE_FLOCK_LOG="$TMP/flock.log"
+: >"$FAKE_FLOCK_LOG"
+python3 -c 'import fcntl, sys, time
+f = open(sys.argv[1], "a"); fcntl.flock(f, fcntl.LOCK_EX); open(sys.argv[2], "w").close(); time.sleep(1)' \
+  "$SERVER/release.lock" "$TMP/held" &
+holder=$!
+until [[ -e "$TMP/held" ]]; do /bin/sleep 0.05; done
+unlock_c 1
+check "an own step waits for a lock held briefly" test "$?" -eq 0
+wait "$holder"
+check "an own step waits for a lock held briefly: it ran" test "$(last_record):$(test -e "$SERVER/release.lease" && echo leased)" = "release $TAG_C unlocked:"
+check "an own step waits at most 120 s" grep -qxF "flock -w 120 9" "$FAKE_FLOCK_LOG"
+own_lease
+exec 8>>"$SERVER/release.lock"
+flock -n 8
+unlock_c 2
+check "an own step refused after its wait: 75" test "$?" -eq 75
+check "an own step refused after its wait: says how long it waited" grep -qF "waited 120 seconds for the server lock" "$TMP/entry.out"
+check "an own step refused after its wait: the lease stays" test -s "$SERVER/release.lease"
+: >"$FAKE_FLOCK_LOG"
+rm -f "$SERVER/release.lease"
+entry "20261007T120200Z-release-$TAG_B.log" "20261007T120200Z-release-$TAG_B-0123abcd" new "$SHA_B" build "$TAG_B"
+check "a new step never waits for the lock" test "$?:$(cat "$FAKE_FLOCK_LOG")" = "75:flock -n 9"
+exec 8>&-
+unset FAKE_FLOCK_LOG
 
 # ---------------------------------------------------------------- account and instance checks
 reset_server
@@ -178,6 +220,7 @@ release_sh "$TMP/status.out" status
 check "status: exits zero" test "$?" -eq 0
 check "status: current tag" grep -qF "current: $TAG_A" "$TMP/status.out"
 check "status: previous tag" grep -qF "previous: $TAG_D" "$TMP/status.out"
+check "status: the tags with a snapshot" grep -qxF "snapshots (rollback targets, with their images): $TAG_A $TAG_D" "$TMP/status.out"
 check "status: last releases" grep -qF "release $TAG_D ok" "$TMP/status.out"
 check "status: container health" grep -qF "(healthy)" "$TMP/status.out"
 check "status: disk use of /" grep -qE "^Filesystem" "$TMP/status.out"

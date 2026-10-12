@@ -3,8 +3,9 @@
 # holds the server lock) from /opt/comp/src:
 #
 #   prune.sh plan            prints what is kept and what would go (comp-result: remove=...)
-#   prune.sh apply <ref>...  removes those of <ref> that would still go, then trims the build
-#                            cache to 20 GB (docker builder prune --keep-storage 20GB -f)
+#   prune.sh apply <ref>...  removes those of <ref> that would still go and the snapshots of the
+#                            tags no longer kept, then trims the build cache to 20 GB (docker
+#                            builder prune --keep-storage 20GB -f)
 #   prune.sh auto            after a release (on-server/release.sh finish), with no confirmation:
 #                            when / is more than 70% used, removes everything `plan` would list,
 #                            then trims the build cache; otherwise does nothing
@@ -12,7 +13,9 @@
 # Only comp-api, comp-app, comp-portal and comp-migrate images are ever removed. Kept: the tags
 # of the current release and the last 3 other ok releases (releases.log), the default rollback
 # target (the entry below the top of the serving history), and the image of
-# every container of the comp project, running or stopped. The pinned cloudflared image is
+# every container of the comp project, running or stopped. A tag's snapshot
+# (/opt/comp/releases/<tag>) goes with its images: only the kept tags' stay, so the current
+# tag's and the rollback target's always do. The pinned cloudflared image is
 # never a candidate (it is not comp-*), so it stays even when its container is gone; Docker
 # shows it untagged, which is why this never runs `docker image prune`. The laptop asks for
 # the typed confirmation between the two steps.
@@ -44,9 +47,28 @@ removable() {
   done <<<"$images"
 }
 
+# stale_snapshots: prints, one per line, every tag with a snapshot that is not a kept tag.
+stale_snapshots() {
+  local keep dir
+  keep="$(kept_tags)"
+  for dir in "$COMP_RELEASES"/*; do
+    [[ -d "$dir" && "${dir##*/}" =~ $TAG_RE ]] || continue
+    grep -qxF -- "${dir##*/}" <<<"$keep" || echo "${dir##*/}"
+  done
+}
+
+remove_snapshots() { # the snapshots of the tags no longer kept
+  local tag status=0
+  for tag in $(stale_snapshots); do
+    if rm -rf "${COMP_RELEASES:?}/$tag"; then echo "removed the snapshot of $tag"; else echo "could not remove the snapshot of $tag"; status=1; fi
+  done
+  return "$status"
+}
+
 plan() {
-  local remove tunnel ref
+  local remove tunnel ref snapshots
   remove="$(removable)" || { echo "could not list the images or containers"; return 1; }
+  snapshots="$(stale_snapshots | tr '\n' ' ')"
   tunnel="$(grep -oE 'docker\.io/cloudflare/cloudflared:[^@[:space:]]+@sha256:[0-9a-f]{64}' "$COMPOSE_FILE" | head -n 1)"
   echo "Keeping the tags of the current release, the last 3 others and the rollback target: $(kept_tags | tr '\n' ' ')"
   echo "Keeping the images of the comp containers: $(docker ps --all --filter label=com.docker.compose.project=comp --format '{{.Image}}' | tr '\n' ' ')"
@@ -57,6 +79,7 @@ plan() {
   else
     echo "Removing no image."
   fi
+  echo "Removing the snapshots (the configurations in $COMP_RELEASES) of: ${snapshots:-no tag}"
   echo "Then trimming the build cache to 20 GB: docker builder prune --keep-storage 20GB -f"
   result "remove=$(tr '\n' ' ' <<<"$remove" | sed 's/ *$//')"
 }
@@ -69,6 +92,7 @@ apply() {
     grep -qxF -- "$ref" <<<"$remove" || { echo "skipping $ref: kept now"; continue; }
     if docker image rm "$ref" >/dev/null; then echo "removed $ref"; else echo "could not remove $ref"; status=1; fi
   done
+  remove_snapshots || status=1
   echo "== docker builder prune --keep-storage 20GB -f"
   docker builder prune --keep-storage 20GB -f || status=1
   df -h / || true

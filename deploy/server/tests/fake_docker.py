@@ -8,9 +8,12 @@ $FAKE_DOCKER_STATE and appends every call to $FAKE_DOCKER_LOG as
 
 State: images (refs, "comp-api:<tag>"), containers ({service: image ref} of the comp
 project), migrations ("up-to-date", "pending", "failed", "ahead" (the database has a migration
-this checkout lacks: Prisma 7.6's historiesDiverge output) or "unreachable").
+this checkout lacks: Prisma 7.6's historiesDiverge output) or "unreachable"), up (the compose
+file and COMP_ENV_DIR of the last `compose up`: what the containers run with) and
+trigger_env (the names in trigger.env when a Trigger.dev deploy ran).
 Knobs (environment):
-  FAKE_DOCKER_FAIL_UP       `compose up` with this TAG replaces the containers, then fails
+  FAKE_DOCKER_FAIL_UP       `compose up` with one of these TAGs (space-separated) replaces the
+                            containers, then fails
   FAKE_DOCKER_FAIL_BUILD    `buildx bake` of this target fails
   FAKE_DOCKER_FAIL_TRIGGER  `trigger.dev deploy` in this apps/<project> fails
   FAKE_DOCKER_TRIGGER_CLI   the trigger.dev version the tools image holds ("missing": none;
@@ -72,7 +75,9 @@ def tag() -> str:
 def compose(args: list[str]) -> NoReturn:
     if args[:1] != ['-f'] or len(args) < 3:
         fail('fake docker: compose needs -f <file> first')
-    args = args[2:]
+    compose_file, args = args[1], args[2:]
+    if not os.path.isfile(compose_file):
+        fail(f'open {compose_file}: no such file or directory')
     profiles = []
     while args[:1] == ['--profile']:
         profiles.append(args[1])
@@ -89,7 +94,8 @@ def compose(args: list[str]) -> NoReturn:
             fail(f'Error response from daemon: No such image: {missing[0]}')
         state['containers'] = {name: f'comp-{name}:{current}' for name in STACK}
         state['containers']['cloudflared'] = TUNNEL_IMAGE
-        if os.environ.get('FAKE_DOCKER_FAIL_UP') == current:
+        state['up'] = {'file': compose_file, 'env': os.environ.get('COMP_ENV_DIR', '/opt/comp/env')}
+        if current in os.environ.get('FAKE_DOCKER_FAIL_UP', '').split():
             fail('container comp-api-1 is unhealthy')
         done('Container comp-api-1 Healthy\nContainer comp-app-1 Healthy\nContainer comp-portal-1 Healthy')
     if command == 'stop':
@@ -122,6 +128,8 @@ def run(profiles: list[str], args: list[str]) -> NoReturn:
     if service == 'trigger':
         project = workdir.rsplit('/', 1)[-1]
         trigger_cli_check(argv_in, env)
+        with open(os.path.join(os.environ.get('COMP_ENV_DIR', '/opt/comp/env'), 'trigger.env')) as handle:
+            state['trigger_env'] = sorted(line.split('=', 1)[0] for line in handle.read().splitlines() if '=' in line)
         if os.environ.get('FAKE_DOCKER_FAIL_TRIGGER') == project:
             fail(f'Error: deploy of {project} failed (fake)')
         done(f'Successfully deployed version 20261007.1 of {project} (fake)')
@@ -221,6 +229,12 @@ if argv[:2] == ['buildx', 'bake']:
     if os.environ.get('REGISTRY', 'unset') != '':
         fail('fake docker: bake without REGISTRY= would push')
     target = argv[5]
+    for folder, dirs, files in os.walk('.'):  # BuildKit copies the context as the images' node user reads it
+        dirs[:] = [d for d in dirs if d != '.git']
+        for name in [*dirs, *files]:
+            path = os.path.join(folder, name)
+            if not os.path.islink(path) and os.stat(path).st_mode & 0o004 == 0:
+                fail(f'fake docker: {path} is not world-readable; the images\' node user could not read it')
     if os.environ.get('FAKE_DOCKER_FAIL_BUILD') == target:
         fail(f'ERROR: target {target}: failed to solve (fake)')
     state['images'].append(f'comp-{target}:{tag()}')

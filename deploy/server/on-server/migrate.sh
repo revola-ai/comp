@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Server side of `deploy/server/release.sh migrate`, run as root by on-server/entry.sh (which
-# holds the server lock) from /opt/comp/src checked out at the commit:
+# holds the server lock) from its worktree of the commit:
 #
-#   migrate.sh status <sha12>   builds comp-migrate:<sha12> when missing, renders the env files
-#                               and prints the migration status (comp-result: migrations=...)
+#   migrate.sh status <sha12>   builds comp-migrate:<sha12> when missing, renders the commit's
+#                               configuration into /opt/comp/stage/<run-id> (removed when the step
+#                               ends; nothing live changes and /opt/comp/src stays at the serving
+#                               release) and prints the migration status (comp-result: migrations=...)
 #   migrate.sh deploy <sha12>   the same, then, when migrations are pending, `prisma migrate
 #                               deploy` in a one-off comp-migrate container with
 #                               COMP_I_AM_TOUCHING_PROD=1, and the status again
@@ -16,6 +18,8 @@
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/server-common.sh"
 # shellcheck source=deploy/server/lib/server-stack.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/server-stack.sh"
+# shellcheck source=deploy/server/lib/server-config.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/server-config.sh"
 set -uo pipefail
 
 if [[ $# -ne 2 || ! "$1" =~ ^(status|deploy)$ || ! "$2" =~ $TAG_RE ]]; then
@@ -24,14 +28,16 @@ if [[ $# -ne 2 || ! "$1" =~ ^(status|deploy)$ || ! "$2" =~ $TAG_RE ]]; then
 fi
 step="$1" tag="$2"
 
+stage="$COMP_STAGE/${COMP_RUN_ID:?}"
+trap 'rm -rf "$stage"' EXIT
 build_images "$tag" migrate || exit 1
-render_env || exit 1
+stage_config "$stage" || exit 1
+use_config "$stage"
 migration_status "$tag"
 case "$MIGRATIONS" in
   up-to-date) echo "Nothing to apply: the database has every migration of $tag."; exit 0 ;;
   pending) [[ "$step" == deploy ]] || exit 0 ;;
-  failed) echo "A migration failed (above); resolve it by hand (prisma migrate resolve) first."; exit 1 ;;
-  *) echo "Could not read the migration status (above)."; exit 1 ;;
+  *) migrations_refusal "$tag"; exit 1 ;; # ahead, failed or unreadable: nothing to apply here
 esac
 
 echo "== prisma migrate deploy (comp-migrate:$tag, COMP_I_AM_TOUCHING_PROD=1)"
@@ -47,5 +53,5 @@ if [[ "$MIGRATIONS" != up-to-date ]]; then
   echo "The migrations ran, but the status is $MIGRATIONS (above)."
   exit 1
 fi
-record migrate "$tag" ok
+record migrate "$tag" ok || { echo "The database has every migration of $tag, but recording that failed (above)."; exit 1; }
 echo "Applied: the database has every migration of $tag."

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests for the systemd units and helper scripts deploy/server/user-data.sh installs: the
-# unhealthy-container restarter, the reboot check and the update window.
+# unhealthy-container restarter, the lease guard, the reboot check and the update window.
 # Run: bash deploy/server/tests/user-data-units.test.sh
 # Installs into a temporary directory and runs the scripts against stubbed docker, date,
 # needs-restarting and systemctl; nothing touches this machine's services.
@@ -81,13 +81,41 @@ check "restarter: a failed restart still tries the rest" grep -qF "restarting un
 DOCKER_PS_FAIL=1 "$RESTARTER" >"$TMP/r-ps.out" 2>&1
 check "restarter: docker ps failure exits non-zero" test "$?" -ne 0
 
+# ---------------------------------------------------------------- lease guard
+# comp-unless-leased runs a command (the reboot check, dnf-automatic) unless a release holds the
+# server between its steps: the release lock is free then, while the laptop smoke-checks a tag.
+(install_lease_guard "$SBIN") >"$TMP/guard.out" 2>&1
+GUARD="$SBIN/comp-unless-leased"
+check "lease guard: installed executable" test "$(mode_of "$GUARD")" = 755
+check "lease guard: is shellcheck clean" shellcheck "$GUARD"
+check "lease guard: reads the lease release steps write" grep -qF 'COMP_LEASE_FILE:-/opt/comp/release.lease' "$GUARD"
+printf '#!/usr/bin/env bash\necho "dnf-automatic $*" >>"$STUB_LOG"\nexit 3\n' >"$TMP/bin/dnf-automatic"
+chmod 755 "$TMP/bin/dnf-automatic"
+export COMP_LEASE_FILE="$TMP/release.lease"
+NOW_EPOCH="$(date +%s)"
+printf '20261007T095000Z-release-bbbbbbbbbbbb-0123abcd %s release bbbbbbbbbbbb\n' "$((NOW_EPOCH + 300))" >"$COMP_LEASE_FILE"
+: >"$STUB_LOG"
+"$GUARD" "$TMP/bin/dnf-automatic" /etc/dnf/automatic.conf --timer >"$TMP/guard-lease.out" 2>&1
+check "lease guard: a live lease skips the command, exit zero" test "$?:$(cat "$STUB_LOG")" = "0:"
+check "lease guard: a skip is logged with the holder" grep -qxF \
+  "not running dnf-automatic: release bbbbbbbbbbbb (run 20261007T095000Z-release-bbbbbbbbbbbb-0123abcd) holds the server for 300 more seconds" "$TMP/guard-lease.out"
+printf '20261007T095000Z-release-bbbbbbbbbbbb-0123abcd %s release bbbbbbbbbbbb\n' "$((NOW_EPOCH - 1))" >"$COMP_LEASE_FILE"
+"$GUARD" "$TMP/bin/dnf-automatic" /etc/dnf/automatic.conf --timer >"$TMP/guard-expired.out" 2>&1
+check "lease guard: an expired lease runs the command, with its arguments and status" \
+  test "$?:$(cat "$STUB_LOG")" = "3:dnf-automatic /etc/dnf/automatic.conf --timer"
+rm -f "$COMP_LEASE_FILE"
+: >"$STUB_LOG"
+"$GUARD" "$TMP/bin/dnf-automatic" --timer >"$TMP/guard-none.out" 2>&1
+check "lease guard: no lease runs the command" test "$(cat "$STUB_LOG")" = "dnf-automatic --timer"
+unset COMP_LEASE_FILE
+
 # ---------------------------------------------------------------- reboot check
 (install_reboot_check "$SBIN" "$UNITS") >"$TMP/reboot.out" 2>&1
 REBOOTER="$SBIN/comp-reboot-if-needed"
 check "reboot check: installed executable" test "$(mode_of "$REBOOTER")" = 755
 check "reboot check: is shellcheck clean" shellcheck "$REBOOTER"
-check "reboot check: the service runs it under the release lock (waits up to an hour)" \
-  grep -qxF "ExecStart=/usr/bin/flock -w 3600 /opt/comp/release.lock $REBOOTER" "$UNITS/comp-reboot-if-needed.service"
+check "reboot check: the service runs it under the release lock (waits up to an hour), unless leased" \
+  grep -qxF "ExecStart=/usr/bin/flock -w 3600 /opt/comp/release.lock $GUARD $REBOOTER" "$UNITS/comp-reboot-if-needed.service"
 check "reboot check: oneshot" grep -qxF "Type=oneshot" "$UNITS/comp-reboot-if-needed.service"
 check "reboot check: never during an update run" grep -qxF "After=dnf-automatic.service" "$UNITS/comp-reboot-if-needed.service"
 check "reboot check: Sundays 09:30 UTC" grep -qxF "OnCalendar=Sun *-*-* 09:30:00 UTC" "$UNITS/comp-reboot-if-needed.timer"
@@ -107,17 +135,13 @@ reboot_run 1 $'Core libraries or services have been updated since boot-up:\n  * 
 check "reboot check: a new kernel reboots" grep -qxF "systemctl reboot" "$STUB_LOG"
 check "reboot check: a reboot is logged" grep -qxF "rebooting to finish installing updates" "$TMP/nr-yes.out"
 export COMP_LEASE_FILE="$TMP/release.lease"
-NOW_EPOCH="$(date +%s)"
 printf '20261007T095000Z-release-bbbbbbbbbbbb-0123abcd %s release bbbbbbbbbbbb\n' "$((NOW_EPOCH + 300))" >"$COMP_LEASE_FILE"
-reboot_run 1 $'Core libraries or services have been updated since boot-up:\n  * kernel\n\nReboot is required to fully utilize these updates.' "$TMP/nr-lease.out"
-lease_status=$?
-check "reboot check: a live release lease skips the reboot" bash -c "! grep -q 'systemctl reboot' '$STUB_LOG'"
-check "reboot check: a skipped reboot exits zero" test "$lease_status" -eq 0
-check "reboot check: a skipped reboot is logged with the holder" \
-  grep -qF "not rebooting: release bbbbbbbbbbbb (run 20261007T095000Z-release-bbbbbbbbbbbb-0123abcd) holds the server for 300 more seconds" "$TMP/nr-lease.out"
-printf '20261007T095000Z-release-bbbbbbbbbbbb-0123abcd %s release bbbbbbbbbbbb\n' "$((NOW_EPOCH - 1))" >"$COMP_LEASE_FILE"
-reboot_run 1 $'Core libraries or services have been updated since boot-up:\n  * kernel\n\nReboot is required to fully utilize these updates.' "$TMP/nr-expired.out"
-check "reboot check: an expired lease does not stop the reboot" grep -qxF "systemctl reboot" "$STUB_LOG"
+: >"$STUB_LOG"
+NR_STATUS=1 NR_OUTPUT="Reboot is required to fully utilize these updates." "$GUARD" "$REBOOTER" >"$TMP/nr-lease.out" 2>&1
+check "reboot check through the guard: a live release lease skips it, exit zero" \
+  test "$?:$(grep -c 'systemctl reboot' "$STUB_LOG")" = "0:0"
+check "reboot check through the guard: the skip is logged with the holder" grep -qF \
+  "not running comp-reboot-if-needed: release bbbbbbbbbbbb (run 20261007T095000Z-release-bbbbbbbbbbbb-0123abcd) holds the server" "$TMP/nr-lease.out"
 unset COMP_LEASE_FILE
 reboot_run 1 "Error: unknown command" "$TMP/nr-err.out"
 check "reboot check: an error exits non-zero" test "$?" -ne 0
@@ -139,13 +163,13 @@ printf '[Unit]\nDescription=dnf automatic\n\n[Service]\nType=oneshot\nNice=19\nE
 (install_update_lock "$UNITS" "$PACKAGED") >"$TMP/lock.out" 2>&1
 check "update lock: installs" test "$?" -eq 0
 LOCK_DROPIN="$UNITS/dnf-automatic.service.d/comp-release-lock.conf"
-check "update lock: resets the packaged command, then runs it under the release lock" test "$(cat "$LOCK_DROPIN" 2>/dev/null)" = \
-  "$(printf '%s\n' '[Service]' 'ExecStart=' 'ExecStart=/usr/bin/flock -w 3600 /opt/comp/release.lock /usr/bin/dnf-automatic /etc/dnf/automatic.conf --timer')"
+check "update lock: resets the packaged command, then runs it under the release lock, unless leased" test "$(cat "$LOCK_DROPIN" 2>/dev/null)" = \
+  "$(printf '%s\n' '[Service]' 'ExecStart=' 'ExecStart=/usr/bin/flock -w 3600 /opt/comp/release.lock /usr/local/sbin/comp-unless-leased /usr/bin/dnf-automatic /etc/dnf/automatic.conf --timer')"
 # shellcheck disable=SC2016 # expanded by the inner bash
 check "update lock: the lock is the one release steps take" test /opt/comp/release.lock = \
   "$(env -u COMP_ROOT bash -c 'source "$1" && printf %s "$RELEASE_LOCK"' _ "$SERVER_DIR/lib/server-common.sh")"
-check "update lock: the reboot check reads the lease release steps write" \
-  grep -qF 'COMP_LEASE_FILE:-/opt/comp/release.lease' "$SBIN/comp-reboot-if-needed"
+check "user-data installs the lease guard where the update lock runs it" \
+  grep -qxF "  install_lease_guard /usr/local/sbin" "$SERVER_DIR/user-data.sh"
 (install_update_lock "$UNITS" "$TMP/missing.service") >"$TMP/lock-missing.out" 2>&1
 check "update lock: a missing packaged unit fails" test "$?" -ne 0
 check "update lock: says which file" grep -qF "$TMP/missing.service" "$TMP/lock-missing.out"

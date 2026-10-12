@@ -6,13 +6,12 @@
 # It installs Docker from the AL2023 repository, the compose and buildx plugins from their
 # GitHub releases (pinned versions, pinned sha256; a mismatch stops the run), git, python3,
 # dnf-automatic (security updates daily at 09:00 UTC) and dnf-utils (a reboot check Sundays at
-# 09:30 UTC, only when updates need it; both wait for the release lock); adds 8 GiB swap; installs a
-# timer that restarts unhealthy comp containers every minute; clones revola-ai/comp into
-# /opt/comp/src; and last checks Docker Engine >= 25 and Compose >= 2.30 (compose.yaml needs both).
-# On success it writes /opt/comp/provisioned. EC2 caps user data at 16 KB.
+# 09:30 UTC, only when updates need it; both wait for the release lock and skip under a release's
+# lease); adds 8 GiB swap; installs a timer that restarts unhealthy comp containers every minute;
+# clones revola-ai/comp into /opt/comp/src; and last checks Docker Engine >= 25 and Compose >= 2.30
+# (compose.yaml needs both). On success it writes /opt/comp/provisioned. EC2 caps user data at 16 KB.
 #
-# Sourcing the file (deploy/server/tests/user-data.test.sh does) defines everything and runs
-# nothing.
+# Sourcing the file (deploy/server/tests/user-data.test.sh does) defines everything and runs nothing.
 
 # Checksums from each release's checksums.txt, cross-checked with the per-asset digest GitHub
 # reports (2026-10-07). To bump: change the version and the checksum together.
@@ -32,14 +31,14 @@ REPO_URL=https://github.com/revola-ai/comp
 SRC_DIR=/opt/comp/src
 SWAP_FILE=/swapfile
 SWAP_MIB=8192
-# The lock release.sh steps take (lib/server-common.sh; tests/user-data-units.test.sh checks it):
-# security updates and the reboot check wait for it, so neither restarts Docker mid-release.
+# The lock release.sh steps take (lib/server-common.sh; tests/user-data-units.test.sh checks it).
+# Security updates and the reboot check wait for it, so neither restarts Docker under a release
+# step. Between a release's steps the lock is free while the laptop smoke-checks the new tag, so
+# both also run through UNLESS_LEASED (install_lease_guard), which skips them under the lease.
 LOCKED="/usr/bin/flock -w 3600 /opt/comp/release.lock"
+UNLESS_LEASED=/usr/local/sbin/comp-unless-leased
 
-fail() {
-  echo "user-data: FAILED: $*" >&2
-  exit 1
-}
+fail() { echo "user-data: FAILED: $*" >&2; exit 1; }
 
 # version_at_least <actual> <minimum>: true when the leading dotted number of <actual> (a "v"
 # prefix and any suffix such as "-1.amzn2023" ignored) is at least <minimum>.
@@ -57,9 +56,8 @@ version_at_least() {
   done
 }
 
-require_version() { # require_version <what> <actual> <minimum>
-  version_at_least "$2" "$3" || fail "$1 ${2:-(unreadable)} is older than $3"
-}
+# require_version <what> <actual> <minimum>
+require_version() { version_at_least "$2" "$3" || fail "$1 ${2:-(unreadable)} is older than $3"; }
 
 # install_plugin <url> <sha256> <destination>: downloads next to the destination, checks the
 # checksum and only then moves it into place, so a bad download never replaces a good binary.
@@ -67,15 +65,10 @@ install_plugin() {
   local url="$1" expected="$2" dest="$3" tmp actual
   mkdir -p "$(dirname "$dest")"
   tmp="$(mktemp "$(dirname "$dest")/.download.XXXXXX")"
-  if ! curl -fsSL --retry 5 --retry-delay 2 -o "$tmp" "$url"; then
-    rm -f "$tmp"
-    fail "could not download $url"
-  fi
+  curl -fsSL --retry 5 --retry-delay 2 -o "$tmp" "$url" || { rm -f "$tmp"; fail "could not download $url"; }
   actual="$(sha256sum "$tmp" | cut -d' ' -f1)"
-  if [[ "$actual" != "$expected" ]]; then
-    rm -f "$tmp"
-    fail "checksum mismatch for $url: expected $expected, got $actual"
-  fi
+  [[ "$actual" == "$expected" ]] ||
+    { rm -f "$tmp"; fail "checksum mismatch for $url: expected $expected, got $actual"; }
   chmod 755 "$tmp"
   mv -f "$tmp" "$dest"
 }
@@ -130,10 +123,8 @@ while read -r name; do
   if since="$(docker inspect --format '{{.State.StartedAt}}' "$name" 2>/dev/null)"; then
     started="$(date -d "$since" +%s 2>/dev/null)" || started=0
   fi
-  if ((now - started < MIN_AGE)); then
-    echo "leaving unhealthy container $name alone: started $((now - started))s ago (under ${MIN_AGE}s)"
-    continue
-  fi
+  ((now - started >= MIN_AGE)) ||
+    { echo "leaving unhealthy container $name alone: started $((now - started))s ago (under ${MIN_AGE}s)"; continue; }
   echo "restarting unhealthy container $name"
   docker restart "$name" >/dev/null || { echo "could not restart $name" >&2; status=1; }
 done <<<"$names"
@@ -164,37 +155,45 @@ WantedBy=timers.target
 UNIT
 }
 
+# install_lease_guard <sbin dir>: installs comp-unless-leased (below) there.
+install_lease_guard() {
+  mkdir -p "$1"
+  cat >"$1/comp-unless-leased" <<'SCRIPT'
+#!/bin/bash
+# comp-unless-leased <command...>: runs the command (the reboot check, dnf-automatic) unless a
+# release holds the server between its steps (an unexpired /opt/comp/release.lease, which
+# lib/server-common.sh writes): then the release lock is free, but the laptop is smoke-checking
+# a new tag, so it logs why and exits 0; the next window tries again. Runs under that lock.
+set -uo pipefail
+LEASE="${COMP_LEASE_FILE:-/opt/comp/release.lease}"
+holder="" expires=0 what=""
+[[ ! -s "$LEASE" ]] || read -r holder expires what <"$LEASE" || true
+[[ "$expires" =~ ^[0-9]+$ ]] || expires=0
+left=$((expires - $(date +%s)))
+[[ -z "$holder" ]] || ((left <= 0)) ||
+  { echo "not running ${1##*/}: $what (run $holder) holds the server for $left more seconds"; exit 0; }
+exec "$@"
+SCRIPT
+  chmod 755 "$1/comp-unless-leased"
+}
+
 # install_reboot_check <sbin dir> <unit dir>: dnf-automatic installs updates but never reboots;
 # this reboots on Sundays at 09:30 UTC, only when `needs-restarting -r` says installed updates (a
-# kernel, glibc, systemd) need it. Docker is enabled and every container is restart:
-# unless-stopped, so the stack comes back by itself.
+# kernel, glibc, systemd) need it. Docker and the containers restart by themselves after it.
 install_reboot_check() {
   local script="$1/comp-reboot-if-needed"
   mkdir -p "$1" "$2"
   cat >"$script" <<'SCRIPT'
 #!/bin/bash
-# Reboots when installed updates need it (needs-restarting -r exits 1 and says so), unless a
-# release holds the server between its steps (an unexpired /opt/comp/release.lease); otherwise
-# does nothing. Run by comp-reboot-if-needed.timer under the release lock; output in
-# `journalctl -u comp-reboot-if-needed`.
+# Reboots when installed updates need it (needs-restarting -r exits 1 and says so); otherwise
+# does nothing. Run by comp-reboot-if-needed.timer under the release lock and comp-unless-leased;
+# output in `journalctl -u comp-reboot-if-needed`.
 set -uo pipefail
-LEASE="${COMP_LEASE_FILE:-/opt/comp/release.lease}"
 report="$(needs-restarting -r 2>&1)"
 status=$?
 echo "$report"
-if [[ "$status" -eq 0 ]]; then
-  echo "no reboot needed"
-  exit 0
-fi
+[[ "$status" -ne 0 ]] || { echo "no reboot needed"; exit 0; }
 if [[ "$status" -eq 1 && "$report" == *"Reboot is required"* ]]; then
-  holder="" expires=0 what=""
-  [[ ! -s "$LEASE" ]] || read -r holder expires what <"$LEASE" || true
-  [[ "$expires" =~ ^[0-9]+$ ]] || expires=0
-  left=$((expires - $(date +%s)))
-  if [[ -n "$holder" ]] && ((left > 0)); then
-    echo "reboot needed, but not rebooting: $what (run $holder) holds the server for $left more seconds"
-    exit 0
-  fi
   echo "rebooting to finish installing updates"
   systemctl reboot
   exit
@@ -211,7 +210,7 @@ After=dnf-automatic.service
 
 [Service]
 Type=oneshot
-ExecStart=$LOCKED $script
+ExecStart=$LOCKED $1/comp-unless-leased $script
 UNIT
   cat >"$2/comp-reboot-if-needed.timer" <<'UNIT'
 [Unit]
@@ -226,9 +225,8 @@ WantedBy=timers.target
 UNIT
 }
 
-# install_update_window <unit dir>: dnf-automatic daily at 09:00 UTC and only then; after
-# downtime the next 09:00 run catches up instead of a run at boot (the packaged timer is
-# Persistent=true).
+# install_update_window <unit dir>: dnf-automatic daily at 09:00 UTC and only then; after downtime
+# the next 09:00 run catches up instead of a run at boot (the packaged timer is Persistent=true).
 install_update_window() {
   mkdir -p "$1/dnf-automatic.timer.d"
   cat >"$1/dnf-automatic.timer.d/comp-window.conf" <<'UNIT'
@@ -241,16 +239,17 @@ UNIT
 }
 
 # install_update_lock <unit dir> <packaged dnf-automatic.service>: runs the packaged update
-# command under the release lock (a drop-in resets ExecStart and wraps it), so updates never
-# restart Docker while a release step runs. Upstream dnf 4.14 ships
-# "/usr/bin/dnf-automatic /etc/dnf/automatic.conf --timer"; any other shape stops the run.
+# command under the release lock and the lease guard (a drop-in resets ExecStart and wraps it),
+# so updates never restart Docker during a release, its smoke checks included. Upstream dnf 4.14
+# ships "/usr/bin/dnf-automatic /etc/dnf/automatic.conf --timer"; any other shape stops the run.
 install_update_lock() {
   local command
   [[ -f "$2" ]] || fail "$2 is missing (is dnf-automatic installed?)"
   command="$(sed -n 's/^ExecStart=//p' "$2")"
   [[ -n "$command" && "$command" != *$'\n'* ]] || fail "expected one ExecStart line in $2, got: ${command:-none}"
   mkdir -p "$1/dnf-automatic.service.d"
-  printf '[Service]\nExecStart=\nExecStart=%s %s\n' "$LOCKED" "$command" >"$1/dnf-automatic.service.d/comp-release-lock.conf"
+  printf '[Service]\nExecStart=\nExecStart=%s %s %s\n' "$LOCKED" "$UNLESS_LEASED" "$command" \
+    >"$1/dnf-automatic.service.d/comp-release-lock.conf"
 }
 
 make_swap() {
@@ -274,6 +273,7 @@ main() {
   echo "user-data: security updates, reboot check, swap, unhealthy-container timer"
   configure_updates /etc/dnf/automatic.conf /etc/dnf/vars/releasever
   install_update_window /etc/systemd/system
+  install_lease_guard /usr/local/sbin
   install_update_lock /etc/systemd/system /usr/lib/systemd/system/dnf-automatic.service
   install_reboot_check /usr/local/sbin /etc/systemd/system
   install_restarter /usr/local/sbin /etc/systemd/system

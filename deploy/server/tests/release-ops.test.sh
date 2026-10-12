@@ -52,11 +52,11 @@ release_typed "migrate" "$TMP/migrate.out" migrate "$SHA_B"
 check "migrate: exits zero" test "$?" -eq 0
 check "migrate: asks for the word migrate" grep -qF "Type migrate to apply" "$TMP/migrate.out"
 check "migrate: status step, then deploy step (two SSM commands)" test "$(ssm_sends)" -eq 2
-check "migrate: both steps check out the SHA" test "$(grep -c "checkout --quiet --detach $SHA_B" "$FAKE_GIT_LOG")" -eq 2
+check "migrate: both steps check the SHA out in a worktree" test "$(grep -c "worktree add --quiet --detach $SERVER/work/$TAG_B $SHA_B" "$FAKE_GIT_LOG")" -eq 2
 check "migrate: deploy with the production opt-in in a one-off container" grep -qE \
-  "^TAG=$TAG_B $TOOLS -e COMP_I_AM_TOUCHING_PROD=1 migrate sh -c '.*exec bunx prisma migrate deploy'\$" "$FAKE_DOCKER_LOG"
+  "^TAG=$TAG_B $TOOLS -e COMP_I_AM_TOUCHING_PROD=1 migrate sh -c '.*exec bunx prisma migrate deploy'\$" <(docker_log)
 check "migrate: status runs without the opt-in" grep -qE \
-  "^TAG=$TAG_B $TOOLS migrate sh -c '.*exec bunx prisma migrate status'\$" "$FAKE_DOCKER_LOG"
+  "^TAG=$TAG_B $TOOLS migrate sh -c '.*exec bunx prisma migrate status'\$" <(docker_log)
 check "migrate: TLS verified against the image's CA" grep -qF 'set("sslcert",process.env.DATABASE_SSL_CA)' "$FAKE_DOCKER_LOG"
 check "migrate: applied" grep -qF '"migrations": "up-to-date"' "$FAKE_DOCKER_STATE"
 check "migrate: no container of the stack changed" test -z "$(container_changes)"
@@ -88,10 +88,21 @@ release_typed "migrate" "$TMP/ahead.out" migrate "$SHA_B"
 check "migrate, the database is ahead of the commit: refused" test "$?" -ne 0
 check "migrate, the database is ahead of the commit: never asks" bash -c "! grep -qF 'Type migrate' '$TMP/ahead.out'"
 check "migrate, the database is ahead of the commit: never deploys" bash -c "! grep -q 'migrate deploy' '$FAKE_DOCKER_LOG'"
+check "migrate, the database is ahead of the commit: says so as the release gate does" grep -qF \
+  "REFUSING: the database has migrations this commit lacks; release a commit that includes them" "$TMP/ahead.out"
+check "migrate, the database is ahead of the commit: never says the status was unreadable" \
+  bash -c "! grep -qiF 'could not read the migration status' '$TMP/ahead.out' && ! grep -qF 'reading the migration status failed' '$TMP/ahead.out'"
 
 reset_server
 release_typed "migrate" "$TMP/unpushed.out" migrate "$SHA_C"
 check "migrate <unpushed>: refused before any AWS call" test ! -s "$FAKE_AWS_LOG"
+for command in migrate trigger; do
+  reset_server
+  release_typed "$command" "$TMP/feature.out" "$command" "$SHA_X"
+  check "$command <a SHA only on a feature branch>: refused before any AWS call" test ! -s "$FAKE_AWS_LOG"
+  check "$command <a SHA only on a feature branch>: says to merge it into revola/self-host" \
+    grep -qF "merge it into revola/self-host first" "$TMP/feature.out"
+done
 
 # ---------------------------------------------------------------- trigger
 # CLI_CHECK of on-server/trigger.sh, verbatim; the fake docker runs it against a stand-in /repo.
@@ -109,26 +120,40 @@ release_typed "trigger" "$TMP/trigger.out" trigger "$SHA_B"
 check "trigger: exits zero" test "$?" -eq 0
 check "trigger: asks for the word trigger" grep -qF "Type trigger to deploy" "$TMP/trigger.out"
 check "trigger: deploys api, then app, in the tools image" \
-  test "$(grep ' trigger sh -c ' "$FAKE_DOCKER_LOG")" = "$(deploy_line api; deploy_line app)"
+  test "$(docker_log | grep ' trigger sh -c ')" = "$(deploy_line api; deploy_line app)"
 check "trigger: never runs npx or names a registry package" \
   bash -c "! grep -qE 'npx|trigger\.dev@' '$FAKE_DOCKER_LOG'"
 check "trigger: one SSM command, up to an hour" test "$(ssm_sends):$(ssm_call 1 timeout)" = "1:3600"
 check "trigger: no ref or token on any command line" \
   bash -c "! grep -qE 'fakesecret|TRIGGER_ACCESS_TOKEN=' '$FAKE_DOCKER_LOG' '$FAKE_AWS_LOG'"
-check "trigger: trigger.env holds the token and both refs" \
-  test "$(names_of "$SERVER/env/trigger.env" | tr '\n' ' ')" = "TRIGGER_ACCESS_TOKEN TRIGGER_PROJECT_REF_API TRIGGER_PROJECT_REF_APP "
+check "trigger: trigger.env holds the token and both refs" test "$(python3 -c 'import json, sys; print(" ".join(json.load(open(sys.argv[1]))["trigger_env"]))' "$FAKE_DOCKER_STATE")" = \
+  "TRIGGER_ACCESS_TOKEN TRIGGER_PROJECT_REF_API TRIGGER_PROJECT_REF_APP"
 check "trigger: the Trigger dashboard env vars are documented" grep -qF "SERVICE_TOKEN_TRIGGER" "$ROOT/docs/self-hosting-server.md"
 check "trigger: the app project gets no BETTER_AUTH_URL" \
   bash -c "grep -F 'BETTER_AUTH_URL' '$ROOT/docs/self-hosting-server.md' | grep -qF '| not set |'"
 check "README points at the Trigger dashboard list" grep -qF "docs/self-hosting-server.md" "$SERVER_DIR/README.md"
 check "trigger: no container of the stack changed" test -z "$(container_changes)"
 check "trigger: recorded" test "$(last_record)" = "trigger $TAG_B ok"
+check "trigger: checks the migrations are up to date before deploying" grep -qF "comp-result: migrations=up-to-date" "$SERVER"/logs/*-trigger-"$TAG_B".log
 no_secret "trigger" "$TMP/trigger.out"
+
+for state in pending ahead failed unreachable; do
+  reset_server
+  released "$TAG_A"
+  docker_state "s['migrations'] = '$state'"
+  release_typed "trigger" "$TMP/trigger-gate-$state.out" trigger "$SHA_B"
+  check "trigger, migrations $state: refused" test "$?" -ne 0
+  check "trigger, migrations $state: deploys nothing" bash -c "! grep -q ' trigger sh -c ' '$FAKE_DOCKER_LOG'"
+  check "trigger, migrations $state: recorded failed" test "$(last_record)" = "trigger $TAG_B failed"
+  check "trigger, migrations $state: says why, as the release gate does" grep -qF "REFUSING: " "$TMP/trigger-gate-$state.out"
+done
+check "trigger, migrations pending: prints the migrate command" grep -qF \
+  "REFUSING: the database lacks migrations of $TAG_B (listed above). Apply them first: deploy/server/release.sh migrate $TAG_B" "$TMP/trigger-gate-pending.out"
 
 reset_server
 released "$TAG_A"
 release_typed "trigger" "$TMP/app.out" trigger "$SHA_B" --project app
-check "trigger --project app: only app" test "$(grep ' trigger sh -c ' "$FAKE_DOCKER_LOG")" = "$(deploy_line app)"
+check "trigger --project app: only app" test "$(docker_log | grep ' trigger sh -c ')" = "$(deploy_line app)"
 
 reset_server
 release_typed "trigger" "$TMP/bogus.out" trigger "$SHA_B" --project web
@@ -186,6 +211,8 @@ release_typed "no" "$TMP/prune-no.out" prune
 check "prune declined: exits non-zero" test "$?" -ne 0
 check "prune declined: lists what it would remove" bash -c "grep -qF 'comp-api:$TAG_F' '$TMP/prune-no.out' && grep -qF 'comp-migrate:$TAG_G' '$TMP/prune-no.out'"
 check "prune declined: removes nothing" bash -c "! grep -qE 'image rm|builder prune' '$FAKE_DOCKER_LOG'"
+check "prune declined: lists the snapshots it would remove" grep -qF "of: $TAG_E $TAG_F" "$TMP/prune-no.out"
+check "prune declined: keeps every snapshot" test "$(files_in "$SERVER/releases")" = "$TAG_A $TAG_B $TAG_C $TAG_D $TAG_E $TAG_F"
 check "prune declined: one SSM command" test "$(ssm_sends)" -eq 1
 
 prune_server
@@ -204,6 +231,9 @@ check "prune: never touches other images" grep -qF '"busybox:latest"' "$FAKE_DOC
 check "prune: trims the build cache to 20 GB" has_line "$FAKE_DOCKER_LOG" "docker builder prune --keep-storage 20GB -f"
 check "prune: never prunes images wholesale" bash -c "! grep -qE 'image prune|system prune' '$FAKE_DOCKER_LOG'"
 check "prune: no container changed" test -z "$(container_changes)"
+check "prune: removes the snapshots of the tags it no longer keeps, and only those" \
+  test "$(files_in "$SERVER/releases")" = "$TAG_A $TAG_B $TAG_C $TAG_D"
+check "prune: says which snapshots it removed" grep -qxF "removed the snapshot of $TAG_E" "$TMP/prune.out"
 
 # Release F, A, B, C, D, E, then roll back to D, C and B: the serving history is [F, A, B], so a
 # default rollback goes to A, which is not among the 4 newest ok tags (B, C, D, E).
@@ -215,56 +245,8 @@ done
 docker_state "s['containers'] = {n: f'comp-{n}:$TAG_B' for n in ('api', 'app', 'portal')}"
 release_typed "prune" "$TMP/prune-stack.out" prune
 check "prune after rollbacks: keeps the default rollback target" grep -qF "\"comp-api:$TAG_A\"" "$FAKE_DOCKER_STATE"
+check "prune after rollbacks: keeps the snapshots of the current tag and the rollback target" \
+  test -f "$SERVER/releases/$TAG_A/sha" -a -f "$SERVER/releases/$TAG_B/sha" -a ! -e "$SERVER/releases/$TAG_F"
 check "prune after rollbacks: removes what is outside the history and the newest tags" \
   bash -c "! grep -qF 'comp-api:$TAG_F' '$FAKE_DOCKER_STATE'"
-
-# ---------------------------------------------------------------- disk: prune after a release, warn in status
-auto_server() { # five ok releases (A serving), then release B with / at <use> percent
-  reset_server
-  released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A"
-  FAKE_DF_USE="$1" release_sh "$TMP/auto-$1.out" release "$SHA_B"
-}
-AUTO_REMOVED="$(printf 'comp-%s\n' "api:$TAG_E" "app:$TAG_E" "portal:$TAG_E" "migrate:$TAG_E" \
-  "api:$TAG_F" "app:$TAG_F" "portal:$TAG_F" "migrate:$TAG_F")"
-auto_server 71
-check "disk over 70% after a release: the release succeeds" test "$?:$(last_record)" = "0:release $TAG_B ok"
-check "disk over 70% after a release: removes the images prune would, without asking" \
-  test "$(sed -n 's/^docker image rm //p' "$FAKE_DOCKER_LOG" | sort)" = "$(sort <<<"$AUTO_REMOVED")"
-check "disk over 70% after a release: keeps the current, previous and last 3 ok tags" bash -c "
-  for t in $TAG_B $TAG_A $TAG_C $TAG_D; do grep -qF \"comp-api:\$t\" '$FAKE_DOCKER_STATE' || exit 1; done"
-check "disk over 70% after a release: keeps the pinned cloudflared image" grep -qF "\"$TUNNEL_REF\"" "$FAKE_DOCKER_STATE"
-check "disk over 70% after a release: trims the build cache to 20 GB" \
-  has_line "$FAKE_DOCKER_LOG" "docker builder prune --keep-storage 20GB -f"
-check "disk over 70% after a release: says why" grep -qF "/ is 71% used, over 70%" "$TMP/auto-71.out"
-check "disk over 70% after a release: reports what it removed" \
-  bash -c "grep -qxF 'removed comp-api:$TAG_E' '$TMP/auto-71.out' && grep -qxF 'removed comp-migrate:$TAG_F' '$TMP/auto-71.out'"
-check "disk over 70% after a release: the finish step does it (no extra SSM command)" test "$(ssm_sends)" -eq 2
-auto_server 70
-check "disk at 70%: removes nothing" bash -c "! grep -qE 'image rm|builder prune' '$FAKE_DOCKER_LOG'"
-check "disk at 70%: says so" grep -qF "/ is 70% used: nothing pruned" "$TMP/auto-70.out"
-reset_server
-released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A"
-FAKE_DOCKER_FAIL_PRUNE=1 FAKE_DF_USE=90 release_sh "$TMP/auto-fail.out" release "$SHA_B"
-check "a failed prune after a release: the release stands" test "$?:$(last_record)" = "0:release $TAG_B ok"
-check "a failed prune after a release: the laptop says released, prune failed" \
-  grep -qF "Released $TAG_B, but the post-release prune failed" "$TMP/auto-fail.out"
-check "a failed prune after a release: never calls it a recording failure" bash -c "! grep -qF 'recording it failed' '$TMP/auto-fail.out'"
-reset_server
-released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A"
-FAKE_TIMEOUT_EXPIRE=1 FAKE_DF_USE=90 release_sh "$TMP/auto-slow.out" release "$SHA_B"
-check "a post-release prune that times out: the release stands" test "$?:$(last_record)" = "0:release $TAG_B ok"
-check "a post-release prune that times out: bounded to 600 s" grep -qE "^timeout 600 bash .*/prune\.sh auto\$" "$FAKE_TIMEOUT_LOG"
-check "a post-release prune that times out: the laptop says so" \
-  grep -qF "Released $TAG_B, but the post-release prune timed out" "$TMP/auto-slow.out"
-check "a post-release prune that times out: never a recording failure" bash -c "! grep -qF 'recording it failed' '$TMP/auto-slow.out'"
-check "the finish step reports the recording before it prunes" bash -c "
-  log=\$(ls '$SERVER'/logs/*-finish-$TAG_B.log) && grep -n '' \"\$log\" | grep -E 'comp-result: recorded=ok|post-release prune' | head -n 1 | grep -qF recorded=ok"
-reset_server
-released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A" "$TAG_B"
-FAKE_DF_USE=90 release_sh "$TMP/auto-rollback.out" rollback
-check "a rollback never prunes" bash -c "! grep -qE 'image rm|builder prune' '$FAKE_DOCKER_LOG'"
-FAKE_DF_USE=71 release_sh "$TMP/status-full.out" status
-check "status over 70%: a warning line" grep -qxF "WARNING: / is 71% used (over 70%); free space with deploy/server/release.sh prune" "$TMP/status-full.out"
-FAKE_DF_USE=70 release_sh "$TMP/status-ok.out" status
-check "status at 70%: no warning" bash -c "! grep -qF WARNING '$TMP/status-ok.out'"
 finish

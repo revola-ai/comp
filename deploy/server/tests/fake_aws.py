@@ -11,15 +11,7 @@ Knobs (environment):
   FAKE_AWS_PROFILE_NOT_READY   run-instances fails this many times with the IAM-propagation error
   FAKE_AWS_WARN                every successful call also writes a warning to stderr
   FAKE_AWS_PAGED               list answers come back as text pages, the first one empty
-  FAKE_AWS_SECRET              the file get-secret-value answers with (render-env.sh)
-  FAKE_SSM_ROOT                ssm send-command runs its commands right away, locally, with
-                               /bin/sh and COMP_ROOT=<this> (the server's /opt/comp)
-  FAKE_SSM_TRUNCATE            keep this many characters of a command's output (SSM keeps 24000)
-  FAKE_SSM_PENDING_POLLS       get-command-invocation answers InProgress this many times first
-  FAKE_SSM_END                 "<n>:<Status>:<StatusDetails>:<ResponseCode>": command n (from 0)
-                               ends that way instead, with no output (timed out, cancelled...)
-  FAKE_SSM_CANCEL              cancel-command: "ok" (default; it ends Cancelled, no output) or
-                               "late" (it had ended already)
+  FAKE_AWS_SECRET, FAKE_SSM_*  the SSM Run Command and Secrets Manager calls (fake_aws_ssm.py)
   FAKE_AWS_INTERRUPT           "<SIG>@<trigger>,...": once per trigger, sends SIG (INT, TERM, HUP)
                                to the process group (release.sh, as a Ctrl-C would) and dies of it
                                unanswered; a trigger is "<service> <operation>" (send-command
@@ -30,7 +22,6 @@ import json
 import os
 import shlex
 import signal
-import subprocess
 import sys
 import time
 from typing import NoReturn
@@ -185,57 +176,9 @@ if (service, operation) == ('ssm', 'get-parameter'):
     out('ami-0fakeal2023arm64')
 
 # ---------------------------------------------------------------- ssm run-command, secrets
-if (service, operation) == ('secretsmanager', 'get-secret-value'):
-    with open(os.environ['FAKE_AWS_SECRET']) as handle:
-        print(handle.read())
-    sys.exit(0)  # read-only: leaves the state file to the caller (an SSM command runs this)
-
-if (service, operation) == ('ssm', 'send-command'):
-    if required_opt('--document-name') != 'AWS-RunShellScript':
-        error('InvalidDocument', 'SendCommand', 'only AWS-RunShellScript is faked')
-    required_opt('--timeout-seconds')
-    parameters = json.loads(required_opt('--parameters'))
-    if not parameters.get('executionTimeout'):
-        error('InvalidParameters', 'SendCommand', 'set executionTimeout explicitly')
-    script = '\n'.join(parameters['commands'])
-    run = subprocess.run(['/bin/sh', '-c', script], capture_output=True, text=True,
-                         env={**os.environ, 'COMP_ROOT': os.environ['FAKE_SSM_ROOT']})
-    keep = int(os.environ.get('FAKE_SSM_TRUNCATE', '24000'))
-    command_id = f"fake-command-{len(state['commands'])}"
-    state['commands'][command_id] = {
-        'instance': required_opt('--instance-ids'), 'code': run.returncode, 'polls': 0,
-        'stdout': run.stdout[:keep], 'stderr': run.stderr[:8000],
-        'comment': opt('--comment'), 'cancelled': False,
-    }
-    interrupt('ssm send-command')
-    out(command_id)
-
-if (service, operation) == ('ssm', 'cancel-command'):
-    command = state['commands'].get(required_opt('--command-id'))
-    if command is None or command['instance'] != required_opt('--instance-ids'):
-        error('InvalidCommandId', 'CancelCommand', 'no such command')
-    command['cancelled'] = os.environ.get('FAKE_SSM_CANCEL', 'ok') == 'ok'
-    out()
-
-if (service, operation) == ('ssm', 'get-command-invocation'):
-    command = state['commands'].get(required_opt('--command-id'))
-    if command is None or command['instance'] != required_opt('--instance-id'):
-        error('InvocationDoesNotExist', 'GetCommandInvocation', 'no such invocation')
-    interrupt(required_opt('--command-id'))
-    command['polls'] += 1
-    pending = command['polls'] <= int(os.environ.get('FAKE_SSM_PENDING_POLLS', '1'))
-    status = 'InProgress' if pending else ('Success' if command['code'] == 0 else 'Failed')
-    details, code = status, -1 if pending else command['code']
-    stdout, stderr = ('', '') if pending else (command['stdout'], command['stderr'])
-    end = os.environ.get('FAKE_SSM_END', '').split(':')
-    if not pending and len(end) == 4 and required_opt('--command-id') == f'fake-command-{end[0]}':
-        status, details, code, stdout, stderr = end[1], end[2], int(end[3]), '', ''
-    if command.get('cancelled'):
-        status, details, code, stdout, stderr = 'Cancelled', 'Cancelled', -1, '', ''
-    out(json.dumps({
-        'Status': status, 'StatusDetails': details, 'ResponseCode': code,
-        'StandardOutputContent': stdout, 'StandardErrorContent': stderr,
-    }))
+sys.dont_write_bytecode = True  # no __pycache__ beside the tests
+import fake_aws_ssm  # noqa: E402 (needs the helpers above)
+fake_aws_ssm.handle(sys.modules[__name__])
 
 if service == 'logs':
     if operation == 'describe-log-groups':

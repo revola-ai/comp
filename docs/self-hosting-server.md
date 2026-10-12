@@ -1,7 +1,7 @@
 # Comp on the tunnel server: runbook
 
 This is the order in which Comp goes live on the tunnel server, from an empty account to the acceptance checks.
-The stack, its configuration and the scripts are described in `deploy/server/README.md`; running it day to day is in `docs/self-hosting-server-day2.md`.
+The stack, its configuration and the scripts are described in `deploy/server/README.md` and `deploy/server/RELEASING.md`; running it day to day is in `docs/self-hosting-server-day2.md`.
 
 Every step that changes AWS, Cloudflare, Google, Supabase or Trigger.dev is marked **Kyle runs**.
 The scripts print each command before it runs and read the typed confirmation from the terminal (`/dev/tty`), never from stdin, so an agent or a pipe cannot confirm on Kyle's behalf.
@@ -167,8 +167,8 @@ The health alarms fire until the first release brings the tunnel up; that is exp
 
 ## 7. First migrate and release
 
-The server runs the scripts in `deploy/server/on-server/` from the released SHA, so the branch with them (this one, or `main` after it merged) must be pushed to the fork before the first release: `git push revola <branch>`.
-Pick a SHA that is pushed to a branch of revola-ai/comp; `release.sh` checks the fork's URL itself and refuses any other SHA, even one on upstream's branches.
+The server runs the scripts in `deploy/server/on-server/` from the released SHA, so they must be merged into the fork's `revola/self-host` branch before the first release.
+Pick a SHA on `revola/self-host` of revola-ai/comp; `release.sh` checks the fork's URL itself and refuses any other SHA, even one on another branch of the fork or on upstream's branches.
 Then **Kyle runs**:
 
 ```bash

@@ -1,7 +1,7 @@
 # Comp on the tunnel server: day 2
 
 Running Comp once it is live (`docs/self-hosting-server.md` takes it there).
-Every command runs on a laptop with the prerequisites of that runbook (AWS CLI on account `455986776194`, bash 4, Bun, a terminal); `deploy/server/README.md` describes what each one does in detail.
+Every command runs on a laptop with the prerequisites of that runbook (AWS CLI on account `455986776194`, bash 4, Bun, a terminal); `deploy/server/RELEASING.md` describes what each one does in detail.
 Every step that changes AWS, Cloudflare or Trigger.dev is marked **Kyle runs**; status and logs only read.
 
 ## Release
@@ -12,7 +12,8 @@ Every step that changes AWS, Cloudflare or Trigger.dev is marked **Kyle runs**; 
 deploy/server/release.sh release <sha>
 ```
 
-The SHA must be pushed to a branch of revola-ai/comp (`git push revola <branch>`); `release.sh` checks the fork's URL itself, so a SHA only on upstream (`origin`) is refused.
+The SHA must be on the `revola/self-host` branch of revola-ai/comp: merge the work there first (a SHA only on a feature branch is refused, and so is one only on upstream's `origin`).
+`release.sh` checks the fork's URL itself, and the server checks the branch again; `migrate` and `trigger` take the same SHAs.
 The release builds the images on the server, checks the migrations, brings the new tag up and smoke-checks it from the laptop; a failure brings the previous tag back and says which one serves.
 A release refused at the migration gate prints the `release.sh migrate <sha12>` command to run first.
 A release of a commit older than a migration already applied is refused when Prisma reports the database's migrations as "not found locally": release a commit that includes them.
@@ -20,12 +21,13 @@ When `/` is more than 70% used after a release, the server removes old images by
 When a release changes Trigger.dev task code, deploy it too (Trigger.dev below).
 
 Releasing the SHA that already serves again is how a changed secret reaches the containers: `render-env.sh` re-reads `comp/production/config` and compose recreates the containers whose env changed.
-If that release fails its checks, it says so: only the env files changed, so the secret is the likely cause; fix it and release again.
+If that release fails its checks, it says so: only the env files changed, so the secret is the likely cause; the tag serves again with the env files it had before (its snapshot), so fix the secret and release again.
+Every release keeps the configuration it was verified with (env files and `compose.yaml`) as its tag's snapshot, and a failed release brings the previous tag back with its own; a refused release changes nothing on the server.
 
 ### Interrupted releases
 
 Ctrl-C (or a closed terminal) during any `release.sh` command is safe.
-It cancels only a step that only reads (status, logs, the migration status, the prune plan); a migration, a Trigger.dev deploy, prune's removal and a release's up step are never cut short: it waits for the step to end and reports it.
+It cancels only a step that changes nothing (status, logs, the migration status, the prune plan, and a release's image build, which can take up to 2 hours; the next release skips the images already built); a migration, a Trigger.dev deploy, prune's removal and a release's up step are never cut short: it waits for the step to end and reports it.
 After a release's or rollback's up step was sent, it then brings the previous release back (after a first release, it stops the stack) and says what serves.
 A second Ctrl-C leaves at once and says what still runs on the server (`status`, and the step's `logs --release <log>` command).
 Leaving while the up step runs lets the server finish it, and the new tag may then serve unverified under a 20-minute lease: run `status`, then `unlock`, then release (or roll back to) the SHA that should serve.
@@ -49,7 +51,10 @@ deploy/server/release.sh rollback            # one step back in the serving hist
 deploy/server/release.sh rollback <sha>      # a specific earlier release whose images still exist
 ```
 
-A rollback uses the images as they were built and does not undo migrations, so a release whose migration is not backward compatible cannot be rolled back past it.
+A rollback uses the images as they were built and the tag's snapshot (the env files and `compose.yaml` it was released with), and does not undo migrations, so a release whose migration is not backward compatible cannot be rolled back past it.
+It refuses a tag without a snapshot (released before snapshots were kept, or pruned); `status` lists the tags that have one.
+A secret rotated since that release is not in the snapshot: the rollback brings back the value the tag was verified with.
+If that old value no longer works (revoked at the provider), release the rolled-back SHA again right after: a release renders the current secret into a new snapshot.
 
 ## Migrate
 
@@ -71,7 +76,7 @@ deploy/server/release.sh trigger <sha>                  # both projects
 deploy/server/release.sh trigger <sha> --project api    # or app
 ```
 
-After the typed word `trigger` it deploys the task code to the prod environments.
+After the typed word `trigger` it deploys the task code to the prod environments; it refuses, before deploying anything, unless the database has exactly the commit's migrations (run `migrate <sha>` first).
 Env vars of the tasks live in the Trigger.dev dashboard (**Kyle runs** any change there) (`docs/self-hosting-server.md`, Trigger.dev prod env vars); a change there applies to new runs without a deploy.
 
 ## Status and logs
@@ -100,7 +105,7 @@ A shell on the server is `aws ssm start-session --target <instance-id> --region 
 
 The server patches itself: dnf-automatic applies security updates every day at 09:00 UTC (Docker included; an update restarts the daemon and the containers come back by themselves).
 `comp-reboot-if-needed.timer` reboots on Sundays at 09:30 UTC only when an installed update needs it; the stack starts again at boot without a release.
-Both wait up to an hour for the release lock, so neither restarts Docker under a release step, and a release step tried meanwhile is refused (try again later); the reboot is skipped, until the next Sunday, while a release holds its lease.
+Both wait up to an hour for the release lock, so neither restarts Docker under a release step, and a release step tried meanwhile is refused (try again later); both are skipped while a release holds its lease (the update until the next day, the reboot until the next Sunday), so neither restarts Docker during a release's smoke checks either.
 To see what happened, in a Session Manager shell: `journalctl -u dnf-automatic` and `journalctl -u comp-reboot-if-needed`.
 Comp itself is patched by releasing a newer commit; the `cloudflared` image by bumping its digest in `deploy/server/compose.yaml` (README, The cloudflared image) and releasing.
 

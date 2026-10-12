@@ -12,13 +12,17 @@ bash deploy/server/tests/user-data.test.sh    # size limit, checksums, version g
 bash deploy/server/tests/user-data-units.test.sh   # restarter, reboot check, update window and lock
 bash deploy/server/tests/release.test.sh      # pushed check, exact calls, migration gate, rollback on failure
 bash deploy/server/tests/rollback.test.sh     # rollback, lock, lease, account checks, status, logs
-bash deploy/server/tests/release-ops.test.sh  # migrate, trigger and prune with typed confirmations; disk
+bash deploy/server/tests/release-ops.test.sh  # migrate, trigger and prune with typed confirmations
+bash deploy/server/tests/disk.test.sh         # the prune a release runs above 70% disk use; the status warning
 bash deploy/server/tests/interrupt.test.sh    # INT, TERM and HUP before and after the up step; unlock
+bash deploy/server/tests/snapshot.test.sh     # per-release configuration snapshots: revert, rollback, refusals, prune
+bash deploy/server/tests/release-failures.test.sh   # abnormal endings, cut-short output, failed state writes, what it reports
 (cd deploy/server && bun test)                # push-secrets: sources, refusals, diff, create or put, terminal; workspace; one .keys grammar with render-env
 ```
 
 The render-env tests stub `aws` with a fake secret; the provision tests use the stateful fake `tests/fake_aws.py` and type their answers into a pseudo-terminal (`tests/tty_run.py`); the user-data tests source the script and stub `curl`, `docker` and the system tools, so nothing is installed or fetched.
 The release tests run laptop and server in one sandbox: the fake `aws` runs each SSM command locally with `COMP_ROOT` pointing at a temporary `/opt/comp`, and `docker`, `git`, `curl`, `flock` and `df` are fakes, so nothing is built, fetched or started.
+The fake `git` writes each step's worktree from a copy of `deploy/server`, with per-commit overlays (`overlay` in `tests/release-lib.sh`), so a commit can change `compose.yaml` or a script.
 The interrupt tests have the fake `aws` or `curl` send INT, TERM or HUP to `release.sh`'s process group at a chosen call (`FAKE_AWS_INTERRUPT`, `FAKE_CURL_INTERRUPT`), as a Ctrl-C or a closed terminal would.
 `compose.test.sh` needs Docker and Bun (it compares build arguments with `deploy/aws/public-env.ts`) and starts no container; the provision and user-data tests need `shellcheck` and `python3`.
 The push-secrets tests run it as a separate process with `aws` on `PATH` being `secrets/testing/fake-aws.ts` and answers typed into a pseudo-terminal (`tests/tty_run.py`), over fixture env files in temporary checkouts, so nothing reaches AWS or a real env file.

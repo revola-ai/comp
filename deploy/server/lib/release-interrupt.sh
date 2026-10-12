@@ -2,8 +2,10 @@
 # What deploy/server/release.sh does when it is interrupted: Ctrl-C (INT), SIGTERM, or a closed
 # terminal (HUP). Sourced after the other lib/release-*.sh files, never run on its own.
 #
-# It cancels (aws ssm cancel-command) only a step that only reads: status, logs, migrate-status
-# and prune-plan. Any other step is never cut short (a migration could stay half applied):
+# It cancels (aws ssm cancel-command) only a step that changes nothing: status, logs,
+# migrate-status and prune-plan only read, and a release's build only builds images (the next
+# release of the SHA skips what was built). Any other step is never cut short (a migration could
+# stay half applied):
 # it waits for the step to end and reports its result, saying nothing changed only when the
 # server confirms it (comp-result: changed=no). Once a release or rollback sent its up step,
 # it then runs the revert step, which brings the previous tag back (or stops the stack after
@@ -11,8 +13,8 @@
 # keeps running; a lease left behind on the server is removed with `release.sh unlock`.
 
 STAGE=""               # up: the up step may be in flight; verify: it succeeded; done: reporting
-UP_RUN="" UP_ACTION="" # the run and the action (release or rollback) of that up step
-READ_ONLY_STEPS='^(status|migrate-status|prune-plan)$' # what an interrupt may cancel
+UP_RUN="" UP_ACTION="" UP_SHA="" # the run, the action (release or rollback) and SHA (or -) of that up step
+CANCELLABLE_STEPS='^(status|migrate-status|prune-plan|build)$' # what an interrupt may cancel
 TOOLS_POLLS=$(((TOOLS_SECONDS + DELIVERY_SECONDS + 300) / POLL_SECONDS)) # migrate, trigger, prune
 
 trap 'on_signal INT 130' INT
@@ -38,6 +40,13 @@ on_signal() { # on_signal <signal> <exit status>
 leave_now() { # leave_now <exit status>: the second interrupt
   echo
   echo "Interrupted again: leaving now."
+  left_running
+  exit "$1"
+}
+
+# left_running: what may still run on the server once this command stops following it (a
+# second interrupt, or SSM no longer answering), and what to do next.
+left_running() {
   if [[ "$STAGE" == up ]]; then
     echo "The server finishes the $UP_ACTION step of $TAG on its own; if it succeeds, $TAG serves unverified under a 20-minute lease."
     echo "Next: deploy/server/release.sh status, then deploy/server/release.sh unlock, then release (or roll back to) the SHA that should serve."
@@ -47,12 +56,11 @@ leave_now() { # leave_now <exit status>: the second interrupt
   else
     echo "Check the server with deploy/server/release.sh status; free a lease left behind with deploy/server/release.sh unlock."
   fi
-  exit "$1"
 }
 
 interrupted_before_up() {
-  if [[ -n "$INFLIGHT_ID" && ( "$INFLIGHT_KIND" == status || "$INFLIGHT_STEP" =~ $READ_ONLY_STEPS ) ]]; then
-    cancel_read_only
+  if [[ -n "$INFLIGHT_ID" && ( "$INFLIGHT_KIND" == status || "$INFLIGHT_STEP" =~ $CANCELLABLE_STEPS ) ]]; then
+    cancel_step
   elif [[ -n "$INFLIGHT_ID" ]]; then
     wait_for_step
   elif [[ -n "$SENDING" ]]; then
@@ -65,12 +73,17 @@ interrupted_before_up() {
   fi
 }
 
-cancel_read_only() { # cancels the read-only SSM command in flight
+cancel_step() { # cancels the SSM command in flight, a step that changes nothing
   local id="$INFLIGHT_ID"
   capture aws ssm cancel-command --command-id "$id" --instance-ids "$INSTANCE_ID" --region "$REGION" ||
     echo "Could not cancel SSM command $id: $ERR"
   INFLIGHT_ID=""
-  echo "Cancelled the $INFLIGHT_STEP step (SSM command $id); it only reads: it changes no container, migration or release."
+  if [[ "$INFLIGHT_STEP" == build ]]; then
+    echo "Cancelled the build step (SSM command $id): it only builds images, so no container, migration or release changed."
+    echo "The next release of $TAG skips the images it already built."
+  else
+    echo "Cancelled the $INFLIGHT_STEP step (SSM command $id); it only reads: it changes no container, migration or release."
+  fi
 }
 
 wait_for_step() { # waits for a step that changes something (migrate, trigger, prune) and reports it
@@ -91,7 +104,7 @@ interrupted_up() {
     echo "The $UP_ACTION step of $TAG is running on the server and is never cut short (it may be"
     echo "replacing containers): waiting for it to end, then bringing the previous release back."
     echo "Interrupt again to leave: the server then finishes it, and $TAG may serve unverified under a 20-minute lease."
-    await_command "$INFLIGHT_ID" $(((RELEASE_SECONDS + DELIVERY_SECONDS + 300) / POLL_SECONDS))
+    await_command "$INFLIGHT_ID" $(((UP_SECONDS + DELIVERY_SECONDS + 300) / POLL_SECONDS))
   elif [[ -n "$SENDING" ]]; then
     unknown_state "The $UP_ACTION of $TAG was interrupted while its up step was being sent"
     echo "If it went through, the server stays held for up to 20 minutes; free it with deploy/server/release.sh unlock."
@@ -118,7 +131,7 @@ after_up_ended() { # the up step ended (REMOTE_*): revert it, or say why there i
 revert_now() { # brings the previous release back under the run's lease; never returns
   STAGE=done
   echo "Bringing the previous release back (the revert step)."
-  step revert "$UP_SECONDS" "$UP_RUN" own - release revert "$UP_ACTION" "$TAG"
+  step revert "$UP_SECONDS" "$UP_RUN" own "$UP_SHA" release revert "$UP_ACTION" "$TAG"
   after_restore "$TAG was interrupted"
 }
 
@@ -138,8 +151,7 @@ interrupted_verify() {
         echo "To undo it: deploy/server/release.sh rollback"
         after_prune
       else
-        echo "$TAG is up and passed the smoke checks, but recording it failed (above)."
-        echo "Check what serves with: deploy/server/release.sh status"
+        not_recorded
       fi
       ;;
     revert) after_restore ;;

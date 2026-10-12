@@ -26,6 +26,9 @@ cmd_migrate() {
   run="$(run_id migrate "$TAG")"
   echo "Checking the migrations of $TAG against the production database (nothing is applied yet)."
   step migrate-status "$TOOLS_SECONDS" "$run" new "$FULL_SHA" migrate status "$TAG"
+  case "$(result_of migrations)" in
+    ahead | failed) die "not applying: the status above is not just pending migrations" ;;
+  esac
   [[ "$REMOTE_CODE" -eq 0 ]] || die "reading the migration status failed (above)"
   case "$(result_of migrations)" in
     up-to-date) echo "Nothing to apply."; return 0 ;;
@@ -54,9 +57,9 @@ cmd_trigger() {
   resolve_pushed "$sha"
   connect
   echo "Deploying Trigger.dev prod for ${projects[*]} (in that order) from $TAG on $INSTANCE_ID:"
-  echo "npx trigger.dev@4.4.3 deploy --env prod in a one-off comp-migrate:$TAG container, with"
+  echo "trigger deploy --env prod (the CLI bun.lock installed in the image, never npx) in a one-off comp-migrate:$TAG container, with"
   echo "TRIGGER_ACCESS_TOKEN and TRIGGER_PROJECT_REF_<API|APP> from comp/production/config."
-  echo "The tasks' env vars come from the Trigger.dev dashboard (README, Releasing)."
+  echo "The tasks' env vars come from the Trigger.dev dashboard (deploy/server/RELEASING.md, trigger)."
   if ! confirmed trigger "Type trigger to deploy: "; then
     die "Not deployed."
   fi

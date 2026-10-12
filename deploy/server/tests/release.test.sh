@@ -2,7 +2,8 @@
 # Tests for `deploy/server/release.sh release`. Run: bash deploy/server/tests/release.test.sh
 # Laptop and server share one sandbox (tests/release-lib.sh); nothing reaches AWS or the server.
 # Covers the pushed check, the exact calls of a release, the migration gate, the rollback after
-# a failed health check or smoke check, a first release that fails, and the SSM output limit.
+# a failed health check or smoke check, and a first release that fails (abnormal endings and the
+# SSM output limit: tests/release-failures.test.sh).
 set -uo pipefail
 # shellcheck source=deploy/server/tests/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -40,6 +41,16 @@ FAKE_GIT_STALE="$SHA_D" release_sh "$TMP/stale.out" release "$SHA_D"
 check "only on a deleted fork branch: refused" test "$?" -ne 0
 check "only on a deleted fork branch: says why" grep -qF "$NOT_ON_FORK" "$TMP/stale.out"
 check "only on a deleted fork branch: no AWS call" test ! -s "$FAKE_AWS_LOG"
+ONLY_FEATURE="is on a branch of revola-ai/comp but not on revola/self-host, the only branch releases come from; merge it into revola/self-host first"
+for sha in "$SHA_X" "$TAG_X"; do
+  : >"$FAKE_AWS_LOG"
+  release_sh "$TMP/feature.out" release "$sha"
+  check "only on a feature branch ($sha): refused" test "$?" -ne 0
+  check "only on a feature branch ($sha): says why, naming the full SHA" grep -qF "$SHA_X $ONLY_FEATURE" "$TMP/feature.out"
+  check "only on a feature branch ($sha): no AWS call at all" test ! -s "$FAKE_AWS_LOG"
+done
+check "the pushed check asks whether the fork's revola/self-host contains it" \
+  has_line "$FAKE_GIT_LOG" "git -C $ROOT merge-base --is-ancestor $SHA_X refs/comp-release/revola/self-host"
 AWS_REGION=eu-west-1 release_sh "$TMP/region.out" release "$SHA_B"
 check "another AWS_REGION: refused" grep -qF "only works in us-east-2" "$TMP/region.out"
 
@@ -60,48 +71,64 @@ check "release: checks the account first" test "$(sed -n 1p "$FAKE_AWS_LOG")" = 
   "aws sts get-caller-identity --query Account --output text --region us-east-2"
 check "release: finds the one running comp-server" test "$(sed -n 2p "$FAKE_AWS_LOG")" = \
   "aws ec2 describe-instances --filters Name=tag:Name,Values=comp-server Name=instance-state-name,Values=running --query 'Reservations[].Instances[].InstanceId' --output text --region us-east-2"
-check "release: two SSM commands (release, finish)" test "$(ssm_sends)" -eq 2
+check "release: three SSM commands (build, up, finish)" test "$(ssm_sends)" -eq 3
 check "release: send-command shape" grep -qE "^aws ssm send-command --instance-ids $INSTANCE --document-name AWS-RunShellScript --comment 'comp release.sh release $TAG_B' --timeout-seconds 600 --parameters '.*' --query Command.CommandId --output text --region us-east-2\$" "$FAKE_AWS_LOG"
-check "release: builds may take 2 hours" test "$(ssm_call 1 timeout)" = 7200
+check "release: the build step may take 2 hours" test "$(ssm_call 1 timeout)" = 7200
+check "release: the up step 30 minutes (render, migration status, two 600 s waits)" test "$(ssm_call 2 timeout)" = 1800
 check "release: delivery timeout 600 s" test "$(ssm_call 1 delivery)" = 600
-check "release: step 1 runs release up from the checkout of the full SHA" grep -qE \
-  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} new $SHA_B release up release $TAG_B\$" <<<"$(ssm_call 1 args)"
-check "release: step 2 records it under the same run" grep -qE \
-  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} own - release finish release $TAG_B\$" <<<"$(ssm_call 2 args)"
-check "release: polls each command until it ends" test "$(grep -c "^aws ssm get-command-invocation --command-id fake-command-[01] --instance-id $INSTANCE --output json --region us-east-2\$" "$FAKE_AWS_LOG")" -eq 4
+check "release: step 1 builds from the checkout of the full SHA" grep -qE \
+  "^[0-9]{8}T[0-9]{6}Z-build-$TAG_B\.log [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} new $SHA_B build $TAG_B\$" <<<"$(ssm_call 1 args)"
+check "release: step 2 brings it up under the same run" test "$(ssm_call 2 args | cut -d' ' -f2-)" = \
+  "$(ssm_call 1 args | cut -d' ' -f2) new $SHA_B release up release $TAG_B"
+check "release: step 3 records it under the same run" grep -qE \
+  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} own $SHA_B release finish release $TAG_B\$" <<<"$(ssm_call 3 args)"
+check "release: polls each command until it ends" test "$(grep -c "^aws ssm get-command-invocation --command-id fake-command-[012] --instance-id $INSTANCE --output json --region us-east-2\$" "$FAKE_AWS_LOG")" -eq 6
 check "release: the server fetches every branch of the fork by URL" \
   has_line "$FAKE_GIT_LOG" "git -C $SERVER/src fetch --quiet $FORK +refs/heads/*:refs/remotes/origin/*"
-check "release: the server checks out the SHA detached" \
-  has_line "$FAKE_GIT_LOG" "git -C $SERVER/src checkout --quiet --detach $SHA_B"
+check "release: the server checks the SHA is on the fork's revola/self-host too" \
+  has_line "$FAKE_GIT_LOG" "git -C $SERVER/src merge-base --is-ancestor $SHA_B refs/remotes/origin/revola/self-host"
+check "release: the server builds from its own checkout of the SHA (a worktree of /opt/comp/src)" \
+  has_line "$FAKE_GIT_LOG" "git -C $SERVER/src worktree add --quiet --detach $SERVER/work/$TAG_B $SHA_B"
+check "release: removes that checkout after each step" test -z "$(ls -A "$SERVER/work" 2>/dev/null)"
+check "release: once recorded, /opt/comp/src is at the SHA (the serving release's scripts)" \
+  test "$(has_line "$FAKE_GIT_LOG" "git -C $SERVER/src checkout --quiet --detach $SHA_B" && cat "$FAKE_GIT_HEAD")" = "$SHA_B"
 EXPECTED_DOCKER="$(
   for target in api app portal migrate; do
     printf '%s\n' "docker image inspect comp-$target:$TAG_B" \
       "TAG=$TAG_B REGISTRY= docker buildx bake -f deploy/aws/docker-bake.hcl --load $target"
   done
+  printf 'docker image inspect comp-%s\n' "api:$TAG_B" "app:$TAG_B" "portal:$TAG_B" "migrate:$TAG_B"
   printf '%s\n' "TAG=$TAG_B $COMPOSE_ARGV --profile tools run --rm -T --no-deps migrate sh -c MIGRATE_STATUS" \
     "TAG=$TAG_B $COMPOSE_ARGV up -d --no-build --wait --wait-timeout 600"
 )"
-actual_docker="$(sed -E "s/ migrate sh -c '.*prisma migrate status'\$/ migrate sh -c MIGRATE_STATUS/" "$FAKE_DOCKER_LOG")"
-check "release: builds four images one at a time, checks migrations, then compose up" \
+actual_docker="$(docker_log | sed -E "s/ migrate sh -c '.*prisma migrate status'\$/ migrate sh -c MIGRATE_STATUS/")"
+check "release: builds four images one at a time; the up step finds them, checks migrations, compose up" \
   test "$actual_docker" = "$EXPECTED_DOCKER"
 check "release: prisma runs with TLS verified against the CA" \
   grep -qF "sslaccept\",\"strict\")" "$FAKE_DOCKER_LOG"
-check "release: smoke checks the four public URLs" test "$(sort -u "$FAKE_CURL_LOG")" = "$(printf '%s\n' \
-  https://api.comp.revola.ai/v1/health/ready https://app.comp.revola.ai/ \
-  https://app.comp.revola.ai/api/health/live https://portal.comp.revola.ai/api/health)"
+check "release: smoke checks the five public URLs, Access on both hosts last" test "$(cat "$FAKE_CURL_LOG")" = "$(printf '%s\n' \
+  https://api.comp.revola.ai/v1/health/ready https://app.comp.revola.ai/api/health/live \
+  https://portal.comp.revola.ai/api/health https://app.comp.revola.ai/ https://portal.comp.revola.ai/)"
 check "release: serves the new tag" test "$(serving)" = "comp-api:$TAG_B"
 check "release: recorded ok" test "$(last_record)" = "release $TAG_B ok"
 check "release: releases nothing else" test "$(wc -l <"$SERVER/releases.log")" -eq 2
 check "release: no lease left" test ! -e "$SERVER/release.lease"
 run_one="$(ssm_call 1 args | cut -d' ' -f2)"
-check "release: env files for the stack and the tools" test "$(files_in "$SERVER/env")" = \
+SNAP="$SERVER/releases/$TAG_B"
+check "release: its snapshot holds the env files for the stack and the tools" test "$(files_in "$SNAP/env")" = \
   "api.env app.env cloudflared.env migrate.env portal.env trigger.env"
+check "release: its snapshot holds the full SHA and the commit's compose.yaml" \
+  test "$(cat "$SNAP/sha"):$(cmp -s "$SNAP/compose.yaml" "$SERVER_DIR/compose.yaml" && echo same)" = "$SHA_B:same"
+check "release: the stack came up with the configuration that became the snapshot" \
+  test "$(up_configs)" = "$TAG_B up stage"
+check "release: snapshot directories 0700, files 0600" test "$(mode_of "$SERVER/releases"):$(mode_of "$SNAP"):$(mode_of "$SNAP/env"):$(mode_of "$SNAP/sha"):$(mode_of "$SNAP/compose.yaml")" = "700:700:700:600:600"
+check "release: no staged configuration left" test -z "$(ls -A "$SERVER/stage" 2>/dev/null)"
 check "release: migrate.env holds only DATABASE_URL (the migration URL)" \
-  test "$(names_of "$SERVER/env/migrate.env")" = DATABASE_URL
+  test "$(names_of "$SNAP/env/migrate.env")" = DATABASE_URL
 check "release: migrate.env is the secret's DATABASE_MIGRATION_URL" \
-  test "$(value_of "$SERVER/env/migrate.env" DATABASE_URL)" = "$MIGRATION_URL"
+  test "$(value_of "$SNAP/env/migrate.env" DATABASE_URL)" = "$MIGRATION_URL"
 check "release: logs directory 0700" test "$(mode_of "$SERVER/logs")" = 700
-check "release: env files stay 0600" bash -c "for f in '$SERVER'/env/*.env; do [[ \$(python3 -c 'import os,sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' \$f) == 0o600 ]] || exit 1; done"
+check "release: env files stay 0600" bash -c "for f in '$SNAP'/env/*.env; do [[ \$(python3 -c 'import os,sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' \$f) == 0o600 ]] || exit 1; done"
 MIGRATION_DIR="$SERVER/src/packages/db/prisma/migrations/20261001000000_add_widget"
 check "release: a file new in the checkout is world-readable" test "$(mode_of "$MIGRATION_DIR/migration.sql")" = 644
 check "release: a directory new in the checkout is world-readable" test "$(mode_of "$MIGRATION_DIR")" = 755
@@ -110,7 +137,7 @@ check "release: a tracked file left 0600 by an older run is readable again" \
 check "release: a directory left 0700 is readable again" test "$(mode_of "$SERVER/src/deploy/server/env")" = 755
 check "release: a symlink's target outside the tree is left alone" test "$(mode_of "$TMP/root-only")" = 600
 check "release: one log per step, 0600, named <utc>-<step>-<sha12>.log" bash -c "
-  cd '$SERVER/logs' && [[ \$(ls | wc -l) -eq 2 ]] && for f in *; do
+  cd '$SERVER/logs' && [[ \$(ls | wc -l) -eq 3 ]] && for f in *; do
     [[ \$f =~ ^$LOG_NAME_RE\$ ]] && [[ \$(python3 -c 'import os,sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' \$f) == 0o600 ]] || exit 1
   done"
 check "release: prints the server's log path" grep -qE "log: $SERVER/logs/$LOG_NAME_RE" "$TMP/ok.out"
@@ -121,7 +148,7 @@ no_secret "release" "$TMP/ok.out"
 release_sh "$TMP/again.out" release "$SHA_B"
 check "release again: exits zero" test "$?" -eq 0
 check "release again: builds nothing already built" bash -c "! grep -q 'buildx bake' '$FAKE_DOCKER_LOG'"
-check "release again: a new run id (random suffix)" test "$(ssm_call 3 args | cut -d' ' -f2)" != "$run_one"
+check "release again: a new run id (random suffix)" test "$(ssm_call 4 args | cut -d' ' -f2)" != "$run_one"
 
 # ---------------------------------------------------------------- the migration gate
 for state in pending failed ahead unreachable; do
@@ -134,7 +161,7 @@ for state in pending failed ahead unreachable; do
   check "gate $state: no container changed" test -z "$(container_changes)"
   check "gate $state: still serving the previous tag" test "$(serving)" = "comp-api:$TAG_A"
   check "gate $state: recorded as failed" test "$(last_record)" = "release $TAG_B failed"
-  check "gate $state: one SSM command" test "$(ssm_sends)" -eq 1
+  check "gate $state: build and up steps only" test "$(ssm_sends)" -eq 2
   check "gate $state: no smoke check" test ! -s "$FAKE_CURL_LOG"
   check "gate $state: says no container changed" grep -qF "before any container changed" "$TMP/gate-$state.out"
 done
@@ -156,6 +183,7 @@ check "failed build: no container changed" test -z "$(container_changes)"
 check "failed build: stops at the failed target" bash -c "! grep -q -- '--load portal' '$FAKE_DOCKER_LOG'"
 check "failed build: recorded as failed" test "$(last_record)" = "release $TAG_B failed"
 check "failed build: says no container changed" grep -qF "before any container changed" "$TMP/build.out"
+check "failed build: no up step (one SSM command)" test "$(ssm_sends)" -eq 1
 
 reset_server
 released "$TAG_A"
@@ -166,31 +194,12 @@ check "malformed migration URL: says so without the URL" \
   grep -qF "DATABASE_URL in migrate.env is not a valid URL" "$SERVER"/logs/*-release-"$TAG_B".log
 no_secret "malformed migration URL" "$TMP/badurl.out"
 
-# ---------------------------------------------------------------- the up step ends abnormally
-for ending in "TimedOut:ExecutionTimedOut:-1" "Cancelled:Cancelled:-1" "Failed:Undeliverable:-1" \
-  "Failed:Terminated:-1" "Failed:Failed:9"; do
-  reset_server
-  released "$TAG_A"
-  FAKE_SSM_END="0:$ending" release_sh "$TMP/ending.out" release "$SHA_B"
-  check "up ends $ending: exits non-zero" test "$?" -ne 0
-  check "up ends $ending: the serving state is unknown" grep -qF "serving state is unknown" "$TMP/ending.out"
-  check "up ends $ending: prints the status command" grep -qF "deploy/server/release.sh status" "$TMP/ending.out"
-  check "up ends $ending: never claims no container changed" bash -c "! grep -qF 'before any container changed' '$TMP/ending.out'"
-  check "up ends $ending: no smoke check, no finish" test "$(ssm_sends):$(wc -c <"$FAKE_CURL_LOG" | tr -d ' ')" = "1:0"
-done
-reset_server
-released "$TAG_A"
-FAKE_SSM_TRUNCATE=40 FAKE_DOCKER_FAIL_BUILD=api release_sh "$TMP/cut-fail.out" release "$SHA_B"
-check "cut output of a failed up: the serving state is unknown" grep -qF "serving state is unknown" "$TMP/cut-fail.out"
-check "cut output of a failed up: never claims no container changed" \
-  bash -c "! grep -qF 'before any container changed' '$TMP/cut-fail.out'"
-
 reset_server
 released "$TAG_A"
 FAKE_GIT_DIRTY=" M deploy/server/compose.yaml" release_sh "$TMP/dirty.out" release "$SHA_B"
 check "dirty checkout: refused" test "$?" -ne 0
 check "dirty checkout: names the change" grep -qF "local changes" "$TMP/dirty.out"
-check "dirty checkout: never checks out" bash -c "! grep -q 'checkout' '$FAKE_GIT_LOG'"
+check "dirty checkout: never checks out" bash -c "! grep -qE 'checkout|worktree add' '$FAKE_GIT_LOG'"
 check "dirty checkout: no docker call" test ! -s "$FAKE_DOCKER_LOG"
 
 # ---------------------------------------------------------------- failures after the containers changed
@@ -212,7 +221,7 @@ released "$TAG_A"
 FAKE_CURL_BAD_TAG="$TAG_B" release_sh "$TMP/smoke.out" release "$SHA_B"
 check "failed smoke: exits non-zero" test "$?" -ne 0
 check "failed smoke: second SSM command reverts under the same run" grep -qE \
-  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} own - release revert release $TAG_B\$" <<<"$(ssm_call 2 args)"
+  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 3 args)"
 check "failed smoke: the new tag went up, then the previous one" test "$(container_changes)" = "$(printf '%s\n' \
   "TAG=$TAG_B $COMPOSE_ARGV up -d --no-build --wait --wait-timeout 600" \
   "TAG=$TAG_A $COMPOSE_ARGV up -d --no-build --wait --wait-timeout 600")"
@@ -230,6 +239,12 @@ released "$TAG_A"
 FAKE_CURL_NO_ACCESS=1 release_sh "$TMP/access.out" release "$SHA_B"
 check "Access off: the release is rolled back" test "$(last_record)" = "release $TAG_B rolled-back"
 check "Access off: says the app is not behind Access" grep -qF "cloudflareaccess.com" "$TMP/access.out"
+reset_server
+released "$TAG_A"
+FAKE_CURL_NO_ACCESS=portal release_sh "$TMP/portal-access.out" release "$SHA_B"
+check "Access off on the portal only: the release is rolled back" test "$(last_record)" = "release $TAG_B rolled-back"
+check "Access off on the portal only: names the portal" \
+  grep -qF "FAIL  https://portal.comp.revola.ai/ answered 200" "$TMP/portal-access.out"
 
 reset_server
 released "$TAG_A"
@@ -244,7 +259,7 @@ reset_server
 FAKE_DOCKER_FAIL_UP="$TAG_B" release_sh "$TMP/first.out" release "$SHA_B"
 check "first release fails: exits non-zero" test "$?" -ne 0
 check "first release fails: stops the failed stack" \
-  has_line "$FAKE_DOCKER_LOG" "TAG=$TAG_B $COMPOSE_ARGV stop"
+  has_line <(docker_log) "TAG=$TAG_B $COMPOSE_ARGV stop"
 check "first release fails: nothing runs" test "$(serving)" = none
 check "first release fails: recorded as failed" test "$(last_record)" = "release $TAG_B failed"
 check "first release fails: says the site is down" grep -qF "THE SITE IS DOWN" "$TMP/first.out"
@@ -253,15 +268,6 @@ reset_server
 FAKE_CURL_BAD_TAG="$TAG_B" release_sh "$TMP/first-smoke.out" release "$SHA_B"
 check "first release smoke fails: stops the stack, site down" grep -qF "THE SITE IS DOWN" "$TMP/first-smoke.out"
 check "first release smoke fails: nothing runs" test "$(serving)" = none
-
-# ---------------------------------------------------------------- SSM keeps 24,000 characters
-reset_server
-released "$TAG_A"
-FAKE_SSM_TRUNCATE=40 release_sh "$TMP/cut.out" release "$SHA_B"
-check "cut output: the release still completes" test "$(last_record)" = "release $TAG_B ok"
-check "cut output: says the output was cut short" grep -qF "cut short" "$TMP/cut.out"
-check "cut output: prints where the full log is" grep -qE "/opt/comp/logs/$LOG_NAME_RE" "$TMP/cut.out"
-check "cut output: prints the command that fetches it" grep -qF "deploy/server/release.sh logs --release" "$TMP/cut.out"
 
 check "shellcheck -x: release.sh and its libraries" \
   bash -c "cd '$ROOT' && shellcheck -x deploy/server/release.sh deploy/server/on-server/*.sh"

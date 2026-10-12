@@ -25,6 +25,7 @@ INFLIGHT_LOG=""  # its log on the server (/opt/comp/logs/<name>), for an entry s
 LAST_STEP=""     # the name of the last step that ended, set with REMOTE_* before INFLIGHT_ID clears
 DELIVERY_SECONDS=600
 POLL_SECONDS=5
+POLL_FAILURES=12 # get-command-invocation errors in a row tolerated (a minute of throttling or network trouble)
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -42,11 +43,13 @@ require_local() {
   done
 }
 
-# resolve_pushed <sha>: FULL_SHA and TAG for a 12- or 40-character SHA that some branch of the
-# fork contains; anything else stops before any AWS call. "Pushed" is decided against the URL
-# the server fetches from (COMP_REPO_URL), never a remote name (Kyle's `origin` is upstream):
-# its branches (no tags) are fetched with --prune into refs/comp-release/, so a deleted branch no
-# longer counts and no remote's refs or local tags are touched.
+# resolve_pushed <sha>: FULL_SHA and TAG for a 12- or 40-character SHA that the fork's
+# $RELEASE_BRANCH contains (releases come only from it, as reviewed and merged work); anything
+# else stops before any AWS call. "Pushed" is decided against the URL the server fetches from
+# (COMP_REPO_URL), never a remote name (Kyle's `origin` is upstream): its branches (no tags) are
+# fetched with --prune into refs/comp-release/, so a deleted branch no longer counts and no
+# remote's refs or local tags are touched. A SHA on no branch and one on another branch only are
+# told apart, so the message says what to do: push it, or merge it into $RELEASE_BRANCH.
 resolve_pushed() {
   [[ "$1" =~ ^[0-9a-f]{12}$|^[0-9a-f]{40}$ ]] || die "'$1' is not a 12- or 40-character git SHA"
   git -C "$REPO_ROOT" fetch --prune --no-tags --quiet "$COMP_REPO_URL" '+refs/heads/*:refs/comp-release/*' ||
@@ -58,6 +61,13 @@ resolve_pushed() {
     die "git for-each-ref failed"
   [[ -n "$refs" ]] ||
     die "$FULL_SHA is not on any branch of revola-ai/comp; push it there first (git push revola <branch>)"
+  local status=0
+  git -C "$REPO_ROOT" merge-base --is-ancestor "$FULL_SHA" "refs/comp-release/$RELEASE_BRANCH" || status=$?
+  case "$status" in
+    0) ;;
+    1) die "$FULL_SHA is on a branch of revola-ai/comp but not on $RELEASE_BRANCH, the only branch releases come from; merge it into $RELEASE_BRANCH first" ;;
+    *) die "could not check that $RELEASE_BRANCH of revola-ai/comp contains $FULL_SHA (git merge-base failed; does the branch exist?)" ;;
+  esac
   TAG="${FULL_SHA:0:12}"
 }
 
@@ -134,17 +144,21 @@ remote() {
 # await_command <command-id> <max polls>: waits for an SSM command to end, prints its output
 # and sets REMOTE_STATUS, REMOTE_CODE, REMOTE_ENDED, REMOTE_LOG and LAST_STEP. INFLIGHT_ID is
 # cleared last, so an interrupt while the output prints still sees the step in flight and
-# awaits it again (the command has ended: that returns at once, with the same result).
+# awaits it again (the command has ended: that returns at once, with the same result). A poll
+# that fails (throttling, a network blip) is retried; POLL_FAILURES in a row, or max polls,
+# give up, saying what may still run on the server (stranded).
 await_command() {
-  local id="$1" max="$2" polls=0 status code details
+  local id="$1" max="$2" polls=0 failures=0 status code details
   while :; do
-    ((polls++ < max)) || die "gave up waiting for SSM command $id; it may still run (aws ssm get-command-invocation --command-id $id --instance-id $INSTANCE_ID --region $REGION)"
+    ((polls++ < max)) || stranded "gave up waiting for SSM command $id after $max polls"
     sleep "$POLL_SECONDS"
     if ! capture aws ssm get-command-invocation --command-id "$id" --instance-id "$INSTANCE_ID" \
       --output json --region "$REGION"; then
       [[ "$ERR" == *InvocationDoesNotExist* ]] && continue
-      die "could not read SSM command $id: $ERR"
+      ((++failures < POLL_FAILURES)) && continue
+      stranded "could not read SSM command $id $POLL_FAILURES times in a row: $ERR"
     fi
+    failures=0
     read -r status code details < <(printf '%s' "$OUT" | python3 -c '
 import json, sys
 answer = json.load(sys.stdin)
@@ -169,6 +183,14 @@ print(answer.get("Status", "Unknown"), answer.get("ResponseCode", -1), answer.ge
   [[ "$REMOTE_CODE" -ne 0 || "$status" == Success ]] || REMOTE_CODE=1
   LAST_STEP="$INFLIGHT_STEP"
   INFLIGHT_ID=""
+}
+
+# stranded <message>: this command can no longer follow the step in flight; says so, what may
+# still run on the server and what to do (left_running, lib/release-interrupt.sh), then fails.
+stranded() {
+  echo "release: $1; it may still run (aws ssm get-command-invocation --command-id $INFLIGHT_ID --instance-id $INSTANCE_ID --region $REGION)" >&2
+  left_running
+  exit 1
 }
 
 # split_output: prints the step's own output and keeps its meta lines in $WORK/meta.
