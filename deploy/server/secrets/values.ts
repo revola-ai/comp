@@ -1,4 +1,8 @@
-import { requiredProductionVerdict } from '../../../packages/db/src/production-connection.ts';
+import {
+  namesProductionDatabase,
+  PRODUCTION_DATABASE,
+  requiredProductionVerdict,
+} from '../../../packages/db/src/production-connection.ts';
 import type { ProductionTarget } from '../../../packages/db/src/production-target.ts';
 
 // The checks every value of comp/production/config passes before push-secrets writes it.
@@ -83,7 +87,8 @@ function projectRefProblems({ key, value }: { key: string; value: string }): str
  * written (so no unescaped character was reinterpreted: an unescaped /, ?, # or @ in the
  * password would otherwise be read as a host, port or path and echoed in a driver error), avoid
  * the transaction pooler, carry only the query parameters of ALLOWED_PARAMETERS, and name the
- * production project and no other (packages/db/src/production-connection.ts).
+ * production project and no other, and its postgres database (packages/db/src/
+ * production-connection.ts).
  */
 function databaseUrlProblems({
   key,
@@ -123,6 +128,10 @@ function databaseUrlProblems({
   }
   if (verdict === 'mixed') {
     return [`${key} also names another project (its user and host carry different project refs)`];
+  }
+  // Never the name it does carry: it could be anything the operator pasted.
+  if (!namesProductionDatabase({ databaseUrl: value })) {
+    return [`${key} names a database other than ${PRODUCTION_DATABASE}`];
   }
   return [];
 }

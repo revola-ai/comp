@@ -222,6 +222,30 @@ describe('database URLs', () => {
     },
   );
 
+  test.each(['fakesecret_comp_dev', 'compdev_fakesecret', 'postgres_fakesecret', '', '%70ostgreS'])(
+    'another database of the production project (%j) is refused without its name',
+    (database) => {
+      for (const [key, url] of [
+        ['DATABASE_URL', RUNTIME_URL],
+        ['DATABASE_MIGRATION_URL', MIGRATION_URL],
+      ] as const) {
+        expect(problems(key, url.replace(/\/postgres$/, `/${database}`))).toEqual([
+          `${key} names a database other than postgres`,
+        ]);
+      }
+    },
+  );
+
+  test('a URL without a database path is refused', () => {
+    expect(problems('DATABASE_URL', RUNTIME_URL.replace(/\/postgres$/, ''))).toEqual([
+      'DATABASE_URL names a database other than postgres',
+    ]);
+  });
+
+  test('a percent-encoded postgres passes, as pg reads it', () => {
+    expect(problems('DATABASE_URL', RUNTIME_URL.replace(/\/postgres$/, '/%70ostgres'))).toEqual([]);
+  });
+
   test('a URL naming production next to another project is refused', () => {
     const host = `db.${OTHER_REF}.supabase.co`;
     const value = `postgresql://postgres.${PROD_REF}:fakesecretPw@${host}:5432/postgres`;
