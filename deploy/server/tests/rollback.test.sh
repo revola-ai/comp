@@ -165,6 +165,40 @@ printf 'stale\n' >"$SERVER/logs/20261007T120000Z-release-$TAG_B.log"
 entry 20261007T120000Z-release-"$TAG_B".log 20261007T120000Z-release-"$TAG_B"-0123abcd new - release up rollback "$TAG_B"
 check "entry never overwrites a log" test "$(cat "$SERVER/logs/20261007T120000Z-release-$TAG_B.log")" = stale
 
+# The server lock: finish, revert and unlock ("own" steps of a run) wait up to 120 s for it, so
+# the reboot check or a security update skipping under the lease cannot make them fail; a new
+# step never waits. The fake flock waits at most 2 real seconds.
+own_lease() { printf '20261007T120000Z-release-%s-0123abcd %s release %s\n' "$TAG_C" "$(($(date +%s) + 600))" "$TAG_C" >"$SERVER/release.lease"; }
+unlock_c() { entry "20261007T12010$1Z-unlock-$TAG_C.log" "20261007T120000Z-release-$TAG_C-0123abcd" own - release unlock release "$TAG_C"; }
+reset_server
+released "$TAG_A"
+own_lease
+export FAKE_FLOCK_LOG="$TMP/flock.log"
+: >"$FAKE_FLOCK_LOG"
+python3 -c 'import fcntl, sys, time
+f = open(sys.argv[1], "a"); fcntl.flock(f, fcntl.LOCK_EX); open(sys.argv[2], "w").close(); time.sleep(1)' \
+  "$SERVER/release.lock" "$TMP/held" &
+holder=$!
+until [[ -e "$TMP/held" ]]; do /bin/sleep 0.05; done
+unlock_c 1
+check "an own step waits for a lock held briefly" test "$?" -eq 0
+wait "$holder"
+check "an own step waits for a lock held briefly: it ran" test "$(last_record):$(test -e "$SERVER/release.lease" && echo leased)" = "release $TAG_C unlocked:"
+check "an own step waits at most 120 s" grep -qxF "flock -w 120 9" "$FAKE_FLOCK_LOG"
+own_lease
+exec 8>>"$SERVER/release.lock"
+flock -n 8
+unlock_c 2
+check "an own step refused after its wait: 75" test "$?" -eq 75
+check "an own step refused after its wait: says how long it waited" grep -qF "waited 120 seconds for the server lock" "$TMP/entry.out"
+check "an own step refused after its wait: the lease stays" test -s "$SERVER/release.lease"
+: >"$FAKE_FLOCK_LOG"
+rm -f "$SERVER/release.lease"
+entry "20261007T120200Z-release-$TAG_B.log" "20261007T120200Z-release-$TAG_B-0123abcd" new "$SHA_B" build "$TAG_B"
+check "a new step never waits for the lock" test "$?:$(cat "$FAKE_FLOCK_LOG")" = "75:flock -n 9"
+exec 8>&-
+unset FAKE_FLOCK_LOG
+
 # ---------------------------------------------------------------- account and instance checks
 reset_server
 released "$TAG_A"

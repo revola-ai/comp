@@ -5,9 +5,12 @@
 #
 #   entry.sh <log-name> <run-id> <new|own> <sha|-> <script> [args...]
 #
-# 1. Takes the server lock (flock on /opt/comp/release.lock, never waiting), so release,
-#    rollback, migrate, trigger, prune and unlock run one at a time; a second caller fails at
-#    once. dnf-automatic and the reboot check (user-data.sh) wait up to an hour for it.
+# 1. Takes the server lock (flock on /opt/comp/release.lock), so release, rollback, migrate,
+#    trigger, prune and unlock run one at a time: a "new" step never waits (a second caller fails
+#    at once); an "own" step (finish, revert, unlock of a run) waits up to OWN_LOCK_SECONDS,
+#    because the laptop sends it once, and between a run's steps the lock may be held briefly by
+#    the reboot check or a security update that takes it only to skip under the lease.
+#    dnf-automatic and the reboot check (user-data.sh) wait up to an hour for it.
 # 2. Checks the lease a release keeps between its steps (while the laptop runs the smoke
 #    checks): "new" refuses while another run holds it, "own" needs it to be <run-id>'s.
 # 3. Writes everything after this to /opt/comp/logs/<log-name> (0600 in a 0700 directory).
@@ -33,6 +36,7 @@ if [[ "$(type -t meta)" != function ]]; then
 fi
 set -uo pipefail
 umask 077
+OWN_LOCK_SECONDS=120 # inside the half of the lease the smoke checks leave (lib/release-flow.sh)
 
 refuse() { # refuse <status> <message>: before the log exists, so before any change
   echo "release.sh on the server: $2"
@@ -58,8 +62,10 @@ if ! mkdir -p "$COMP_LOGS" || ! chmod 700 "$COMP_LOGS"; then
   refuse 1 "cannot create $COMP_LOGS"
 fi
 exec 9>>"$RELEASE_LOCK"
-if ! flock -n 9; then
-  refuse 75 "another release.sh step (release, rollback, migrate, trigger, prune or unlock), the daily security update or the reboot check is running on the server; try again when it ends (deploy/server/release.sh status)"
+lock_wait=(-n) waited=""
+[[ "$lease_mode" != own ]] || lock_wait=(-w "$OWN_LOCK_SECONDS") waited=" (waited $OWN_LOCK_SECONDS seconds for the server lock)"
+if ! flock "${lock_wait[@]}" 9; then
+  refuse 75 "another release.sh step (release, rollback, migrate, trigger, prune or unlock), the daily security update or the reboot check is running on the server$waited; try again when it ends (deploy/server/release.sh status)"
 fi
 if lease_live; then
   if [[ "$lease_mode" != own || "$LEASE_HOLDER" != "$run_id" ]]; then
