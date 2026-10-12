@@ -81,7 +81,7 @@ SH
     FAKE_AWK_COUNT="$TMP/awk-count" FAKE_TIMEOUT_LOG="$TMP/timeout.log" \
     FAKE_GIT_COMMITS="$SHA_A $SHA_B $SHA_C $SHA_D $SHA_U $SHA_X" FAKE_GIT_PUSHED="$SHA_A $SHA_B $SHA_D $SHA_X" \
     FAKE_GIT_SELF_HOST="$SHA_A $SHA_B $SHA_D" FAKE_GIT_UPSTREAM="$SHA_U" \
-    FAKE_GIT_TREE="$TMP/tree" FAKE_GIT_OVERLAYS="$TMP/overlays"
+    FAKE_GIT_TREE="$TMP/tree" FAKE_GIT_OVERLAYS="$TMP/overlays" FAKE_GIT_REFS="$TMP/git-refs"
   # A run that keeps calling the fakes is slow, not hung (tests/tty_run.py).
   export TTY_RUN_ACTIVITY="$TTY_RUN_ACTIVITY:$FAKE_DOCKER_LOG:$FAKE_GIT_LOG:$FAKE_CURL_LOG"
   mkdir -p "$TMP/cwd"
@@ -104,12 +104,13 @@ reset_server() {
   : >"$FAKE_GIT_LOG"
   : >"$FAKE_CURL_LOG"
   printf '%s\n' "$SHA_A" >"$FAKE_GIT_HEAD"
-  rm -f "$FAKE_GIT_HEAD.pruned" "$FAKE_CURL_LOG.interrupted" "$FAKE_AWK_COUNT" "$FAKE_TIMEOUT_LOG"
+  rm -f "$FAKE_GIT_HEAD.pruned" "$FAKE_CURL_LOG.interrupted" "$FAKE_AWK_COUNT" "$FAKE_TIMEOUT_LOG" "$FAKE_GIT_REFS"
   unset FAKE_DOCKER_FAIL_UP FAKE_DOCKER_FAIL_BUILD FAKE_DOCKER_FAIL_TRIGGER FAKE_CURL_BAD_TAG \
     FAKE_CURL_NO_ACCESS FAKE_GIT_DIRTY FAKE_SSM_TRUNCATE FAKE_AWS_ACCOUNT FAKE_SSM_END FAKE_GIT_STALE \
     FAKE_AWS_INTERRUPT FAKE_SSM_CANCEL FAKE_CURL_INTERRUPT FAKE_DF_USE FAKE_DOCKER_FAIL_PRUNE \
     FAKE_AWK_INTERRUPT FAKE_TIMEOUT_EXPIRE FAKE_CURL_BAD_ENV FAKE_CLOCK FAKE_CURL_SLOW \
-    FAKE_DOCKER_FAIL_MIGRATE FAKE_CURL_JUMP FAKE_SSM_NOT_YET
+    FAKE_DOCKER_FAIL_MIGRATE FAKE_CURL_JUMP FAKE_SSM_NOT_YET FAKE_GIT_GONE FAKE_GIT_FAIL_CHECKOUT \
+    FAKE_GIT_FAIL_UPDATE_REF FAKE_GIT_WORKTREE_ADDS
 }
 
 overlay() { # overlay <full sha> <path in the repository>: stdin is that file at <sha> (fake git)
@@ -147,15 +148,16 @@ exec(sys.argv[2])
 json.dump(s, open(path, "w"), indent=1)' "$FAKE_DOCKER_STATE" "$1"
 }
 
-# released <tag>...: each tag was released before (its four images and its snapshot exist and
-# releases.log has an ok line for it, oldest first); the last one is serving, with its snapshot,
-# and /opt/comp/src is at its SHA.
+# released <tag>...: each tag was released before (its four images and its snapshot exist, its
+# commit is pinned as refs/comp/releases/<tag> and releases.log has an ok line for it, oldest
+# first); the last one is serving, with its snapshot, and /opt/comp/src is at its SHA.
 released() {
   local tag
   for tag in "$@"; do
     docker_state "s['images'] += ['comp-api:$tag', 'comp-app:$tag', 'comp-portal:$tag', 'comp-migrate:$tag']"
     printf '2026-10-01T00:00:00Z release %s ok\n' "$tag" >>"$SERVER/releases.log"
     snapshot "$tag"
+    printf 'refs/comp/releases/%s %s\n' "$tag" "$(full_sha "$tag")" >>"$FAKE_GIT_REFS"
   done
   docker_state "s['containers'] = {n: f'comp-{n}:$tag' for n in ('api', 'app', 'portal')}
 s['containers']['cloudflared'] = 'docker.io/cloudflare/cloudflared:2026.10.0@sha256:fake'

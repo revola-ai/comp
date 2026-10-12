@@ -11,10 +11,12 @@
 #                                     with it
 #   release.sh up rollback <sha12>    compose up --wait with the tag's snapshot, without build or
 #                                     migration check; refuses a tag whose three images or whose
-#                                     snapshot are gone, or the serving one
+#                                     snapshot are gone, the serving one, or any while
+#                                     /opt/comp/src (these scripts) is not at the serving tag
 #   release.sh finish <action> <sha12>  after the laptop's smoke checks passed: keeps a release's
 #                                     configuration as the tag's snapshot, records ok and says so
-#                                     (recorded=ok), moves /opt/comp/src to the tag's SHA; after a
+#                                     (recorded=ok), moves /opt/comp/src to the tag's SHA
+#                                     (checkout=failed when it cannot, which the laptop warns of); after a
 #                                     release, then prunes old images when / is over 70% used, for
 #                                     at most 600 s (prune=ok|failed|timed-out), which never fails
 #                                     the step
@@ -149,6 +151,10 @@ case "$step" in
       [[ "$MIGRATIONS" == up-to-date ]] || failed_before_change 3 "$(migrations_refusal "$tag")"
     else
       [[ "$tag" != "$current" ]] || failed_before_change 1 "Refusing: already serving $tag."
+      # This step runs the scripts of /opt/comp/src, which a release's finish may have failed to move.
+      src="$(git -C "$COMP_SRC" rev-parse HEAD 2>/dev/null)" || src=unknown
+      [[ -z "$current" || "${src:0:12}" == "$current" ]] ||
+        failed_before_change 1 "Refusing: /opt/comp/src is at ${src:0:12}, not at the serving $current, so this rollback would run the scripts of another release; release $current again (deploy/server/release.sh release $current), which moves it, then roll back."
       missing="$(missing_images "$tag" "${STACK_IMAGES[@]}")"
       [[ -z "$missing" ]] || failed_before_change 1 "Refusing: missing images: $(tr '\n' ' ' <<<"$missing")(pruned?); rollback needs all three."
       config="$(snapshot_of "$tag")" ||

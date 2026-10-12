@@ -24,6 +24,7 @@ SSM's `InvocationDoesNotExist`, which it may answer right after the command was 
 The command's text is `lib/server-common.sh` with `on-server/entry.sh` (or `on-server/status.sh`), so it works whatever the server's checkout holds; the work itself runs from `deploy/server/on-server/` of a checkout.
 A step with a SHA (a release's steps, `migrate`, `trigger`) runs from its own worktree of that SHA, `/opt/comp/work/<sha12>`, removed when the step ends; a step without one (a rollback's steps, `prune`, `unlock`) runs from `/opt/comp/src`, the checkout of the serving release.
 `/opt/comp/src` moves only when a release or rollback is recorded, so a step without a SHA always runs the scripts of the release that serves, never those of a commit that was only migrated, deployed to Trigger.dev or refused.
+When a recorded finish step cannot move it (a full disk, a file changed by hand), the release stands, but `release.sh` prints a `WARNING` line saying so and exits 1: `rollback`, `prune` and `unlock` would run the scripts of the release before it, so `rollback` refuses until `/opt/comp/src` is at the serving tag; fix the cause, then release the tag again, which moves it.
 SSM parameters carry names, tags and SHAs only: the server reads the secret itself (`render-env.sh`) and no value appears in a command line, an SSM parameter, a log name or this script's output.
 
 A `<sha>` is 12 or 40 hex characters and must be on the `revola/self-host` branch of the fork `revola-ai/comp`, because releases, migrations and Trigger.dev deploys come only from reviewed, merged work, and the server fetches it from there; anything else is refused before any AWS call, and its first 12 characters are the image tag.
@@ -86,7 +87,7 @@ A laptop that stops without a signal (sleep, a dropped network) leaves the lease
 
 `releases.log`'s ok lines form a serving history, a stack: `release X` pushes X, `rollback X` pops back to X; the current tag is the top.
 `rollback` brings back the entry below the top (so rolling back twice walks further back, never forward), or the given SHA's tag, with the same `up --wait`, smoke checks and recovery.
-It refuses, before anything changes, a tag whose three images are gone (pruned), a tag without a snapshot (pruned) and the tag that already serves.
+It refuses, before anything changes, a tag whose three images are gone (pruned), a tag without a snapshot (pruned), the tag that already serves, and any rollback while `/opt/comp/src` is not at the serving tag (see above; release that tag again first).
 It does not build, migrate or check out a new commit: it brings the tag back with its images as built and its snapshot, the env files and `compose.yaml` it was released and verified with; once recorded, `/opt/comp/src` moves to its SHA.
 The database keeps any newer migrations.
 A secret rotated since that release is not in its snapshot: the snapshot is the tag's known-good configuration, so a rollback brings back the values the tag was verified with.
@@ -115,7 +116,7 @@ The tasks' own env vars are set in the Trigger.dev dashboard (each project, Envi
 
 ## status, logs
 
-`status` prints the current and previous tags, the tags with a snapshot, a lease if one is held, every container of the `comp` project with its image and health, the last 10 lines of `releases.log` and the disk use of `/`, with a `WARNING` line when it is above 70%; it takes no lock and changes nothing.
+`status` prints the current tag with the commit `/opt/comp/src` is at (12 characters, and a `WARNING` line when they differ), the previous tag, the tags with a snapshot, a lease if one is held, every container of the `comp` project with its image and health, the last 10 lines of `releases.log` and the disk use of `/`, with a `WARNING` line when it is above 70%; it takes no lock and changes nothing.
 `logs <service>` prints `aws logs tail /comp/<service> --follow --region us-east-2` (it does not run it; the tools containers log to `/comp/api`), and `logs --release <log>` fetches the last 500 lines of a step's log, by name or as `/opt/comp/logs/<name>`, in pages of 15,000 bytes.
 
 ## prune

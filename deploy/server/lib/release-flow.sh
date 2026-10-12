@@ -109,6 +109,17 @@ after_prune() { # after a recorded release: a failed or slow post-release prune,
   esac
 }
 
+# after_checkout: after a recorded finish whose server could not move /opt/comp/src to $TAG
+# (checkout=failed): the release stands, but the steps without a SHA run from there, so it
+# warns and fails the command until the cause is fixed.
+after_checkout() {
+  [[ "$(result_of checkout)" == failed ]] || return 0
+  echo "WARNING: /opt/comp/src did not move to $TAG (above), so it still holds the scripts of the release before it."
+  echo "rollback, prune and unlock run those scripts, and rollback refuses until /opt/comp/src is at $TAG;"
+  echo "fix the cause (above), then release $TAG again, which moves it."
+  exit 1
+}
+
 # not_recorded: after a finish step without recorded=ok: its output was cut short (the server
 # may well have recorded it), refused (nothing changed), or the server could not record it, in
 # which case the run's lease stays.
@@ -156,6 +167,7 @@ bring_up() {
     echo
     echo "Released $TAG: it serves and passes the smoke checks ($action)."
     after_prune
+    after_checkout
     return 0
   fi
   echo "The smoke checks of $TAG failed; bringing the previous release back."

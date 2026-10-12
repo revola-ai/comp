@@ -13,12 +13,34 @@
 #   FAKE_GIT_STALE     full SHAs only on a fork branch deleted on GitHub: `fetch --prune` drops it
 #   FAKE_GIT_TREE      the files every commit has (a copy of the repository's deploy/server)
 #   FAKE_GIT_OVERLAYS  <dir>/<full sha>/<path>: a file as that commit has it, instead
+#   FAKE_GIT_REFS      the file that holds the refs `update-ref` wrote, "<ref> <sha>" per line
+#   FAKE_GIT_GONE      full SHAs no branch holds any more (a force-push) that gc dropped: a
+#                      checkout or `worktree add` of one fails unless a ref of FAKE_GIT_REFS pins it
+#   FAKE_GIT_FAIL_CHECKOUT    `checkout` fails (as when the index cannot be written)
+#   FAKE_GIT_FAIL_UPDATE_REF  `update-ref` fails
+#   FAKE_GIT_WORKTREE_ADDS    only this many `worktree add` calls (of the log) succeed (a full disk)
 # Every fetch must name the fork's URL (never a remote name); any other source fails.
 # A checkout (and `worktree add`, which writes the whole tree of FAKE_GIT_TREE) writes the files
 # the commits' overlays differ in, as that commit has them, and a file new to the tree,
 # packages/db/prisma/migrations/<new>/migration.sql, under the caller's umask, as git would. A
-# linked worktree keeps its SHA in its .git file, so `rev-parse HEAD` there answers it.
+# linked worktree keeps its SHA in its .git file, so `rev-parse HEAD` there answers it. A
+# checkout or `worktree add` may name a ref of FAKE_GIT_REFS instead of a SHA.
 printf 'git %s\n' "$*" >>"$FAKE_GIT_LOG"
+refs="${FAKE_GIT_REFS:-/dev/null}"
+
+commit_of() { # commit_of <sha|ref>: the SHA to check out, or a refusal as git words it
+  local sha="$1"
+  if [[ "$1" == refs/* ]]; then
+    sha="$(awk -v ref="$1" '$1 == ref { print $2 }' "$refs" 2>/dev/null)"
+    [[ -n "$sha" ]] || { echo "fatal: invalid reference: $1" >&2; return 128; }
+  fi
+  if [[ " ${FAKE_GIT_GONE:-} " == *" $sha "* ]] &&
+    ! awk -v sha="$sha" '$2 == sha { found = 1 } END { exit !found }' "$refs" 2>/dev/null; then
+    echo "fatal: reference is not a tree: $sha" >&2
+    return 128
+  fi
+  printf '%s\n' "$sha"
+}
 
 write_tree() { # write_tree <dir> <sha>: the files any overlay changes, as <sha> has them
   local file rel overlays="${FAKE_GIT_OVERLAYS:-}"
@@ -58,16 +80,37 @@ case "${args[0]:-}" in
     ;;
   status) [[ -z "${FAKE_GIT_DIRTY:-}" ]] || printf '%s\n' "$FAKE_GIT_DIRTY"; exit 0 ;;
   checkout)
-    printf '%s\n' "${args[-1]}" >"$FAKE_GIT_HEAD"
-    write_tree "$dir" "${args[-1]}"
+    [[ -z "${FAKE_GIT_FAIL_CHECKOUT:-}" ]] || { echo "fatal: unable to write new index file" >&2; exit 128; }
+    sha="$(commit_of "${args[-1]}")" || exit
+    printf '%s\n' "$sha" >"$FAKE_GIT_HEAD"
+    write_tree "$dir" "$sha"
+    exit 0
+    ;;
+  update-ref) # update-ref <ref> <sha> | update-ref -d <ref>
+    [[ -z "${FAKE_GIT_FAIL_UPDATE_REF:-}" ]] || { echo "fatal: cannot lock ref '${args[-1]}'" >&2; exit 128; }
+    if [[ "${args[1]}" == -d && ${#args[@]} -eq 3 ]]; then
+      ref="${args[2]}" sha=""
+    elif [[ ${#args[@]} -eq 3 && "${args[2]}" =~ ^[0-9a-f]{40}$ ]]; then
+      ref="${args[1]}" sha="${args[2]}"
+    else
+      echo "fake git: unexpected ${args[*]}" >&2
+      exit 129
+    fi
+    { awk -v ref="$ref" '$1 != ref' "$refs" 2>/dev/null; [[ -z "$sha" ]] || printf '%s %s\n' "$ref" "$sha"; } >"$refs.new"
+    mv -f "$refs.new" "$refs"
     exit 0
     ;;
   worktree) # worktree add --quiet --detach <dir> <sha> | remove --force <dir> | prune
     case "${args[1]:-}" in
       add)
         [[ "${args[*]:2:2}" == "--quiet --detach" && ${#args[@]} -eq 6 ]] || { echo "fake git: unexpected ${args[*]}" >&2; exit 129; }
-        target="${args[4]}" sha="${args[5]}"
+        target="${args[4]}"
+        sha="$(commit_of "${args[5]}")" || exit
         [[ ! -e "$target" ]] || { echo "fatal: '$target' already exists" >&2; exit 128; }
+        if (($(grep -c ' worktree add ' "$FAKE_GIT_LOG") > ${FAKE_GIT_WORKTREE_ADDS:-1000000})); then
+          echo "fatal: could not create work tree dir '$target': No space left on device" >&2
+          exit 128
+        fi
         mkdir -p "$target" && cp -R "$FAKE_GIT_TREE/." "$target/" && write_tree "$target" "$sha" || exit 128
         printf 'gitdir: %s/.git/worktrees/%s\nHEAD: %s\n' "$dir" "${target##*/}" "$sha" >"$target/.git"
         ;;
@@ -87,7 +130,11 @@ case "${args[0]:-}" in
     done
     exit 0
     ;;
-  for-each-ref) # for-each-ref --contains <sha> --format=%(refname) <prefix>
+  for-each-ref) # --contains <sha> --format=%(refname) <prefix> | --format=%(refname) refs/comp/releases/
+    if [[ "${args[*]:1}" == '--format=%(refname) refs/comp/releases/' ]]; then
+      awk '$1 ~ /^refs\/comp\/releases\// { print $1 }' "$refs" 2>/dev/null
+      exit 0
+    fi
     [[ "${args[1]}" == --contains && "${args[3]}" == '--format=%(refname)' && ${#args[@]} -eq 5 ]] || {
       echo "fake git: unexpected for-each-ref ${args[*]}" >&2
       exit 129

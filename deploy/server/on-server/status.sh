@@ -3,7 +3,8 @@
 # `logs --release`. release.sh sends lib/server-common.sh and this file as the text of one SSM
 # command; it runs as root, takes no lock and writes nothing:
 #
-#   status.sh show                 current and previous tag, the tags with a snapshot (what
+#   status.sh show                 current tag and the commit of /opt/comp/src (a warning line
+#                                  when they differ), previous tag, the tags with a snapshot (what
 #                                  rollback can bring back), the lease, the comp containers with
 #                                  their health, the last 10 lines of releases.log, disk use of /
 #                                  (with a warning line above 70%)
@@ -20,7 +21,13 @@ fi
 set -uo pipefail
 
 show() {
-  echo "current: $(current_tag)"
+  local current src
+  current="$(current_tag)"
+  src="$(git -C "$COMP_SRC" rev-parse HEAD 2>/dev/null)" || src="unknown"
+  echo "current: $current (/opt/comp/src at ${src:0:12})"
+  if [[ -n "$current" && "${src:0:12}" != "$current" ]]; then
+    echo "WARNING: /opt/comp/src is at ${src:0:12}, not at the current tag $current: rollback refuses until it is; release $current again to move it"
+  fi
   echo "previous: $(previous_tag)"
   local dir snapshots=""
   for dir in "$COMP_RELEASES"/*; do
