@@ -20,13 +20,13 @@ said() { grep -qF -- "$2" "$1"; } # said <output> <text>
 # ---------------------------------------------------------------- once the up step was sent: revert
 reset_server
 released "$TAG_A"
-FAKE_AWS_INTERRUPT="INT@fake-command-0" release_sh "$TMP/up.out" release "$SHA_B"
+FAKE_AWS_INTERRUPT="INT@fake-command-1" release_sh "$TMP/up.out" release "$SHA_B"
 check "Ctrl-C during up: exits non-zero" test "$?" -ne 0
 check "Ctrl-C during up: says so" said "$TMP/up.out" "interrupted (INT)"
 check "Ctrl-C during up: never cancels the up step" test "$(cancels)" -eq 0
 check "Ctrl-C during up: waits for it, then reverts under the same run" grep -qE \
-  "^$LOG_RE $RUN_RE own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 2 args)"
-check "Ctrl-C during up: no finish (up, then revert)" test "$(ssm_sends)" -eq 2
+  "^$LOG_RE $RUN_RE own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 3 args)"
+check "Ctrl-C during up: no finish (build, up, then revert)" test "$(ssm_sends)" -eq 3
 check "Ctrl-C during up: the new tag came up, then the previous one" test "$(container_changes)" = \
   "$(printf '%s\n' "TAG=$TAG_B $COMPOSE_ARGV $UP" "TAG=$TAG_A $COMPOSE_ARGV $UP")"
 check "Ctrl-C during up: serving the previous tag" test "$(serving)" = "comp-api:$TAG_A"
@@ -39,14 +39,14 @@ released "$TAG_A"
 FAKE_CURL_INTERRUPT=TERM release_sh "$TMP/smoke.out" release "$SHA_B"
 check "SIGTERM during the smoke checks: exits non-zero" test "$?" -ne 0
 check "SIGTERM during the smoke checks: says so" said "$TMP/smoke.out" "interrupted (TERM)"
-check "SIGTERM during the smoke checks: reverts" grep -qE " own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 2 args)"
+check "SIGTERM during the smoke checks: reverts" grep -qE " own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 3 args)"
 check "SIGTERM during the smoke checks: serving the previous tag" test "$(serving)" = "comp-api:$TAG_A"
 check "SIGTERM during the smoke checks: recorded as rolled back" test "$(last_record)" = "release $TAG_B rolled-back"
 
 reset_server
-FAKE_AWS_INTERRUPT="HUP@fake-command-0" release_sh "$TMP/first.out" release "$SHA_B"
+FAKE_AWS_INTERRUPT="HUP@fake-command-1" release_sh "$TMP/first.out" release "$SHA_B"
 check "closed terminal during a first release: exits non-zero" test "$?" -ne 0
-check "closed terminal during a first release: reverts" grep -qE " own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 2 args)"
+check "closed terminal during a first release: reverts" grep -qE " own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 3 args)"
 check "closed terminal during a first release: stops the stack" test "$(serving)" = none
 check "closed terminal during a first release: says the site is down" said "$TMP/first.out" "THE SITE IS DOWN"
 check "closed terminal during a first release: recorded as failed" test "$(last_record)" = "release $TAG_B failed"
@@ -54,30 +54,30 @@ check "closed terminal during a first release: recorded as failed" test "$(last_
 reset_server
 released "$TAG_A"
 docker_state "s['migrations'] = 'pending'"
-FAKE_AWS_INTERRUPT="INT@fake-command-0" release_sh "$TMP/gate.out" release "$SHA_B"
+FAKE_AWS_INTERRUPT="INT@fake-command-1" release_sh "$TMP/gate.out" release "$SHA_B"
 check "Ctrl-C while up is refused at the gate: exits non-zero" test "$?" -ne 0
-check "Ctrl-C while up is refused at the gate: nothing to revert (one SSM command)" test "$(ssm_sends)" -eq 1
+check "Ctrl-C while up is refused at the gate: nothing to revert (build and up only)" test "$(ssm_sends)" -eq 2
 check "Ctrl-C while up is refused at the gate: says no container changed" said "$TMP/gate.out" "before any container changed"
 check "Ctrl-C while up is refused at the gate: still serving" test "$(serving)" = "comp-api:$TAG_A"
 
 reset_server
 released "$TAG_A"
-FAKE_AWS_INTERRUPT="INT@fake-command-1" release_sh "$TMP/finish.out" release "$SHA_B"
+FAKE_AWS_INTERRUPT="INT@fake-command-2" release_sh "$TMP/finish.out" release "$SHA_B"
 check "Ctrl-C while finish runs: exits non-zero" test "$?" -ne 0
-check "Ctrl-C while finish runs: waits for it, no revert" test "$(ssm_sends)" -eq 2
+check "Ctrl-C while finish runs: waits for it, no revert" test "$(ssm_sends)" -eq 3
 check "Ctrl-C while finish runs: it was recorded" test "$(last_record)" = "release $TAG_B ok"
 check "Ctrl-C while finish runs: says it is released and how to undo it" \
   bash -c "grep -qF 'released' '$TMP/finish.out' && grep -qF 'deploy/server/release.sh rollback' '$TMP/finish.out'"
 
 reset_server
 released "$TAG_A"
-FAKE_CURL_BAD_TAG="$TAG_B" FAKE_AWS_INTERRUPT="INT@fake-command-1" release_sh "$TMP/revert.out" release "$SHA_B"
-check "Ctrl-C while revert runs: waits for it, no second revert" test "$(ssm_sends)" -eq 2
+FAKE_CURL_BAD_TAG="$TAG_B" FAKE_AWS_INTERRUPT="INT@fake-command-2" release_sh "$TMP/revert.out" release "$SHA_B"
+check "Ctrl-C while revert runs: waits for it, no second revert" test "$(ssm_sends)" -eq 3
 check "Ctrl-C while revert runs: reports what serves" said "$TMP/revert.out" "Now serving $TAG_A"
 
 reset_server
 released "$TAG_A"
-FAKE_AWS_INTERRUPT="INT@fake-command-0,INT@fake-command-1" release_sh "$TMP/twice.out" release "$SHA_B"
+FAKE_AWS_INTERRUPT="INT@fake-command-1,INT@fake-command-2" release_sh "$TMP/twice.out" release "$SHA_B"
 check "Ctrl-C twice: exits non-zero" test "$?" -ne 0
 check "Ctrl-C twice: the second one leaves" said "$TMP/twice.out" "Interrupted again"
 check "Ctrl-C twice: points at status and unlock" \
@@ -85,7 +85,7 @@ check "Ctrl-C twice: points at status and unlock" \
 
 reset_server
 released "$TAG_A"
-FAKE_AWS_INTERRUPT="INT@fake-command-0,TERM@fake-command-0" release_sh "$TMP/leave-up.out" release "$SHA_B"
+FAKE_AWS_INTERRUPT="INT@fake-command-1,TERM@fake-command-1" release_sh "$TMP/leave-up.out" release "$SHA_B"
 check "leaving while up runs: says the server brings the tag up unverified under the lease" \
   said "$TMP/leave-up.out" "$TAG_B serves unverified under a 20-minute lease"
 check "leaving while up runs: next steps are status, unlock, then release or roll back" \
@@ -94,31 +94,31 @@ check "leaving while up runs: next steps are status, unlock, then release or rol
 # A signal while release.sh prints a step's output (the step has ended; tests/release-lib.sh awk)
 reset_server
 released "$TAG_A"
-FAKE_AWK_INTERRUPT="INT@1" release_sh "$TMP/print-up.out" release "$SHA_B"
+FAKE_AWK_INTERRUPT="INT@2" release_sh "$TMP/print-up.out" release "$SHA_B"
 check "Ctrl-C while printing the up step: never says it was not sent" bash -c "! grep -qF 'was not sent' '$TMP/print-up.out'"
-check "Ctrl-C while printing the up step: reverts it (up, revert)" test "$(ssm_sends)" -eq 2
+check "Ctrl-C while printing the up step: reverts it (build, up, revert)" test "$(ssm_sends)" -eq 3
 check "Ctrl-C while printing the up step: serving the previous tag" test "$(serving)" = "comp-api:$TAG_A"
 check "Ctrl-C while printing the up step: recorded as rolled back" test "$(last_record)" = "release $TAG_B rolled-back"
 reset_server
 released "$TAG_A"
-FAKE_AWK_INTERRUPT="INT@2" release_sh "$TMP/print-finish.out" release "$SHA_B"
-check "Ctrl-C while printing finish: no revert of the recorded release" test "$(ssm_sends)" -eq 2
+FAKE_AWK_INTERRUPT="INT@3" release_sh "$TMP/print-finish.out" release "$SHA_B"
+check "Ctrl-C while printing finish: no revert of the recorded release" test "$(ssm_sends)" -eq 3
 check "Ctrl-C while printing finish: still released" test "$(last_record):$(serving)" = "release $TAG_B ok:comp-api:$TAG_B"
 check "Ctrl-C while printing finish: says it is released" said "$TMP/print-finish.out" "it is released"
 reset_server
 released "$TAG_A"
-FAKE_CURL_BAD_TAG="$TAG_B" FAKE_AWK_INTERRUPT="INT@2" release_sh "$TMP/print-revert.out" release "$SHA_B"
-check "Ctrl-C while printing revert: no second revert" test "$(ssm_sends)" -eq 2
+FAKE_CURL_BAD_TAG="$TAG_B" FAKE_AWK_INTERRUPT="INT@3" release_sh "$TMP/print-revert.out" release "$SHA_B"
+check "Ctrl-C while printing revert: no second revert" test "$(ssm_sends)" -eq 3
 check "Ctrl-C while printing revert: reports what serves" said "$TMP/print-revert.out" "Now serving $TAG_A"
 
 reset_server
 released "$TAG_A"
-FAKE_AWS_INTERRUPT="INT@ssm send-command" release_sh "$TMP/sending.out" release "$SHA_B"
+FAKE_AWS_INTERRUPT="INT@ssm send-command fake-command-1" release_sh "$TMP/sending.out" release "$SHA_B"
 check "Ctrl-C while the up step is sent: exits non-zero" test "$?" -ne 0
 check "Ctrl-C while the up step is sent: the state is unknown" said "$TMP/sending.out" "serving state is unknown"
 check "Ctrl-C while the up step is sent: points at unlock" said "$TMP/sending.out" "deploy/server/release.sh unlock"
 check "Ctrl-C while the up step is sent: never claims nothing changed" bash -c "! grep -qiF 'nothing changed' '$TMP/sending.out'"
-check "Ctrl-C while the up step is sent: sends nothing else" test "$(ssm_sends)" -eq 1
+check "Ctrl-C while the up step is sent: sends nothing else" test "$(ssm_sends)" -eq 2
 # The up step went through on the server and holds the lease; the operator unlocks it.
 check "an orphaned up leaves the lease" test -s "$SERVER/release.lease"
 release_typed "unlock" "$TMP/orphan-unlock.out" unlock
@@ -127,6 +127,21 @@ check "unlock after an orphaned up: the lease is gone" test ! -e "$SERVER/releas
 check "unlock after an orphaned up: recorded" test "$(last_record)" = "release $TAG_B unlocked"
 
 # ---------------------------------------------------------------- before the up step: cancel
+reset_server
+released "$TAG_A"
+FAKE_AWS_INTERRUPT="INT@fake-command-0" release_sh "$TMP/build.out" release "$SHA_B"
+check "Ctrl-C during the build step: exits 130" test "$?" -eq 130
+check "Ctrl-C during the build step: cancels it" test "$(grep -c "^aws ssm cancel-command --command-id fake-command-0 " "$FAKE_AWS_LOG")" -eq 1
+check "Ctrl-C during the build step: says nothing changed" \
+  said "$TMP/build.out" "Cancelled the build step (SSM command fake-command-0): it only builds images, so no container, migration or release changed"
+check "Ctrl-C during the build step: no up step" test "$(ssm_sends)" -eq 1
+check "Ctrl-C during the build step: no container changed, still serving" test "$(container_changes):$(serving)" = ":comp-api:$TAG_A"
+check "Ctrl-C during the build step: no lease" test ! -e "$SERVER/release.lease"
+: >"$FAKE_DOCKER_LOG"
+release_sh "$TMP/after-build.out" release "$SHA_B"
+check "a release after a cancelled build: released" test "$(last_record)" = "release $TAG_B ok"
+check "a release after a cancelled build: skips the images already built" bash -c "! grep -q 'buildx bake' '$FAKE_DOCKER_LOG'"
+
 reset_server
 released "$TAG_A"
 FAKE_AWS_INTERRUPT="INT@sts get-caller-identity" release_sh "$TMP/early.out" release "$SHA_B"

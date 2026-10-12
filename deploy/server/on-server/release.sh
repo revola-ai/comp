@@ -3,10 +3,11 @@
 # on-server/entry.sh (which holds the server lock): a release's steps from a worktree of its SHA,
 # a rollback's and unlock from /opt/comp/src, the serving release's checkout:
 #
-#   release.sh up release <sha12>     builds comp-{api,app,portal,migrate}:<sha12> (skipping
-#                                     built ones), renders the run's configuration into
-#                                     /opt/comp/stage (lib/server-config.sh), refuses pending or
-#                                     failed migrations, then compose up --wait with it
+#   release.sh up release <sha12>     after the build step (on-server/build.sh): refuses when
+#                                     an image of the tag is missing, renders the run's
+#                                     configuration into /opt/comp/stage (lib/server-config.sh),
+#                                     refuses pending or failed migrations, then compose up --wait
+#                                     with it
 #   release.sh up rollback <sha12>    compose up --wait with the tag's snapshot, without build or
 #                                     migration check; refuses a tag whose three images or whose
 #                                     snapshot are gone, or the serving one
@@ -136,7 +137,9 @@ case "$step" in
     rm -rf "$COMP_STAGE" # configurations of runs that stopped (no other run holds a lease)
     adopt_legacy
     if [[ "$action" == release ]]; then
-      build_images "$tag" "${STACK_IMAGES[@]}" migrate || failed_before_change 1 "Building the images of $tag failed."
+      missing="$(missing_images "$tag" "${STACK_IMAGES[@]}" migrate)"
+      [[ -z "$missing" ]] ||
+        failed_before_change 1 "Refusing: missing images: $(tr '\n' ' ' <<<"$missing")(removed since the build step?); release $tag again, which builds them."
       stage_config "$stage" || failed_before_change 1 "Rendering the configuration of $tag failed (above)."
       use_config "$stage"
       migration_status "$tag"

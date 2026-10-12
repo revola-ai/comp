@@ -235,7 +235,7 @@ check "disk over 70% after a release: trims the build cache to 20 GB" \
 check "disk over 70% after a release: says why" grep -qF "/ is 71% used, over 70%" "$TMP/auto-71.out"
 check "disk over 70% after a release: reports what it removed" \
   bash -c "grep -qxF 'removed comp-api:$TAG_E' '$TMP/auto-71.out' && grep -qxF 'removed comp-migrate:$TAG_F' '$TMP/auto-71.out'"
-check "disk over 70% after a release: the finish step does it (no extra SSM command)" test "$(ssm_sends)" -eq 2
+check "disk over 70% after a release: the finish step does it (no extra SSM command)" test "$(ssm_sends)" -eq 3
 auto_server 70
 check "disk at 70%: removes nothing" bash -c "! grep -qE 'image rm|builder prune' '$FAKE_DOCKER_LOG'"
 check "disk at 70%: says so" grep -qF "/ is 70% used: nothing pruned" "$TMP/auto-70.out"

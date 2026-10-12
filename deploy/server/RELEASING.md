@@ -47,8 +47,10 @@ A server released before snapshots existed has none: its serving tag's configura
 
 ## release
 
-1. Builds `comp-api`, `comp-app`, `comp-portal` and the tools image `comp-migrate` at the tag, one at a time with `docker buildx bake -f deploy/aws/docker-bake.hcl --load <target>`, skipping images that exist, then renders the run's configuration (`render-env.sh` into `/opt/comp/stage/<run>/`).
-2. Runs `prisma migrate status` in the tools image against `DATABASE_MIGRATION_URL`.
+1. The build step (up to 2 hours) builds `comp-api`, `comp-app`, `comp-portal` and the tools image `comp-migrate` at the tag, one at a time with `docker buildx bake -f deploy/aws/docker-bake.hcl --load <target>`, skipping images that exist.
+   It changes nothing that serves, so an interrupt cancels it (the next release of the SHA skips what was built), and it takes no lease.
+   Another step may run between it and the up step; that is harmless, because the up step checks everything again under the lock before any container changes: it refuses when an image of the tag is missing (removed meanwhile; release again), renders the configuration and checks the migrations itself.
+2. The up step (up to 30 minutes) renders the run's configuration (`render-env.sh` into `/opt/comp/stage/<run>/`) and runs `prisma migrate status` in the tools image against `DATABASE_MIGRATION_URL`.
    Pending or failed migrations, or a status it cannot read, stop the release before any container changes; it prints the list and the `release.sh migrate <sha12>` command.
    Migrations in the database that the commit lacks ("not found locally" in Prisma's output) stop it too: release a commit that includes them.
    Prisma 7.6 reports a database that is only ahead, with nothing of the commit missing there, as up to date, so that release goes ahead like a rollback.
@@ -60,9 +62,10 @@ A failure after the containers changed (health or smoke) brings the previous `ok
 When the release was of the tag that already serves, only the env files changed (re-rendered from the secret), so it says a change in `comp/production/config` is the likely cause; the tag serves again with the env files of its snapshot.
 After a first release there is nothing to go back to: the failed stack is stopped, the attempt recorded `failed`, and `release.sh` says the site is down.
 A refused release (a build failure, a render failure, the migration gate) changes nothing live: it drops its staged configuration, so the snapshots, the configuration the containers run with and `/opt/comp/src` stay as they were.
-When SSM reports the up step timed out, cancelled, undeliverable or terminated, or its output lacks the end marker, `release.sh` says the serving state is unknown and prints `deploy/server/release.sh status`.
+When SSM reports the up step timed out, cancelled, undeliverable or terminated, or its output lacks the end marker, `release.sh` says the serving state is unknown and prints `deploy/server/release.sh status`; for the build step it says the earlier release still serves (a build changes no container).
 Interrupted (Ctrl-C, `SIGTERM`, a closed terminal), `release.sh` cleans up before it exits.
-It cancels (`aws ssm cancel-command`) only a step that only reads (`status`, `logs`, the migration status, the prune plan); every other step (`migrate`, `trigger`, prune's removal, the up step) is never cut short, so a migration cannot stay half applied: it waits for the step to end and reports it, saying nothing changed only when the server confirms it.
+It cancels (`aws ssm cancel-command`) only a step that changes nothing: one that only reads (`status`, `logs`, the migration status, the prune plan) and a release's build step; every other step (`migrate`, `trigger`, prune's removal, the up step) is never cut short, so a migration cannot stay half applied: it waits for the step to end and reports it, saying nothing changed only when the server confirms it.
+A build cut short leaves the images it finished; the bake it ran does not hold the server lock, so the next step is not blocked by it.
 Once a release or rollback sent its up step, it then runs the revert step, which brings the previous tag back (or stops the stack after a first release), and reports what serves; a release already recorded stays released.
 A second interrupt leaves at once and says what keeps running (with the `logs --release` command of a step).
 Leaving while the up step runs lets the server finish it: the new tag may then serve unverified under the 20-minute lease, so run `status`, then `unlock`, then release (or roll back to) the SHA that should serve.

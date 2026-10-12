@@ -15,6 +15,7 @@ bash deploy/server/tests/rollback.test.sh     # rollback, lock, lease, account c
 bash deploy/server/tests/release-ops.test.sh  # migrate, trigger and prune with typed confirmations; disk
 bash deploy/server/tests/interrupt.test.sh    # INT, TERM and HUP before and after the up step; unlock
 bash deploy/server/tests/snapshot.test.sh     # per-release configuration snapshots: revert, rollback, refusals, prune
+bash deploy/server/tests/release-failures.test.sh   # abnormal endings, cut-short output, failed state writes, what it reports
 (cd deploy/server && bun test)                # push-secrets: sources, refusals, diff, create or put, terminal; workspace
 ```
 

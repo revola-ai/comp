@@ -27,7 +27,7 @@ Every release keeps the configuration it was verified with (env files and `compo
 ### Interrupted releases
 
 Ctrl-C (or a closed terminal) during any `release.sh` command is safe.
-It cancels only a step that only reads (status, logs, the migration status, the prune plan); a migration, a Trigger.dev deploy, prune's removal and a release's up step are never cut short: it waits for the step to end and reports it.
+It cancels only a step that changes nothing (status, logs, the migration status, the prune plan, and a release's image build, which can take up to 2 hours; the next release skips the images already built); a migration, a Trigger.dev deploy, prune's removal and a release's up step are never cut short: it waits for the step to end and reports it.
 After a release's or rollback's up step was sent, it then brings the previous release back (after a first release, it stops the stack) and says what serves.
 A second Ctrl-C leaves at once and says what still runs on the server (`status`, and the step's `logs --release <log>` command).
 Leaving while the up step runs lets the server finish it, and the new tag may then serve unverified under a 20-minute lease: run `status`, then `unlock`, then release (or roll back to) the SHA that should serve.

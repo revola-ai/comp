@@ -2,7 +2,7 @@
 # Releases Comp to the tunnel server (deploy/server/RELEASING.md), from a laptop with
 # AWS credentials for account 455986776194:
 #
-#   deploy/server/release.sh release <sha>                    build, check migrations, up, smoke
+#   deploy/server/release.sh release <sha>                    build (cancellable), check migrations, up, smoke
 #   deploy/server/release.sh rollback [<sha>]                 back to an earlier release's images
 #   deploy/server/release.sh migrate <sha>                    apply its migrations (typed: migrate)
 #   deploy/server/release.sh trigger <sha> [--project api|app]  deploy Trigger.dev prod (typed: trigger)

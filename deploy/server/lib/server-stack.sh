@@ -56,7 +56,9 @@ missing_images() { # missing_images <tag> <name>...: prints each comp-<name>:<ta
 }
 
 # build_images <tag> <name>...: builds each missing comp-<name>:<tag> from this checkout, one
-# at a time (the host has the memory for one Next.js build), with no registry.
+# at a time (the host has the memory for one Next.js build), with no registry. bake runs with
+# the server lock's descriptor (9, entry.sh) closed: a build step cancelled on an interrupt may
+# leave BuildKit's client running, and it must not hold the lock (a build changes nothing live).
 build_images() {
   local tag="$1" name
   shift
@@ -66,7 +68,7 @@ build_images() {
       continue
     fi
     echo "== building comp-$name:$tag"
-    if ! (cd "$REPO" && env TAG="$tag" REGISTRY= docker buildx bake -f "$BAKE_FILE" --load "$name"); then
+    if ! (cd "$REPO" && env TAG="$tag" REGISTRY= docker buildx bake -f "$BAKE_FILE" --load "$name" 9>&-); then
       echo "building comp-$name:$tag failed (above)"
       return 1
     fi

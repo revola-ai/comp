@@ -8,8 +8,8 @@
 
 SMOKE_TRIES=24 # each check, 5 seconds apart: about 2 minutes
 SMOKE_PAUSE=5
-UP_SECONDS=1800      # render, compose up --wait (600 s) and a restore's up --wait (600 s)
-RELEASE_SECONDS=7200 # builds of up to four images, then up
+UP_SECONDS=1800    # render, migration status, compose up --wait (600 s), a restore's (600 s)
+BUILD_SECONDS=7200 # builds of up to four images (the build step, which changes nothing live)
 
 # smoke_one <url> <200|access>: retries until the URL answers 200, or for "access" a 302 to
 # Cloudflare Access (proof that Access guards the app); false after SMOKE_TRIES answers.
@@ -79,16 +79,13 @@ unknown_state() { # unknown_state <what happened>: the step's outcome cannot be 
   echo "Check what serves now with: deploy/server/release.sh status"
 }
 
-# bring_up <action>: the up step of $TAG (release or rollback), the smoke checks, then finish
-# or revert under the same run.
+# bring_up <action> <run>: the up step of $TAG (release or rollback), the smoke checks, then
+# finish or revert under the same run.
 bring_up() {
-  local action="$1" run sha="-" timeout="$UP_SECONDS"
-  run="$(run_id "$action" "$TAG")"
-  if [[ "$action" == release ]]; then
-    sha="$FULL_SHA" timeout="$RELEASE_SECONDS"
-  fi
+  local action="$1" run="$2" sha="-"
+  [[ "$action" != release ]] || sha="$FULL_SHA"
   STAGE=up UP_RUN="$run" UP_ACTION="$action" UP_SHA="$sha" # an interrupt from here on reverts (lib/release-interrupt.sh)
-  step "$action" "$timeout" "$run" new "$sha" release up "$action" "$TAG"
+  step "$action" "$UP_SECONDS" "$run" new "$sha" release up "$action" "$TAG"
   if [[ "$REMOTE_STATUS" != Success ]] || [[ "$REMOTE_CODE" -ne 0 ]]; then
     STAGE=done
     if unchanged; then
@@ -121,11 +118,18 @@ cmd_release() {
   require_local aws git python3 curl
   resolve_pushed "$1"
   connect
-  echo "Releasing $TAG ($FULL_SHA) to $INSTANCE_ID: check it out in /opt/comp/src, build"
-  echo "comp-api, comp-app, comp-portal and comp-migrate:$TAG (skipping built ones), render the env"
-  echo "files, refuse if migrations are pending, compose up and wait for every healthcheck,"
-  echo "then the smoke checks from here. On a failure the previous release comes back."
-  bring_up release
+  echo "Releasing $TAG ($FULL_SHA) to $INSTANCE_ID: build comp-api, comp-app, comp-portal and"
+  echo "comp-migrate:$TAG from a checkout of it (skipping built ones; Ctrl-C cancels the build),"
+  echo "then render its configuration, refuse if migrations are pending, compose up and wait for"
+  echo "every healthcheck, then the smoke checks from here. On a failure the previous release comes back."
+  local run
+  run="$(run_id release "$TAG")"
+  step build "$BUILD_SECONDS" "$run" new "$FULL_SHA" build "$TAG"
+  if [[ "$REMOTE_STATUS" != Success ]] || [[ "$REMOTE_CODE" -ne 0 ]]; then
+    unchanged && die "the release of $TAG stopped before any container changed (above); still serving the earlier release"
+    die "the build step of $TAG did not end normally (above); it changes no container, so the earlier release still serves; release $TAG again (it skips the images already built)"
+  fi
+  bring_up release "$run"
 }
 
 cmd_rollback() {
@@ -143,8 +147,10 @@ cmd_rollback() {
   [[ -n "$TAG" ]] || TAG="$(result_of previous)"
   [[ -n "$TAG" ]] || die "there is no earlier ok release to roll back to (deploy/server/release.sh status)"
   [[ "$TAG" != "$current" ]] || die "already serving $TAG"
+  local run
+  run="$(run_id rollback "$TAG")"
   echo "Rolling back from ${current:-nothing} to $TAG on $INSTANCE_ID: its images as built, with"
   echo "the env files and compose.yaml it was released with (its snapshot; refused without one),"
   echo "no migration (the database keeps newer migrations); then the smoke checks from here."
-  bring_up rollback
+  bring_up rollback "$run"
 }
