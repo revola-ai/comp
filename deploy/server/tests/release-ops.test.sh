@@ -65,6 +65,25 @@ check "migrate: the release record is unchanged" grep -qF "release $TAG_A ok" "$
 check "migrate: steps may take an hour" test "$(ssm_call 2 timeout)" = 3600
 no_secret "migrate" "$TMP/migrate.out" "$TMP/declined.out"
 
+# prisma migrate deploy fails (deploy), or runs but leaves a migration pending (partial)
+after_deploy() { awk 'seen; /^== prisma migrate deploy /{ seen = 1 }' "$1"; } # what the laptop printed after it
+for mode in "deploy:Following migration have failed:prisma migrate deploy failed (above); the status follows." \
+  "partial:have not yet been applied:The migrations ran, but the status is pending (above)."; do
+  IFS=: read -r knob status_text said_text <<<"$mode"
+  reset_server
+  released "$TAG_A"
+  docker_state "s['migrations'] = 'pending'"
+  FAKE_DOCKER_FAIL_MIGRATE="$knob" release_typed "migrate" "$TMP/mfail-$knob.out" migrate "$SHA_B"
+  check "migrate, $knob fails: exits non-zero" test "$?" -ne 0
+  check "migrate, $knob fails: recorded failed" test "$(last_record)" = "migrate $TAG_B failed"
+  check "migrate, $knob fails: the server says so" grep -qF "$said_text" "$TMP/mfail-$knob.out"
+  check "migrate, $knob fails: the laptop says applying failed" grep -qF "applying the migrations of $TAG_B failed (above)" "$TMP/mfail-$knob.out"
+  after="$(after_deploy "$TMP/mfail-$knob.out")"
+  check "migrate, $knob fails: the status is read again after it" grep -qF "== prisma migrate status" <<<"$after"
+  check "migrate, $knob fails: and printed" grep -qF "$status_text" <<<"$after"
+  check "migrate, $knob fails: never says applied" bash -c "! grep -qE '^Applied' '$TMP/mfail-$knob.out'"
+done
+
 reset_server
 released "$TAG_A"
 release_typed "migrate" "$TMP/nothing.out" migrate "$SHA_B"

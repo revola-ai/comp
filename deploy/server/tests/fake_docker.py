@@ -19,6 +19,8 @@ Knobs (environment):
   FAKE_DOCKER_TRIGGER_CLI   the trigger.dev version the tools image holds ("missing": none;
                             default: apps/api/package.json's, as bun.lock installs it)
   FAKE_DOCKER_FAIL_PRUNE    `builder prune` fails
+  FAKE_DOCKER_FAIL_MIGRATE  `prisma migrate deploy` fails and leaves the migration failed
+                            ("deploy"), or ends well but leaves one still pending ("partial")
 Nothing here runs a container.
 """
 import json
@@ -214,7 +216,12 @@ def migrate(command: str, env: dict[str, str]) -> NoReturn:
     if command.endswith('prisma migrate deploy'):
         if env.get('COMP_I_AM_TOUCHING_PROD') != '1':
             fail('refusing `prisma migrate deploy`: production_target_refused')
-        state['migrations'] = 'up-to-date'
+        failure = os.environ.get('FAKE_DOCKER_FAIL_MIGRATE')
+        if failure == 'deploy':
+            state['migrations'] = 'failed'
+            print('Applying migration `20261001000000_add_widget`')
+            fail('Error: P3018: A migration failed to apply. Migration name: 20261001000000_add_widget')
+        state['migrations'] = 'pending' if failure == 'partial' else 'up-to-date'
         done('Applying migration `20261001000000_add_widget`\nAll migrations have been successfully applied.')
     fail(f'fake docker: unexpected migrate command {command}')
 
