@@ -50,6 +50,15 @@ describe('every key', () => {
     ]);
   });
 
+  test.each([' fakesecret', 'fakesecret ', '\tfakesecret', 'fakesecret\t', ' '])(
+    'a value with leading or trailing whitespace (%j) is refused',
+    (value) => {
+      for (const key of ['OPENAI_API_KEY', 'COMP_FORWARDED_IP_TOKEN', 'DATABASE_URL']) {
+        expect(problems(key, value)).toEqual([`${key} has leading or trailing whitespace`]);
+      }
+    },
+  );
+
   test.each(['localhost', 'LocalHost', '127.0.0.1', 'host.docker.internal'])(
     'a value naming %s is refused as a laptop value',
     (host) => {

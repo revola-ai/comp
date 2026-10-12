@@ -84,7 +84,7 @@ sudo deploy/server/render-env.sh            # writes /opt/comp/env/<service>.env
 ```
 
 It reads the Secrets Manager secret `comp/production/config` (one JSON object) in `us-east-2` with the instance profile and, for each `env/<service>.keys`, writes `/opt/comp/env/<service>.env` (mode 0600 in a 0700 directory) with exactly the listed keys followed by the lines of `env/<service>.public.env`.
-It checks every service before writing any file, and refuses by name a listed key that is missing from the secret, empty, not a string or containing a line break or a NUL character; on a refusal the previous files stay as they were.
+It checks every service before writing any file, and refuses by name a listed key that is missing from the secret, empty, not a string, containing a line break or a NUL character, or with leading or trailing whitespace; on a refusal the previous files stay as they were.
 It never prints a value, never passes one as a command-line argument and writes each file through a temporary file in the same directory.
 Writes are atomic per file, not per run: an IO failure partway through can leave some files from the new secret and some from the old, so rerun `render-env.sh` until it succeeds before any `up`.
 Env files of a service removed from `env/` are not deleted; remove them by hand.

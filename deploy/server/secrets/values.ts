@@ -40,6 +40,9 @@ export function valueProblems({
   if (value === '') return [`${key} is empty`];
   if (/[\r\n]/.test(value)) return [`${key} contains a line break`];
   if (value.includes('\0')) return [`${key} contains a NUL character`];
+  // The services do not all trim (the API compares COMP_FORWARDED_IP_TOKEN as is, the app and
+  // portal trim it), so a stray space would make them disagree silently.
+  if (value !== value.trim()) return [`${key} has leading or trailing whitespace`];
   const lowered = value.toLowerCase();
   const laptopHost = LAPTOP_HOSTS.find((host) => lowered.includes(host));
   if (laptopHost) {

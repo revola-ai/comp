@@ -8,7 +8,8 @@
 # 0700 directory) holding exactly the listed keys, valued from the Secrets Manager secret
 # comp/production/config (one JSON object), then the committed non-secret lines of
 # <service>.public.env. Every service is checked before any file is written: a listed key
-# that is missing, empty, not a string or contains a line break stops the run, by name.
+# that is missing, empty, not a string, contains a line break or NUL or has leading or trailing
+# whitespace stops the run, by name.
 # Values are never printed, never passed as arguments and never written outside <out-dir>.
 # Files are written verbatim, one NAME=VALUE per line (compose reads them with format: raw).
 set -euo pipefail
@@ -108,6 +109,8 @@ for service in services:
             problems.append(f'{service}: {key} is empty in {secret_id}')
         elif any(char in value for char in '\r\n\0'):
             problems.append(f'{service}: {key} contains a line break or NUL in {secret_id}')
+        elif value != value.strip():
+            problems.append(f'{service}: {key} has leading or trailing whitespace in {secret_id}')
         else:
             lines.append(f'{name}={value}')
     secret_count = len(lines)

@@ -26,6 +26,10 @@ refuses nul "api: OPENAI_API_KEY contains a line break or NUL" \
   --set-json OPENAI_API_KEY '"fakesecret-a\u0000fakesecret-b"'
 refuses carriage "api: OPENAI_API_KEY contains a line break or NUL" \
   --set OPENAI_API_KEY $'fakesecret-a\rfakesecret-b'
+refuses leading-space "api: COMP_FORWARDED_IP_TOKEN has leading or trailing whitespace in comp/production/config" \
+  --set COMP_FORWARDED_IP_TOKEN " fakesecret-forwarded"
+refuses trailing-tab "api: OPENAI_API_KEY has leading or trailing whitespace in comp/production/config" \
+  --set OPENAI_API_KEY $'fakesecret-openai\t'
 
 # ---------------------------------------------------------------- malformed committed files
 # Each case runs a copy of render-env.sh next to an edited copy of deploy/server/env.
