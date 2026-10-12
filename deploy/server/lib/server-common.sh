@@ -6,9 +6,11 @@
 # it defines names and nothing else, and never depends on where it is.
 #
 # COMP_REPO_URL is the fork the server builds from: release.sh (which sources this file for it)
-# requires a SHA to be on one of its branches, entry.sh fetches from it, and user-data.sh clones
-# it (cloud-init runs that file alone, so it repeats the URL; tests/user-data.test.sh checks it).
+# requires a SHA to be on its RELEASE_BRANCH, entry.sh fetches from it and checks that branch
+# again, and user-data.sh clones it (cloud-init runs that file alone, so it repeats the URL;
+# tests/user-data.test.sh checks it).
 COMP_REPO_URL=https://github.com/revola-ai/comp
+RELEASE_BRANCH=revola/self-host # releases, migrations and Trigger.dev deploys come only from it
 # COMP_ROOT is /opt/comp on the server (the tests point it at a sandbox).
 COMP_ROOT="${COMP_ROOT:-/opt/comp}"
 COMP_SRC="$COMP_ROOT/src"            # the checkout user-data.sh cloned

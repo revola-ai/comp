@@ -13,9 +13,9 @@
 #
 # It drives the server (the one running instance named comp-server) through SSM Run Command,
 # never SSH: each step's script runs there as root (deploy/server/on-server/), its full log
-# goes to /opt/comp/logs, and this prints the log's end. A <sha> must be on a branch of the fork
-# revola-ai/comp (the server fetches from it); its 12-character prefix is the image tag. A
-# server lock runs one step at a time. The smoke checks run from here, against the public
+# goes to /opt/comp/logs, and this prints the log's end. A <sha> must be on revola/self-host of
+# the fork revola-ai/comp (the server fetches from it); its 12-character prefix is the image
+# tag. A server lock runs one step at a time. The smoke checks run from here, against the public
 # hosts. It never reads, prints or sends a secret: the server reads them from Secrets Manager.
 # Needs bash 4 or newer, aws, git, python3 and curl.
 if ((BASH_VERSINFO[0] < 4)); then

@@ -221,8 +221,9 @@ It never uses SSH: every server step is one SSM Run Command (`AWS-RunShellScript
 The command's text is `lib/server-common.sh` with `on-server/entry.sh` (or `on-server/status.sh`), so it works whatever the server's checkout holds; the work itself runs from `deploy/server/on-server/` of the checkout in `/opt/comp/src`.
 SSM parameters carry names, tags and SHAs only: the server reads the secret itself (`render-env.sh`) and no value appears in a command line, an SSM parameter, a log name or this script's output.
 
-A `<sha>` is 12 or 40 hex characters and must be on a branch of the fork `revola-ai/comp`, because the server fetches it from there; anything else is refused before any AWS call, and its first 12 characters are the image tag.
-`release.sh` decides this against the fork's URL, never a remote name (in a checkout of upstream, `origin` is `trycompai/comp`): it fetches the branches of `https://github.com/revola-ai/comp` with `--prune --no-tags` into `refs/comp-release/*` and needs a ref there to contain the SHA, so a deleted branch does not count; push with `git push revola <branch>`.
+A `<sha>` is 12 or 40 hex characters and must be on the `revola/self-host` branch of the fork `revola-ai/comp`, because releases, migrations and Trigger.dev deploys come only from reviewed, merged work, and the server fetches it from there; anything else is refused before any AWS call, and its first 12 characters are the image tag.
+`release.sh` decides this against the fork's URL, never a remote name (in a checkout of upstream, `origin` is `trycompai/comp`): it fetches the branches of `https://github.com/revola-ai/comp` with `--prune --no-tags` into `refs/comp-release/*`, needs a ref there to contain the SHA (so a deleted branch does not count; push with `git push revola <branch>`), then needs `refs/comp-release/revola/self-host` to contain it (`git merge-base --is-ancestor`): a SHA only on a feature branch is refused with "merge it into revola/self-host first".
+The server checks `revola/self-host` again after its own fetch, so a step run some other way cannot check out another branch's commit either.
 
 Every step that may change something, on the server:
 

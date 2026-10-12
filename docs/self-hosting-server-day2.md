@@ -12,7 +12,8 @@ Every step that changes AWS, Cloudflare or Trigger.dev is marked **Kyle runs**; 
 deploy/server/release.sh release <sha>
 ```
 
-The SHA must be pushed to a branch of revola-ai/comp (`git push revola <branch>`); `release.sh` checks the fork's URL itself, so a SHA only on upstream (`origin`) is refused.
+The SHA must be on the `revola/self-host` branch of revola-ai/comp: merge the work there first (a SHA only on a feature branch is refused, and so is one only on upstream's `origin`).
+`release.sh` checks the fork's URL itself, and the server checks the branch again; `migrate` and `trigger` take the same SHAs.
 The release builds the images on the server, checks the migrations, brings the new tag up and smoke-checks it from the laptop; a failure brings the previous tag back and says which one serves.
 A release refused at the migration gate prints the `release.sh migrate <sha12>` command to run first.
 A release of a commit older than a migration already applied is refused when Prisma reports the database's migrations as "not found locally": release a commit that includes them.

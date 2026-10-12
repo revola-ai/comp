@@ -40,6 +40,16 @@ FAKE_GIT_STALE="$SHA_D" release_sh "$TMP/stale.out" release "$SHA_D"
 check "only on a deleted fork branch: refused" test "$?" -ne 0
 check "only on a deleted fork branch: says why" grep -qF "$NOT_ON_FORK" "$TMP/stale.out"
 check "only on a deleted fork branch: no AWS call" test ! -s "$FAKE_AWS_LOG"
+ONLY_FEATURE="is on a branch of revola-ai/comp but not on revola/self-host, the only branch releases come from; merge it into revola/self-host first"
+for sha in "$SHA_X" "$TAG_X"; do
+  : >"$FAKE_AWS_LOG"
+  release_sh "$TMP/feature.out" release "$sha"
+  check "only on a feature branch ($sha): refused" test "$?" -ne 0
+  check "only on a feature branch ($sha): says why, naming the full SHA" grep -qF "$SHA_X $ONLY_FEATURE" "$TMP/feature.out"
+  check "only on a feature branch ($sha): no AWS call at all" test ! -s "$FAKE_AWS_LOG"
+done
+check "the pushed check asks whether the fork's revola/self-host contains it" \
+  has_line "$FAKE_GIT_LOG" "git -C $ROOT merge-base --is-ancestor $SHA_X refs/comp-release/revola/self-host"
 AWS_REGION=eu-west-1 release_sh "$TMP/region.out" release "$SHA_B"
 check "another AWS_REGION: refused" grep -qF "only works in us-east-2" "$TMP/region.out"
 
@@ -71,6 +81,8 @@ check "release: step 2 records it under the same run" grep -qE \
 check "release: polls each command until it ends" test "$(grep -c "^aws ssm get-command-invocation --command-id fake-command-[01] --instance-id $INSTANCE --output json --region us-east-2\$" "$FAKE_AWS_LOG")" -eq 4
 check "release: the server fetches every branch of the fork by URL" \
   has_line "$FAKE_GIT_LOG" "git -C $SERVER/src fetch --quiet $FORK +refs/heads/*:refs/remotes/origin/*"
+check "release: the server checks the SHA is on the fork's revola/self-host too" \
+  has_line "$FAKE_GIT_LOG" "git -C $SERVER/src merge-base --is-ancestor $SHA_B refs/remotes/origin/revola/self-host"
 check "release: the server checks out the SHA detached" \
   has_line "$FAKE_GIT_LOG" "git -C $SERVER/src checkout --quiet --detach $SHA_B"
 EXPECTED_DOCKER="$(

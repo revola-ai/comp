@@ -153,6 +153,12 @@ for bad in "../../env/api.env 20261007T120000Z-release-$TAG_B-0123abcd new - rel
   check "entry refuses: $bad" test "$?" -eq 2
 done
 check "entry refusals: nothing ran" test ! -s "$FAKE_DOCKER_LOG"
+entry 20261007T120000Z-release-"$TAG_X".log 20261007T120000Z-release-"$TAG_X"-0123abcd new "$SHA_X" release up release "$TAG_X"
+check "entry refuses a SHA only on a feature branch" test "$?" -eq 1
+check "entry refuses a SHA only on a feature branch: names revola/self-host" grep -qF "is not on revola/self-host" "$TMP/entry.out"
+check "entry refuses a SHA only on a feature branch: changed nothing" grep -qxF "comp-result: changed=no" "$TMP/entry.out"
+check "entry refuses a SHA only on a feature branch: never checks it out, no docker call" \
+  bash -c "! grep -q 'checkout' '$FAKE_GIT_LOG' && test ! -s '$FAKE_DOCKER_LOG'"
 printf 'stale\n' >"$SERVER/logs/20261007T120000Z-release-$TAG_B.log"
 entry 20261007T120000Z-release-"$TAG_B".log 20261007T120000Z-release-"$TAG_B"-0123abcd new - release up rollback "$TAG_B"
 check "entry never overwrites a log" test "$(cat "$SERVER/logs/20261007T120000Z-release-$TAG_B.log")" = stale

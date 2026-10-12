@@ -92,6 +92,13 @@ check "migrate, the database is ahead of the commit: never deploys" bash -c "! g
 reset_server
 release_typed "migrate" "$TMP/unpushed.out" migrate "$SHA_C"
 check "migrate <unpushed>: refused before any AWS call" test ! -s "$FAKE_AWS_LOG"
+for command in migrate trigger; do
+  reset_server
+  release_typed "$command" "$TMP/feature.out" "$command" "$SHA_X"
+  check "$command <a SHA only on a feature branch>: refused before any AWS call" test ! -s "$FAKE_AWS_LOG"
+  check "$command <a SHA only on a feature branch>: says to merge it into revola/self-host" \
+    grep -qF "merge it into revola/self-host first" "$TMP/feature.out"
+done
 
 # ---------------------------------------------------------------- trigger
 deploy_line() { # deploy_line <project>: the one-off run that deploys it

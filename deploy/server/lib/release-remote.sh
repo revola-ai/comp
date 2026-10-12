@@ -42,11 +42,13 @@ require_local() {
   done
 }
 
-# resolve_pushed <sha>: FULL_SHA and TAG for a 12- or 40-character SHA that some branch of the
-# fork contains; anything else stops before any AWS call. "Pushed" is decided against the URL
-# the server fetches from (COMP_REPO_URL), never a remote name (Kyle's `origin` is upstream):
-# its branches (no tags) are fetched with --prune into refs/comp-release/, so a deleted branch no
-# longer counts and no remote's refs or local tags are touched.
+# resolve_pushed <sha>: FULL_SHA and TAG for a 12- or 40-character SHA that the fork's
+# $RELEASE_BRANCH contains (releases come only from it, as reviewed and merged work); anything
+# else stops before any AWS call. "Pushed" is decided against the URL the server fetches from
+# (COMP_REPO_URL), never a remote name (Kyle's `origin` is upstream): its branches (no tags) are
+# fetched with --prune into refs/comp-release/, so a deleted branch no longer counts and no
+# remote's refs or local tags are touched. A SHA on no branch and one on another branch only are
+# told apart, so the message says what to do: push it, or merge it into $RELEASE_BRANCH.
 resolve_pushed() {
   [[ "$1" =~ ^[0-9a-f]{12}$|^[0-9a-f]{40}$ ]] || die "'$1' is not a 12- or 40-character git SHA"
   git -C "$REPO_ROOT" fetch --prune --no-tags --quiet "$COMP_REPO_URL" '+refs/heads/*:refs/comp-release/*' ||
@@ -58,6 +60,13 @@ resolve_pushed() {
     die "git for-each-ref failed"
   [[ -n "$refs" ]] ||
     die "$FULL_SHA is not on any branch of revola-ai/comp; push it there first (git push revola <branch>)"
+  local status=0
+  git -C "$REPO_ROOT" merge-base --is-ancestor "$FULL_SHA" "refs/comp-release/$RELEASE_BRANCH" || status=$?
+  case "$status" in
+    0) ;;
+    1) die "$FULL_SHA is on a branch of revola-ai/comp but not on $RELEASE_BRANCH, the only branch releases come from; merge it into $RELEASE_BRANCH first" ;;
+    *) die "could not check that $RELEASE_BRANCH of revola-ai/comp contains $FULL_SHA (git merge-base failed; does the branch exist?)" ;;
+  esac
   TAG="${FULL_SHA:0:12}"
 }
 

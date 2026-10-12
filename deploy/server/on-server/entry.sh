@@ -12,7 +12,9 @@
 #    checks): "new" refuses while another run holds it, "own" needs it to be <run-id>'s.
 # 3. Writes everything after this to /opt/comp/logs/<log-name> (0600 in a 0700 directory).
 # 4. With a sha: fetches every branch of the fork (by its URL, COMP_REPO_URL) into
-#    /opt/comp/src, refuses local changes, and checks the sha out detached, under umask 022
+#    /opt/comp/src, refuses a sha its RELEASE_BRANCH lacks (release.sh checked it too; this
+#    holds when the step is run some other way), refuses local changes, and checks the sha out
+#    detached, under umask 022
 #    (the public source is not secret, and the images' node user must read what BuildKit
 #    copies); then makes every file and directory of the checkout (not .git, never through a
 #    symlink) world-readable, which also heals a tree an earlier run checked out under umask
@@ -72,6 +74,10 @@ checkout() { # checkout <sha>: the full checkout at <sha>, or a refusal (run in 
     echo "git fetch in $COMP_SRC failed"
     return 1
   }
+  if ! git -C "$COMP_SRC" merge-base --is-ancestor "$1" "refs/remotes/origin/$RELEASE_BRANCH"; then
+    echo "refusing: $1 is not on $RELEASE_BRANCH of $COMP_REPO_URL (releases come only from that branch); merge it there first"
+    return 1
+  fi
   changes="$(git -C "$COMP_SRC" status --porcelain)" || return 1
   if [[ -n "$changes" ]]; then
     printf 'refusing: %s has local changes (commit or discard them by hand):\n%s\n' "$COMP_SRC" "$changes"

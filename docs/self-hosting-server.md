@@ -167,8 +167,8 @@ The health alarms fire until the first release brings the tunnel up; that is exp
 
 ## 7. First migrate and release
 
-The server runs the scripts in `deploy/server/on-server/` from the released SHA, so the branch with them (this one, or `main` after it merged) must be pushed to the fork before the first release: `git push revola <branch>`.
-Pick a SHA that is pushed to a branch of revola-ai/comp; `release.sh` checks the fork's URL itself and refuses any other SHA, even one on upstream's branches.
+The server runs the scripts in `deploy/server/on-server/` from the released SHA, so they must be merged into the fork's `revola/self-host` branch before the first release.
+Pick a SHA on `revola/self-host` of revola-ai/comp; `release.sh` checks the fork's URL itself and refuses any other SHA, even one on another branch of the fork or on upstream's branches.
 Then **Kyle runs**:
 
 ```bash

@@ -4,6 +4,8 @@
 # is appended to $FAKE_GIT_LOG as "git <args>". Knobs (environment):
 #   FAKE_GIT_COMMITS   full SHAs that exist (rev-parse resolves a unique prefix of one)
 #   FAKE_GIT_PUSHED    full SHAs some branch of the fork (revola-ai/comp) contains
+#   FAKE_GIT_SELF_HOST full SHAs the fork's revola/self-host branch contains (`merge-base
+#                      --is-ancestor`); the others of FAKE_GIT_PUSHED are on a feature branch only
 #   FAKE_GIT_UPSTREAM  full SHAs only on another remote (upstream trycompai/comp, `origin` in
 #                      Kyle's checkout): `branch -r` lists them, the fork's refs do not
 #   FAKE_GIT_DIRTY     what `status --porcelain` prints (local changes on the server)
@@ -64,12 +66,26 @@ case "${args[0]:-}" in
       exit 0
     done
     for pushed in ${FAKE_GIT_PUSHED:-}; do
-      [[ "$pushed" == "$sha" && "$prefix" == refs/comp-release/ ]] && printf 'refs/comp-release/main\n'
+      [[ "$pushed" == "$sha" && "$prefix" == refs/comp-release/ ]] || continue
+      if [[ " ${FAKE_GIT_SELF_HOST:-} " == *" $sha "* ]]; then
+        printf 'refs/comp-release/revola/self-host\n'
+      else
+        printf 'refs/comp-release/feature/widget\n'
+      fi
     done
     for upstream in ${FAKE_GIT_UPSTREAM:-}; do
       [[ "$upstream" == "$sha" && "$prefix" == refs/remotes/ ]] && printf 'refs/remotes/origin/main\n'
     done
     exit 0
+    ;;
+  merge-base) # merge-base --is-ancestor <sha> <the fork's revola/self-host, laptop or server ref>
+    case "${args[3]:-}" in
+      refs/comp-release/revola/self-host | refs/remotes/origin/revola/self-host) ;;
+      *) echo "fake git: unexpected merge-base ${args[*]}" >&2; exit 128 ;;
+    esac
+    [[ "${args[1]}" == --is-ancestor && ${#args[@]} -eq 4 ]] || { echo "fake git: unexpected merge-base ${args[*]}" >&2; exit 129; }
+    [[ " ${FAKE_GIT_SELF_HOST:-} " == *" ${args[2]} "* ]]
+    exit
     ;;
   rev-parse)
     if [[ "${args[-1]}" == HEAD ]]; then cat "$FAKE_GIT_HEAD"; exit; fi
