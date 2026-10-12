@@ -15,7 +15,8 @@ Knobs (environment):
   FAKE_AWS_INTERRUPT           "<SIG>@<trigger>,...": once per trigger, sends SIG (INT, TERM, HUP)
                                to the process group (release.sh, as a Ctrl-C would) and dies of it
                                unanswered; a trigger is "<service> <operation>" (send-command
-                               runs the command first) or a polled command id ("fake-command-0")
+                               runs the command first; "ssm send-command fake-command-<n>" is the
+                               send of command n, from 0) or a polled command id ("fake-command-0")
 Nothing here talks to AWS.
 """
 import json

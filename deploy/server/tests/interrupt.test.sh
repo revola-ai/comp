@@ -125,6 +125,15 @@ release_typed "unlock" "$TMP/orphan-unlock.out" unlock
 check "unlock after an orphaned up: exits zero" test "$?" -eq 0
 check "unlock after an orphaned up: the lease is gone" test ! -e "$SERVER/release.lease"
 check "unlock after an orphaned up: recorded" test "$(last_record)" = "release $TAG_B unlocked"
+reset_server
+released "$TAG_A"
+FAKE_AWS_INTERRUPT="INT@ssm send-command fake-command-2" release_sh "$TMP/sending-finish.out" release "$SHA_B"
+check "Ctrl-C while finish is sent: exits non-zero, sends nothing else" test "$?:$(ssm_sends)" = "130:3"
+check "Ctrl-C while finish is sent: the state is unknown" said "$TMP/sending-finish.out" \
+  "$TAG_B was interrupted while its finish step was being sent, and the serving state is unknown"
+check "Ctrl-C while finish is sent: points at status and unlock" bash -c "grep -qF 'Check what serves now with: deploy/server/release.sh status' '$TMP/sending-finish.out' &&
+  grep -qF 'If the server stays held, free it with deploy/server/release.sh unlock' '$TMP/sending-finish.out'"
+check "Ctrl-C while finish is sent: never says released or reverts" bash -c "! grep -qE 'Released|it is released|Bringing the previous' '$TMP/sending-finish.out'"
 
 # ---------------------------------------------------------------- before the up step: cancel
 reset_server
