@@ -18,7 +18,7 @@ bash deploy/server/tests/interrupt.test.sh    # INT, TERM and HUP before and aft
 bash deploy/server/tests/snapshot.test.sh     # per-release configuration snapshots: revert, rollback, refusals (a key missing from the secret, a serving tag without one), prune
 bash deploy/server/tests/release-failures.test.sh   # abnormal endings, cut-short output, failed state writes, a lapsed lease, slow or lost SSM answers
 bash deploy/server/tests/checkout.test.sh     # /opt/comp/src following the serving release (a warning when it cannot, status, rollback refusing), pinned releases, the run worktree finish and revert reuse
-(cd deploy/server && bun test)                # push-secrets: sources, refusals, diff, create or put, terminal; workspace; one .keys grammar with render-env
+(cd deploy/server && bun test)                # push-secrets: sources, refusals, diff, create or put, terminal; workspace; one .keys grammar and one edge-whitespace set with render-env
 ```
 
 The render-env tests stub `aws` with a fake secret; the provision tests use the stateful fake `tests/fake_aws.py` and type their answers into a pseudo-terminal (`tests/tty_run.py`); the user-data tests source the script and stub `curl`, `docker` and the system tools, so nothing is installed or fetched.

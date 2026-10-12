@@ -30,6 +30,13 @@ const ALLOWED_PARAMETERS: Readonly<Record<string, readonly string[]>> = {
   DATABASE_MIGRATION_URL: ['sslmode', 'sslaccept', 'connect_timeout'],
 };
 const ENCODE = 'percent-encode the user and password';
+/**
+ * The characters a value may not start or end with. render-env.sh lists the same set, written
+ * identically (secrets/keys-grammar.test.ts compares them): JS trim() and Python strip()
+ * disagree (strip() takes \x1c-\x1f and U+0085, trim() takes U+FEFF), so neither is used.
+ */
+// prettier-ignore
+const EDGE_WHITESPACE = '\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff';
 /** Connection parameters pg, libpq or Prisma read, named in refusals; any other name is not. */
 const KNOWN_PARAMETERS: readonly string[] = [
   ...['user', 'password', 'host', 'hostaddr', 'port', 'database', 'dbname', 'db', 'service'],
@@ -56,7 +63,10 @@ export function valueProblems({
   if (value.includes('\0')) return [`${key} contains a NUL character`];
   // The services do not all trim (the API compares COMP_FORWARDED_IP_TOKEN as is, the app and
   // portal trim it), so a stray space would make them disagree silently.
-  if (value !== value.trim()) return [`${key} has leading or trailing whitespace`];
+  const [first, last] = [value.charAt(0), value.charAt(value.length - 1)];
+  if (EDGE_WHITESPACE.includes(first) || EDGE_WHITESPACE.includes(last)) {
+    return [`${key} has leading or trailing whitespace`];
+  }
   const lowered = value.toLowerCase();
   const laptopHost = LAPTOP_HOSTS.find((host) => lowered.includes(host));
   if (laptopHost) {

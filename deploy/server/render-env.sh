@@ -65,6 +65,9 @@ NAME = re.compile(r'[A-Z][A-Z0-9_]*\Z')
 # The one .keys grammar, the same as KEYS_LINE in secrets/keys.ts (secrets/keys-grammar.test.ts
 # runs both): nothing is stripped, and only empty lines and first-column # lines are skipped.
 KEYS_LINE = re.compile(r'([A-Z][A-Z0-9_]*)(?: from ([A-Z][A-Z0-9_]*))?\Z')
+# The characters a value may not start or end with, written as EDGE_WHITESPACE in
+# secrets/values.ts is (keys-grammar.test.ts compares them): str.strip() is not the same set.
+EDGE_WHITESPACE = '\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'
 
 
 def stop(message):
@@ -120,7 +123,7 @@ for service in services:
             problems.append(f'{service}: {key} is empty in {secret_id}')
         elif any(char in value for char in '\r\n\0'):
             problems.append(f'{service}: {key} contains a line break or NUL in {secret_id}')
-        elif value != value.strip():
+        elif value[0] in EDGE_WHITESPACE or value[-1] in EDGE_WHITESPACE:
             problems.append(f'{service}: {key} has leading or trailing whitespace in {secret_id}')
         else:
             lines.append(f'{name}={value}')
