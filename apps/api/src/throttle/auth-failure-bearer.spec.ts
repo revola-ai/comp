@@ -53,6 +53,7 @@ const ORIGIN = 'C'.repeat(64);
 const N = AUTH_FAILURE_LIMIT;
 const VALID_SESSION_TOKEN = 'valid-session-token';
 const VALID_MCP_TOKEN = 'valid-mcp-token';
+const GRAM_CLIENT_ID = 'gram-client-id';
 
 @Controller({ path: 'probe' })
 @UseGuards(HybridAuthGuard)
@@ -86,6 +87,9 @@ describe('credential attempt limit for bearer tokens (HybridAuthGuard)', () => {
 
   beforeAll(async () => {
     process.env.COMP_ORIGIN_AUTH = ORIGIN;
+    process.env.GRAM_OAUTH_CLIENT_ID = GRAM_CLIENT_ID;
+    process.env.GRAM_OAUTH_CLIENT_SECRET = 'gram-client-secret';
+    process.env.GRAM_OAUTH_REDIRECT_URI = 'https://gram.example/callback';
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     const moduleRef = await Test.createTestingModule({
@@ -126,7 +130,9 @@ describe('credential attempt limit for bearer tokens (HybridAuthGuard)', () => {
     );
     mockGetMcpSession.mockImplementation(({ headers }: { headers: Headers }) =>
       Promise.resolve(
-        bearerOf(headers) === VALID_MCP_TOKEN ? { userId: 'usr_mcp' } : null,
+        bearerOf(headers) === VALID_MCP_TOKEN
+          ? { userId: 'usr_mcp', clientId: GRAM_CLIENT_ID }
+          : null,
       ),
     );
   });
