@@ -16,6 +16,7 @@ export type TrackableRequest = {
   ip?: string;
   socket?: { remoteAddress?: string };
   authType?: 'api-key' | 'session' | 'service';
+  organizationId?: string;
   userId?: string;
   apiKeyId?: string;
   serviceName?: string;
@@ -85,7 +86,10 @@ export function ipBucket(address: string): string {
 
 /**
  * Throttling key: verified identity when the request is authenticated (API key
- * ID, service-token name, session user ID), else the verified client IP.
+ * ID, service-token name per organization, session user ID), else the verified
+ * client IP. A service token serves every organization (one Trigger.dev worker
+ * pool runs the tasks of all of them), so its bucket is per organization: one
+ * busy organization cannot starve the others.
  */
 export function identityTracker({
   req,
@@ -98,7 +102,7 @@ export function identityTracker({
     return `api-key:${req.apiKeyId}`;
   }
   if (req.authType === 'service' && req.serviceName) {
-    return `service:${req.serviceName}`;
+    return `service:${req.serviceName}:${req.organizationId ?? 'none'}`;
   }
   if (req.authType === 'session' && req.userId) return `user:${req.userId}`;
   const ip = verifiedClientIp({ req, env });

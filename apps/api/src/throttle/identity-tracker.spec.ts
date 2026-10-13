@@ -37,16 +37,30 @@ describe('identityTracker', () => {
     expect(tracked).toBe('api-key:apk_1');
   });
 
-  it('keys a service-token request on the service name, even when it acts for a user', () => {
+  it('keys a service-token request on the service name and organization, even when it acts for a user', () => {
     const tracked = identityTracker({
       req: req({
         authType: 'service',
         serviceName: 'Portal App',
+        organizationId: 'org_a',
         userId: 'usr_a',
       }),
       env,
     });
-    expect(tracked).toBe('service:Portal App');
+    expect(tracked).toBe('service:Portal App:org_a');
+  });
+
+  it('gives one service a separate key per organization', () => {
+    const forOrg = (organizationId: string) =>
+      identityTracker({
+        req: req({
+          authType: 'service',
+          serviceName: 'Trigger',
+          organizationId,
+        }),
+        env,
+      });
+    expect(forOrg('org_a')).not.toBe(forOrg('org_b'));
   });
 
   it('keys an unauthenticated request on the socket address', () => {

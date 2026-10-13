@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import productionTarget from '../../packages/db/production-target.json' with { type: 'json' };
+import productionTarget from '../../packages/db/src/production-target.json' with { type: 'json' };
 import { config, loadConfig } from './config.ts';
 
 const validTarget = {
@@ -61,7 +61,7 @@ describe('config values', () => {
     }
   });
 
-  test('the production identity equals packages/db/production-target.json (ref as a hash)', () => {
+  test('the production identity equals packages/db/src/production-target.json (ref as a hash)', () => {
     expect(config.productionDbRefSha256).toBe(productionTarget.projectRefSha256);
     expect(config.productionPoolerHost).toBe(productionTarget.poolerHost);
     expect(config).not.toHaveProperty('productionDbRef');

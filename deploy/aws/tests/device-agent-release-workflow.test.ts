@@ -25,7 +25,17 @@ const { BUILD_URL_NAMES } = (await import(
 )) as { BUILD_URL_NAMES: readonly string[] };
 
 /** Runs the version step's script with the given inputs; returns its exit code and outputs. */
-function runVersionStep({ portalUrl, apiUrl }: { portalUrl: string; apiUrl: string }) {
+function runVersionStep({
+  portalUrl,
+  apiUrl,
+  channel = 'staging',
+  ref = 'refs/heads/main',
+}: {
+  portalUrl: string;
+  apiUrl: string;
+  channel?: 'staging' | 'production';
+  ref?: string;
+}) {
   const step = workflow.jobs['detect-version'].steps.find((s) => s.name === 'Compute next version');
   const dir = mkdtempSync(join(tmpdir(), 'device-agent-release-'));
   const output = join(dir, 'output');
@@ -36,7 +46,8 @@ function runVersionStep({ portalUrl, apiUrl }: { portalUrl: string; apiUrl: stri
       PATH: process.env.PATH,
       PORTAL_URL: portalUrl,
       API_URL: apiUrl,
-      CHANNEL: 'staging',
+      CHANNEL: channel,
+      GITHUB_REF: ref,
       GITHUB_OUTPUT: output,
       GITHUB_RUN_NUMBER: '1',
     },
@@ -87,6 +98,71 @@ describe('device agent release workflow', () => {
     expect(outputs).toContain(
       'auto_update_url=https://portal.comp.revola.ai/api/device-agent/updates\n',
     );
+    expect(outputs).toContain('is_prerelease=true\n');
+  });
+
+  describe('production channel', () => {
+    const PORTAL = 'https://portal.comp.revola.ai';
+    const API = 'https://api.comp.revola.ai';
+
+    test('releases from the release branch to the exact production hosts', () => {
+      const { status, outputs } = runVersionStep({
+        portalUrl: `${PORTAL}/`,
+        apiUrl: API,
+        channel: 'production',
+        ref: 'refs/heads/release',
+      });
+      expect(status).toBe(0);
+      expect(outputs).toContain(`portal_url=${PORTAL}\n`);
+      expect(outputs).toContain(`api_url=${API}\n`);
+      expect(outputs).toContain('is_prerelease=false\n');
+    });
+
+    for (const ref of [
+      'refs/heads/main',
+      'refs/heads/revola/aws-hosting',
+      'refs/tags/release',
+      '',
+    ]) {
+      test(`fails fast when dispatched from ${ref || '(no ref)'}`, () => {
+        const { status, outputs, stdout } = runVersionStep({
+          portalUrl: PORTAL,
+          apiUrl: API,
+          channel: 'production',
+          ref,
+        });
+        expect(status).toBe(1);
+        expect(outputs).toBe('');
+        expect(stdout).toContain('refs/heads/release');
+      });
+    }
+
+    for (const [portalUrl, apiUrl] of [
+      ['https://portal.staging.comp.revola.ai', API],
+      [PORTAL, 'https://api.staging.comp.revola.ai'],
+      ['https://evil.revola.ai', API],
+      [PORTAL, 'https://api.comp.revola.ai/v1'],
+    ] as const) {
+      test(`refuses ${portalUrl} with ${apiUrl}`, () => {
+        const { status, outputs } = runVersionStep({
+          portalUrl,
+          apiUrl,
+          channel: 'production',
+          ref: 'refs/heads/release',
+        });
+        expect(status).toBe(1);
+        expect(outputs).toBe('');
+      });
+    }
+  });
+
+  test('lets staging use other revola.ai hosts from any branch', () => {
+    const { status, outputs } = runVersionStep({
+      portalUrl: 'https://portal.staging.comp.revola.ai',
+      apiUrl: 'https://api.staging.comp.revola.ai',
+      ref: 'refs/heads/feature/x',
+    });
+    expect(status).toBe(0);
     expect(outputs).toContain('is_prerelease=true\n');
   });
 

@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   assertNotProduction,
+  committedProductionTarget,
   hashProjectRef,
   productionTargetSchema,
-  readProductionTargetFile,
   refuseProductionEntryPoint,
 } from './production-target';
 
@@ -48,14 +48,14 @@ describe('productionTargetSchema', () => {
 });
 
 describe('the committed production-target.json', () => {
-  const raw = readFileSync(resolve(import.meta.dir, '..', 'production-target.json'), 'utf8');
+  const raw = readFileSync(resolve(import.meta.dir, 'production-target.json'), 'utf8');
 
   it('holds only the ref hash and the pooler host', () => {
     expect(Object.keys(JSON.parse(raw)).sort()).toEqual(['poolerHost', 'projectRefSha256']);
   });
 
   it('parses with the shared schema', () => {
-    expect(readProductionTargetFile()).toEqual(productionTargetSchema.parse(JSON.parse(raw)));
+    expect(committedProductionTarget()).toEqual(productionTargetSchema.parse(JSON.parse(raw)));
   });
 });
 

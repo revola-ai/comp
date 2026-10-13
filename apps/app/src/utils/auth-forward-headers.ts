@@ -4,8 +4,8 @@ import type { ReadonlyHeaders } from 'next/dist/server/web/spec-extension/adapte
 /**
  * Headers the app sends to the API's better-auth endpoints on behalf of the
  * incoming request: the session cookie, the browser origin (better-auth's
- * CSRF check on POST), and the server headers (internal token plus the
- * sanitized client IP). Arbitrary `x-*` headers are not copied: they would
+ * CSRF check on POST), and the server headers (the forwarded-IP token plus
+ * the sanitized client IP). Arbitrary `x-*` headers are not copied: they would
  * carry edge secrets such as `X-Comp-Origin-Auth` into the API's logs and let
  * a client choose the forwarded IP.
  */

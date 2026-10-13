@@ -100,16 +100,18 @@ Why the session pooler: Supabase's direct connection is IPv6-only without the IP
 Session mode works for the apps, the Trigger workers, `prisma migrate deploy` and the seed.
 
 TLS: the pooler's certificate is signed by Supabase's own CA, which is not in Node's trust store.
-Download it (Database, SSL, "Download certificate"), save it as `packages/db/certs/prod-ca-2021.crt` (gitignored) and set `DATABASE_SSL_CA` to its absolute path.
+The CA is committed at `deploy/aws/certs/supabase-ca.crt`, and `scripts/local-env-init.sh` sets `DATABASE_SSL_CA` to its absolute path in every env file it writes (a local database ignores it).
+For env files written before that, set `DATABASE_SSL_CA` to the absolute path of `deploy/aws/certs/supabase-ca.crt` in each of them by hand.
 `resolveSslConfig` then verifies the chain and the hostname against Node's roots plus that CA; a wrong CA is rejected (`self signed certificate in certificate chain`).
 Do not use `PRISMA_ALLOW_INSECURE_TLS=1` for a shared database.
 Every Prisma client builds its connection through `buildPgAdapterOptions` (`packages/db/src/pg-adapter-options.ts`), which logs the TLS mode once at startup and never the URL.
-With `NODE_ENV=production` and a non-local host it refuses to start without `DATABASE_SSL_CA` (error code `ca_file_missing`); `PRISMA_ALLOW_INSECURE_TLS=1` is the only explicit opt-out.
+It applies the strict TLS rules to any non-local host under `NODE_ENV=production`, and to the production database (the project in `packages/db/src/production-target.json`) whatever `NODE_ENV` says, so a laptop on the shared database gets them too.
+Under those rules it refuses to start without `DATABASE_SSL_CA` (error code `ca_file_missing`; `PRISMA_ALLOW_INSECURE_TLS=1` is the only explicit opt-out) and refuses URL parameters that would replace the verified TLS, such as `ssl=false` or `sslmode=disable` (error code `ssl_param_conflict`; `sslmode=require`, `verify-ca` and `verify-full` are accepted).
 `DATABASE_POOL_MAX` (a whole number from 1 to 50) caps each process's pool; unset keeps the driver default.
 
 ### Schema changes against the shared database
 
-Laptops and production share this database, so `prisma migrate dev`, `migrate reset`, `migrate deploy`, `migrate resolve`, `db push`, `db seed` and `db execute` refuse to run when `DATABASE_URL` points at the production project recorded in `packages/db/production-target.json`.
+Laptops and production share this database, so `prisma migrate dev`, `migrate reset`, `migrate deploy`, `migrate resolve`, `db push`, `db seed`, `db execute` and `studio` refuse to run when `DATABASE_URL`, or a `--url <value>` / `--url=<value>` flag overriding it, points at the production project recorded in `packages/db/src/production-target.json`.
 That file holds the SHA-256 of the project ref, never the ref itself (the fork is public); the guard hashes the ref a URL carries (the pooler user `postgres.<ref>` or the host `db.<ref>.supabase.co`) and compares, so another project on the same regional pooler is not refused.
 The check runs inside every `prisma.config.ts` (`packages/db`, `apps/app`, `apps/portal`, `apps/framework-editor`), so it applies to the package scripts and to `bunx prisma ...` alike; `bun run db:seed`, a direct `bun prisma/seed/seed.ts` and `bun run backfill:framework-versions` check too.
 `COMP_I_AM_TOUCHING_PROD=1` runs them anyway; use it only when you mean to change production by hand.
@@ -138,7 +140,7 @@ bunx prisma migrate status   # "Database schema is up to date!"
 The dump carries `_prisma_migrations`, so no migration runs during the restore; Supabase already provides `pgcrypto` in its `extensions` schema, which is on the default `search_path`, so `generate_prefixed_cuid()` keeps working.
 Files are copied bucket by bucket with `aws s3 sync --endpoint-url` from MinIO to the Supabase S3 endpoint (there were none to copy at migration time).
 
-Onboarding a colleague: they clone the fork, run the one-time setup up to `./scripts/local-env-init.sh`, then replace the local values with the shared ones above (share them through a password manager, never in git), download the CA, set `DATABASE_SSL_CA`, and skip the migrate/seed step (the shared database is already migrated, once Kyle has applied every committed migration as described under Schema changes against the shared database).
+Onboarding a colleague: they clone the fork, run the one-time setup up to `./scripts/local-env-init.sh`, then replace the local values with the shared ones above (share them through a password manager, never in git), keep the `DATABASE_SSL_CA` the script wrote, and skip the migrate/seed step (the shared database is already migrated, once Kyle has applied every committed migration as described under Schema changes against the shared database).
 Their Google OAuth client must list `http://localhost:3000` and `http://localhost:3333` too, or they use the same client.
 Every member of a Trigger.dev project has their own Development environment and dev key, so jobs a person starts (onboarding, policy regeneration) run on that person's own `trigger dev`; invite colleagues to the Trigger.dev organization and have each create their own dev keys for `comp-app` and `comp-api`.
 Deploying the workers with `trigger deploy` removes that dependency on someone's laptop being up.

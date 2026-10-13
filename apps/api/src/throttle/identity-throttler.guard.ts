@@ -1,6 +1,6 @@
 import { ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerGuard, type ThrottlerRequest } from '@nestjs/throttler';
 import { IS_PUBLIC_KEY } from '../auth/public.decorator';
 import { identityTracker, type TrackableRequest } from './identity-tracker';
 
@@ -19,6 +19,18 @@ export function isPublicRoute({
 }
 
 /**
+ * Requests per minute a service-token caller may make to one route for one
+ * organization, whatever the route's own limit. Service tokens are long
+ * secrets checked in memory (no database work before the limit), and their
+ * callers are our own Trigger.dev tasks, which fan out per record: a policy
+ * publish or task reminder sends one request per employee. The limit only
+ * stops a runaway loop; the service-only email routes are not throttled at all
+ * (EmailController), so no email is lost to a 429.
+ */
+export const SERVICE_THROTTLE_LIMIT = 1_000;
+const SERVICE_THROTTLE_TTL_MS = 60_000;
+
+/**
  * The Nest throttler keyed by `identityTracker`. It honours @Throttle and
  * @SkipThrottle like the stock guard. Used by IdentityThrottleInterceptor,
  * which runs after the controller guards, so HybridAuthGuard has already set
@@ -31,6 +43,18 @@ export class IdentityThrottlerGuard extends ThrottlerGuard {
     // fields from HybridAuthGuard.
     const trackable = req as unknown as TrackableRequest;
     return Promise.resolve(identityTracker({ req: trackable }));
+  }
+
+  protected handleRequest(requestProps: ThrottlerRequest): Promise<boolean> {
+    const req = requestProps.context
+      .switchToHttp()
+      .getRequest<TrackableRequest>();
+    if (req.authType !== 'service') return super.handleRequest(requestProps);
+    return super.handleRequest({
+      ...requestProps,
+      limit: SERVICE_THROTTLE_LIMIT,
+      ttl: SERVICE_THROTTLE_TTL_MS,
+    });
   }
 }
 
