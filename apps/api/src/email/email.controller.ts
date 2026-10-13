@@ -6,6 +6,7 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { tasks } from '@trigger.dev/sdk';
 import { HybridAuthGuard } from '../auth/hybrid-auth.guard';
 import { PermissionGuard } from '../auth/permission.guard';
@@ -18,6 +19,9 @@ import type { sendBatchEmailTask } from '../trigger/email/send-batch-email';
 
 @ApiExcludeController()
 @ApiTags('Internal - Email')
+// Only the Trigger.dev service token holds email:send. Its tasks send one
+// request per recipient and do not retry, so a 429 here would lose the email.
+@SkipThrottle()
 @Controller({ path: 'internal/email', version: '1' })
 @UseGuards(HybridAuthGuard, PermissionGuard)
 @ApiSecurity('apikey')
@@ -52,7 +56,8 @@ export class EmailController {
   @RequirePermission('email', 'send')
   @SkipAuditLog()
   @ApiOperation({
-    summary: 'Send a batch of emails via the centralized Trigger task (internal)',
+    summary:
+      'Send a batch of emails via the centralized Trigger task (internal)',
   })
   @ApiResponse({ status: 200, description: 'Batch email task triggered' })
   async sendBatchEmail(@Body() dto: SendBatchEmailDto) {

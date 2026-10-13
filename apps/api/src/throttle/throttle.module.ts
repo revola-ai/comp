@@ -9,7 +9,8 @@ import {
 
 /**
  * Request throttling: 100 requests per minute per verified identity by default
- * (@Throttle overrides per route). Public routes are limited by the global guard
+ * (@Throttle overrides per route); service-token callers get
+ * SERVICE_THROTTLE_LIMIT per organization instead. Public routes are limited by the global guard
  * on the verified client IP; all other routes by the interceptor, after
  * HybridAuthGuard, on the caller's identity. Rejected credentials never reach
  * the interceptor; HybridAuthGuard and PlatformAdminGuard limit them
