@@ -38,9 +38,6 @@ jest.mock('@trycompai/auth', () => ({
 }));
 
 import { ApiKeyService } from './api-key.service';
-import { LEGACY_CREATOR_CUTOFF } from './api-key-validation';
-
-const AFTER_CUTOFF = new Date('2026-10-07T00:00:00Z');
 
 describe('ApiKeyService', () => {
   let service: ApiKeyService;
@@ -124,7 +121,7 @@ describe('ApiKeyService.validateApiKey offboarding', () => {
       createdByMemberId: 'mem_creator',
       organizationOwned: false,
       createdBy: { isActive: true, deactivated: false },
-      createdAt: AFTER_CUTOFF,
+      legacyCreatorless: false,
       ...overrides,
     };
   }
@@ -190,38 +187,33 @@ describe('ApiKeyService.validateApiKey offboarding', () => {
     expect(result?.createdByMemberId).toBe('mem_creator');
   });
 
-  it('accepts a legacy key with no recorded creator created before the cutoff', async () => {
+  it('accepts a creatorless personal key recorded as legacy by the backfill', async () => {
     mockApiKeyFindMany.mockResolvedValueOnce([
       keyRecord({
         createdByMemberId: null,
         createdBy: null,
-        createdAt: new Date(LEGACY_CREATOR_CUTOFF.getTime() - 1),
+        legacyCreatorless: true,
       }),
     ]);
     const result = await service.validateApiKey(RAW_KEY);
     expect(result?.createdByMemberId).toBeNull();
   });
 
-  it('rejects a personal key with no recorded creator created after the cutoff', async () => {
+  it('rejects a creatorless personal key not recorded as legacy, however old', async () => {
+    // The creator's membership was deleted (createdByMemberId SetNull): an
+    // orphan, whatever its creation time.
     mockApiKeyFindMany.mockResolvedValueOnce([
-      keyRecord({ createdByMemberId: null, createdBy: null }),
+      keyRecord({
+        createdByMemberId: null,
+        createdBy: null,
+        createdAt: new Date('2025-01-01T00:00:00Z'),
+      }),
     ]);
     await expect(service.validateApiKey(RAW_KEY)).resolves.toBeNull();
     expect(mockApiKeyUpdate).not.toHaveBeenCalled();
   });
 
-  it('rejects a creatorless key created exactly at the cutoff', async () => {
-    mockApiKeyFindMany.mockResolvedValueOnce([
-      keyRecord({
-        createdByMemberId: null,
-        createdBy: null,
-        createdAt: LEGACY_CREATOR_CUTOFF,
-      }),
-    ]);
-    await expect(service.validateApiKey(RAW_KEY)).resolves.toBeNull();
-  });
-
-  it('accepts an organization-owned key with no recorded creator after the cutoff', async () => {
+  it('accepts an organization-owned key with no recorded creator', async () => {
     mockApiKeyFindMany.mockResolvedValueOnce([
       keyRecord({
         createdByMemberId: null,
@@ -233,13 +225,22 @@ describe('ApiKeyService.validateApiKey offboarding', () => {
     expect(result?.organizationOwned).toBe(true);
   });
 
-  it('selects the creation time for the legacy cutoff', async () => {
+  it('applies the creator check even to a key flagged legacy that has a creator', async () => {
+    mockApiKeyFindMany.mockResolvedValueOnce([
+      keyRecord({
+        legacyCreatorless: true,
+        createdBy: { isActive: false, deactivated: true },
+      }),
+    ]);
+    await expect(service.validateApiKey(RAW_KEY)).resolves.toBeNull();
+  });
+
+  it('selects the legacy flag instead of the creation time', async () => {
     mockApiKeyFindMany.mockResolvedValueOnce([keyRecord()]);
     await service.validateApiKey(RAW_KEY);
-    expect(mockApiKeyFindMany.mock.calls[0][0].select.createdAt).toBe(true);
-    expect(LEGACY_CREATOR_CUTOFF.toISOString()).toBe(
-      '2026-10-06T06:35:57.000Z',
-    );
+    const { select } = mockApiKeyFindMany.mock.calls[0][0];
+    expect(select.legacyCreatorless).toBe(true);
+    expect(select.createdAt).toBeUndefined();
   });
 
   it('applies the creator check to keys found by the legacy no-prefix lookup', async () => {

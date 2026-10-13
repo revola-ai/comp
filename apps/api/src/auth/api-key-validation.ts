@@ -18,14 +18,6 @@ export interface ApiKeyValidationResult {
   organizationOwned: boolean;
 }
 
-/**
- * When `organizationOwned` shipped (migration 20261006063557). Keys created
- * before it may lack a recorded creator; any personal key created since has
- * one, so a creatorless personal key from after it is an orphan (its creator's
- * membership was deleted) and is refused.
- */
-export const LEGACY_CREATOR_CUTOFF = new Date('2026-10-06T06:35:57Z');
-
 /** Columns read when matching a presented key against stored candidates. */
 export const API_KEY_VALIDATION_SELECT = {
   id: true,
@@ -37,7 +29,7 @@ export const API_KEY_VALIDATION_SELECT = {
   scopes: true,
   createdByMemberId: true,
   organizationOwned: true,
-  createdAt: true,
+  legacyCreatorless: true,
   createdBy: { select: { isActive: true, deactivated: true } },
 } as const;
 
@@ -50,7 +42,7 @@ export interface ApiKeyCandidate {
   scopes: string[];
   createdByMemberId: string | null;
   organizationOwned: boolean;
-  createdAt: Date;
+  legacyCreatorless: boolean;
   createdBy: { isActive: boolean; deactivated: boolean } | null;
 }
 
@@ -59,16 +51,18 @@ export type ApiKeyRejection = 'inactive_creator' | 'orphaned';
 /**
  * Why a matched key must not authenticate, or null when it may. Organization-
  * owned keys are always accepted. A personal key needs an active creator; one
- * without a recorded creator is accepted only as a legacy key created before
- * LEGACY_CREATOR_CUTOFF.
+ * without a recorded creator is accepted only when it is flagged
+ * `legacyCreatorless` (set once, by migration 20261013120000, for keys that
+ * predate creator attribution). Any other creatorless personal key lost its
+ * creator's membership (createdByMemberId is SET NULL on delete) and is an
+ * orphan.
  */
 export function apiKeyRejection(
   candidate: ApiKeyCandidate,
 ): ApiKeyRejection | null {
   if (candidate.organizationOwned) return null;
   if (!candidate.createdByMemberId) {
-    const legacy = candidate.createdAt < LEGACY_CREATOR_CUTOFF;
-    return legacy ? null : 'orphaned';
+    return candidate.legacyCreatorless ? null : 'orphaned';
   }
   const creator = candidate.createdBy;
   const active = creator && !creator.deactivated && creator.isActive;
