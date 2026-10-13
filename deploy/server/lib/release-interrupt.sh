@@ -150,6 +150,7 @@ interrupted_verify() {
         echo "$TAG passed the smoke checks and was recorded before the interrupt: it is released."
         echo "To undo it: deploy/server/release.sh rollback"
         after_prune
+        after_checkout "$UP_ACTION" || : # the command fails anyway, with the signal's status
       else
         not_recorded
       fi

@@ -69,6 +69,20 @@ check "Ctrl-C while finish runs: it was recorded" test "$(last_record)" = "relea
 check "Ctrl-C while finish runs: says it is released and how to undo it" \
   bash -c "grep -qF 'released' '$TMP/finish.out' && grep -qF 'deploy/server/release.sh rollback' '$TMP/finish.out'"
 
+# A finish that recorded the release but could not move /opt/comp/src: the warning still shows.
+for knob in FAKE_AWS_INTERRUPT=INT@fake-command-2 FAKE_AWK_INTERRUPT=INT@3; do # while finish runs, or prints
+  reset_server
+  released "$TAG_A"
+  (export "$knob" FAKE_GIT_FAIL_CHECKOUT=1 && release_sh "$TMP/finish-stuck.out" release "$SHA_B")
+  check "Ctrl-C at finish ($knob), /opt/comp/src stuck: exits 130, released" test "$?:$(last_record)" = "130:release $TAG_B ok"
+  check "Ctrl-C at finish ($knob), /opt/comp/src stuck: says it is released" said "$TMP/finish-stuck.out" \
+    "$TAG_B passed the smoke checks and was recorded before the interrupt: it is released."
+  check "Ctrl-C at finish ($knob), /opt/comp/src stuck: the WARNING line" said "$TMP/finish-stuck.out" \
+    "WARNING: /opt/comp/src did not move to $TAG_B (above), so it still holds the scripts of the release before it."
+  check "Ctrl-C at finish ($knob), /opt/comp/src stuck: the way out" said "$TMP/finish-stuck.out" \
+    "fix the cause (above), then release $TAG_B again, or any newer commit of revola/self-host, which moves it."
+done
+
 reset_server
 released "$TAG_A"
 FAKE_CURL_BAD_TAG="$TAG_B" FAKE_AWS_INTERRUPT="INT@fake-command-2" release_sh "$TMP/revert.out" release "$SHA_B"
