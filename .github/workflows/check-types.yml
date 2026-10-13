@@ -1,23 +1,46 @@
 name: Check types
+
 on:
+  pull_request:
+  push:
+    branches: [revola/self-host]
   workflow_call:
-env:
-  NODE_OPTIONS: --max-old-space-size=4096
+  workflow_dispatch:
+
 permissions:
   contents: read
+
+concurrency:
+  group: check-types-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+  CHECKPOINT_DISABLE: '1'
+  TURBO_TELEMETRY_DISABLED: '1'
+
 jobs:
   check-types:
-    runs-on: warp-ubuntu-latest-arm64-4x
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/dangerous-git-checkout
-      - uses: ./.github/actions/bun-install
-      - name: Show info
-        run: node -e "console.log(require('v8').getHeapStatistics())"
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-workspace
+
       - name: Configure TSC problem matcher
         run: |
           echo "::remove-matcher owner=tsc::"
           echo "::add-matcher::.github/matchers/tsc-absolute.json"
-      # typecheck:ci excludes @trycompai/framework-editor: it has about 316 pre-existing
-      # type errors (2026-10-06). Follow-up: fix them and drop the exclusion in package.json.
-      - run: bun run typecheck:ci
+
+      # typecheck:ci leaves out @trycompai/framework-editor as a whole: tsc reports 316
+      # pre-existing errors in 15 files, all under apps/framework-editor/app (props that no
+      # longer match their components, mostly TS2322, TS2559 and TS2741). Its prisma.config.ts
+      # and prisma/ are still checked, by its typecheck:prisma (tsconfig.prisma.json), which
+      # typecheck:ci runs first. Fixing app/ lets the exclusion and typecheck:prisma go.
+      # Arguments after the script name reach turbo, its last command: at most two tsc runs
+      # at once, so the api's (about 3 GB) and the app's (about 2 GB) fit the runner's memory.
+      - name: Type check
+        run: bun run typecheck:ci --concurrency=2
