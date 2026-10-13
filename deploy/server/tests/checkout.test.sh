@@ -125,6 +125,15 @@ check "prune unpins the tags whose snapshots it removes, and a pin left without 
   test "$(refs_of)" = "$TAG_A $TAG_B $TAG_C $TAG_D "
 check "prune says so" bash -c "grep -qxF 'removed the snapshot of $TAG_E' '$TMP/prune.out' &&
   grep -qxF 'unpinned $TAG_E (refs/comp/releases/$TAG_E)' '$TMP/prune.out' && grep -qxF 'unpinned $TAG_F (refs/comp/releases/$TAG_F)' '$TMP/prune.out'"
+reset_server
+released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A" "$TAG_B"
+chmod 500 "$SERVER/releases/$TAG_E" # its files cannot be removed
+release_typed "prune" "$TMP/prune-stuck.out" prune
+check "a snapshot prune cannot remove: the step fails" test "$?" -ne 0
+chmod 700 "$SERVER/releases/$TAG_E"
+check "a snapshot prune cannot remove: says so" grep -qxF "could not remove the snapshot of $TAG_E; keeping its pin" "$TMP/prune-stuck.out"
+check "a snapshot prune cannot remove: keeps its pin, unpins the others" test "$(refs_of)" = "$TAG_A $TAG_B $TAG_C $TAG_D $TAG_E "
+check "a snapshot prune cannot remove: never says it unpinned it" bash -c "! grep -qF 'unpinned $TAG_E' '$TMP/prune-stuck.out'"
 
 # ---------------------------------------------------------------- the run's worktree, from up to finish or revert
 # The up step's checkout (/opt/comp/work/<sha12>) stays for the run while it holds its lease;

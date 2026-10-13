@@ -66,7 +66,8 @@ stale_snapshots() {
 }
 
 # remove_snapshots <tag>...: the snapshot and the pin of each <tag> that is still not kept
-# (a release since the plan may keep it now); a stale tag the plan did not list stays.
+# (a release since the plan may keep it now); a stale tag the plan did not list stays, and so
+# does the pin of a snapshot that could not be removed (the step fails, saying so).
 remove_snapshots() {
   local tag pins stale status=0
   stale="$(stale_snapshots)" || return 1
@@ -77,7 +78,12 @@ remove_snapshots() {
       continue
     fi
     if [[ -e "$COMP_RELEASES/$tag" ]]; then
-      if rm -rf "${COMP_RELEASES:?}/$tag"; then echo "removed the snapshot of $tag"; else echo "could not remove the snapshot of $tag"; status=1; fi
+      if ! rm -rf "${COMP_RELEASES:?}/$tag"; then
+        echo "could not remove the snapshot of $tag; keeping its pin" # what is left of it may still be needed
+        status=1
+        continue
+      fi
+      echo "removed the snapshot of $tag"
     fi
     grep -qxF -- "$tag" <<<"$pins" || continue
     if git -C "$COMP_SRC" update-ref -d "refs/comp/releases/$tag"; then
