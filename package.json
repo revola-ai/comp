@@ -78,6 +78,7 @@
     "prepare": "husky",
     "test": "turbo test --parallel",
     "test:release": "node scripts/test-release.js",
+    "test:shell": "for f in scripts/tests/*.test.sh; do [ -e \"$f\" ] || { echo \"no shell tests in scripts/tests\" >&2; exit 1; }; bash \"$f\" || exit 1; done",
     "typecheck": "turbo typecheck",
     "typecheck:ci": "turbo typecheck --filter={apps/**} --filter={packages/**} --filter=@trycompai/deploy-aws --filter=!@trycompai/integrations --filter=!@trycompai/ui --filter=!@trycompai/framework-editor"
   },
