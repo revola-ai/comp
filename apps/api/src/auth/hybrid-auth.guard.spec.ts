@@ -69,9 +69,25 @@ jest.mock('@trycompai/auth', () => ({
   },
 }));
 
+// MCP OAuth tokens are honored only for the configured Gram client.
+const GRAM_ENV = {
+  GRAM_OAUTH_CLIENT_ID: 'gram-client-id',
+  GRAM_OAUTH_CLIENT_SECRET: 'gram-client-secret',
+  GRAM_OAUTH_REDIRECT_URI: 'https://gram.example/oauth/callback',
+};
+
 describe('HybridAuthGuard — MCP OAuth path', () => {
   let guard: HybridAuthGuard;
   let reflector: Reflector;
+  const savedEnv = { ...process.env };
+
+  beforeAll(() => {
+    Object.assign(process.env, GRAM_ENV);
+  });
+
+  afterAll(() => {
+    process.env = savedEnv;
+  });
 
   // A real object so the guard's mutations (userId, userRoles, …) are observable.
   const createContext = (
@@ -113,7 +129,11 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
   });
 
   it('authenticates a single-org user (admin) and binds org + roles', async () => {
-    mockGetMcpSession.mockResolvedValue({ userId: 'usr_1', scopes: 'openid' });
+    mockGetMcpSession.mockResolvedValue({
+      userId: 'usr_1',
+      scopes: 'openid',
+      clientId: GRAM_ENV.GRAM_OAUTH_CLIENT_ID,
+    });
     mockUserFindUnique.mockResolvedValue({
       id: 'usr_1',
       email: 'admin@acme.com',
@@ -142,7 +162,11 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
   });
 
   it('authenticates a read-only member and surfaces their role for RBAC', async () => {
-    mockGetMcpSession.mockResolvedValue({ userId: 'usr_2', scopes: 'openid' });
+    mockGetMcpSession.mockResolvedValue({
+      userId: 'usr_2',
+      scopes: 'openid',
+      clientId: GRAM_ENV.GRAM_OAUTH_CLIENT_ID,
+    });
     mockUserFindUnique.mockResolvedValue({
       id: 'usr_2',
       email: 'auditor@acme.com',
@@ -180,7 +204,11 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
   });
 
   it('rejects a valid token whose user has no organization', async () => {
-    mockGetMcpSession.mockResolvedValue({ userId: 'usr_3', scopes: 'openid' });
+    mockGetMcpSession.mockResolvedValue({
+      userId: 'usr_3',
+      scopes: 'openid',
+      clientId: GRAM_ENV.GRAM_OAUTH_CLIENT_ID,
+    });
     mockUserFindUnique.mockResolvedValue({
       id: 'usr_3',
       email: 'orphan@acme.com',
@@ -204,7 +232,11 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
     jest
       .spyOn(reflector, 'getAllAndOverride')
       .mockImplementation((key: unknown) => key === SKIP_ORG_CHECK_KEY);
-    mockGetMcpSession.mockResolvedValue({ userId: 'usr_x', scopes: 'openid' });
+    mockGetMcpSession.mockResolvedValue({
+      userId: 'usr_x',
+      scopes: 'openid',
+      clientId: GRAM_ENV.GRAM_OAUTH_CLIENT_ID,
+    });
     mockUserFindUnique.mockResolvedValue({
       id: 'usr_x',
       email: 'stranger@example.com',
@@ -222,7 +254,11 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
   });
 
   it('multi-org with no saved choice → asks them to pick (no silent tenant)', async () => {
-    mockGetMcpSession.mockResolvedValue({ userId: 'usr_5', scopes: 'openid' });
+    mockGetMcpSession.mockResolvedValue({
+      userId: 'usr_5',
+      scopes: 'openid',
+      clientId: GRAM_ENV.GRAM_OAUTH_CLIENT_ID,
+    });
     mockUserFindUnique.mockResolvedValue({
       id: 'usr_5',
       email: 'consultant@acme.com',
@@ -257,7 +293,11 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
   });
 
   it('multi-org with a saved choice → binds the chosen org', async () => {
-    mockGetMcpSession.mockResolvedValue({ userId: 'usr_6', scopes: 'openid' });
+    mockGetMcpSession.mockResolvedValue({
+      userId: 'usr_6',
+      scopes: 'openid',
+      clientId: GRAM_ENV.GRAM_OAUTH_CLIENT_ID,
+    });
     mockUserFindUnique.mockResolvedValue({
       id: 'usr_6',
       email: 'consultant@acme.com',
@@ -285,7 +325,11 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
   });
 
   it('multi-org with a stale choice (no longer a member) → asks them to pick', async () => {
-    mockGetMcpSession.mockResolvedValue({ userId: 'usr_7', scopes: 'openid' });
+    mockGetMcpSession.mockResolvedValue({
+      userId: 'usr_7',
+      scopes: 'openid',
+      clientId: GRAM_ENV.GRAM_OAUTH_CLIENT_ID,
+    });
     mockUserFindUnique.mockResolvedValue({
       id: 'usr_7',
       email: 'consultant@acme.com',
@@ -319,7 +363,11 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
   });
 
   it('marks platform admins from the user role', async () => {
-    mockGetMcpSession.mockResolvedValue({ userId: 'usr_4', scopes: 'openid' });
+    mockGetMcpSession.mockResolvedValue({
+      userId: 'usr_4',
+      scopes: 'openid',
+      clientId: GRAM_ENV.GRAM_OAUTH_CLIENT_ID,
+    });
     mockUserFindUnique.mockResolvedValue({
       id: 'usr_4',
       email: 'staff@trycomp.ai',
@@ -345,7 +393,11 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
   it('lets a platform admin through even with a non-app-access member role', async () => {
     // Platform admin (user.role='admin') who is only an employee in the org —
     // should bypass the app-access gate, consistent with PermissionGuard.
-    mockGetMcpSession.mockResolvedValue({ userId: 'usr_pa', scopes: 'openid' });
+    mockGetMcpSession.mockResolvedValue({
+      userId: 'usr_pa',
+      scopes: 'openid',
+      clientId: GRAM_ENV.GRAM_OAUTH_CLIENT_ID,
+    });
     mockUserFindUnique.mockResolvedValue({
       id: 'usr_pa',
       email: 'staff@trycomp.ai',
@@ -370,7 +422,11 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
   });
 
   it('blocks a Portal-only role (employee) — no app access, no MCP', async () => {
-    mockGetMcpSession.mockResolvedValue({ userId: 'usr_e', scopes: 'openid' });
+    mockGetMcpSession.mockResolvedValue({
+      userId: 'usr_e',
+      scopes: 'openid',
+      clientId: GRAM_ENV.GRAM_OAUTH_CLIENT_ID,
+    });
     mockUserFindUnique.mockResolvedValue({
       id: 'usr_e',
       email: 'employee@acme.com',
@@ -396,7 +452,11 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
   });
 
   it('allows a custom role that grants app access', async () => {
-    mockGetMcpSession.mockResolvedValue({ userId: 'usr_c', scopes: 'openid' });
+    mockGetMcpSession.mockResolvedValue({
+      userId: 'usr_c',
+      scopes: 'openid',
+      clientId: GRAM_ENV.GRAM_OAUTH_CLIENT_ID,
+    });
     mockUserFindUnique.mockResolvedValue({
       id: 'usr_c',
       email: 'custom@acme.com',
@@ -425,7 +485,11 @@ describe('HybridAuthGuard — MCP OAuth path', () => {
   });
 
   it('blocks a custom role that lacks app access', async () => {
-    mockGetMcpSession.mockResolvedValue({ userId: 'usr_d', scopes: 'openid' });
+    mockGetMcpSession.mockResolvedValue({
+      userId: 'usr_d',
+      scopes: 'openid',
+      clientId: GRAM_ENV.GRAM_OAUTH_CLIENT_ID,
+    });
     mockUserFindUnique.mockResolvedValue({
       id: 'usr_d',
       email: 'limited@acme.com',

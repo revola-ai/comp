@@ -1,10 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
 import { Controller, Get, UseGuards } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { Agent } from 'node:http';
 import request from 'supertest';
 import type { App } from 'supertest/types';
+import { failedToGetSessionError } from '../../test/better-auth-errors';
 import { ApiKeyService } from '../auth/api-key.service';
+import { CredentialStoreUnavailableFilter } from '../auth/credential-store-unavailable.filter';
 import { HybridAuthGuard } from '../auth/hybrid-auth.guard';
 
 // Bearer tokens reach better-auth's session lookup and the MCP OAuth token
@@ -46,13 +49,19 @@ jest.mock('@trycompai/auth', () => ({
   BUILT_IN_ROLE_PERMISSIONS: { admin: { app: ['read'] } },
 }));
 
-import { AUTH_FAILURE_LIMIT, AuthFailureLimiter } from './auth-failure-limiter';
+import {
+  AUTH_FAILURE_CREDENTIAL_LIMIT,
+  AUTH_FAILURE_LIMIT,
+  AuthFailureLimiter,
+} from './auth-failure-limiter';
 import { ThrottleModule } from './throttle.module';
 
 const ORIGIN = 'C'.repeat(64);
 const N = AUTH_FAILURE_LIMIT;
+const PER_CREDENTIAL = AUTH_FAILURE_CREDENTIAL_LIMIT;
 const VALID_SESSION_TOKEN = 'valid-session-token';
 const VALID_MCP_TOKEN = 'valid-mcp-token';
+const GRAM_CLIENT_ID = 'gram-client-id';
 
 @Controller({ path: 'probe' })
 @UseGuards(HybridAuthGuard)
@@ -86,6 +95,9 @@ describe('credential attempt limit for bearer tokens (HybridAuthGuard)', () => {
 
   beforeAll(async () => {
     process.env.COMP_ORIGIN_AUTH = ORIGIN;
+    process.env.GRAM_OAUTH_CLIENT_ID = GRAM_CLIENT_ID;
+    process.env.GRAM_OAUTH_CLIENT_SECRET = 'gram-client-secret';
+    process.env.GRAM_OAUTH_REDIRECT_URI = 'https://gram.example/callback';
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     const moduleRef = await Test.createTestingModule({
@@ -94,6 +106,8 @@ describe('credential attempt limit for bearer tokens (HybridAuthGuard)', () => {
       providers: [
         HybridAuthGuard,
         AuthFailureLimiter,
+        // AuthModule's global filter: credential-store outages get Retry-After.
+        { provide: APP_FILTER, useClass: CredentialStoreUnavailableFilter },
         {
           provide: ApiKeyService,
           useValue: { extractApiKey: () => null, validateApiKey: jest.fn() },
@@ -126,7 +140,9 @@ describe('credential attempt limit for bearer tokens (HybridAuthGuard)', () => {
     );
     mockGetMcpSession.mockImplementation(({ headers }: { headers: Headers }) =>
       Promise.resolve(
-        bearerOf(headers) === VALID_MCP_TOKEN ? { userId: 'usr_mcp' } : null,
+        bearerOf(headers) === VALID_MCP_TOKEN
+          ? { userId: 'usr_mcp', clientId: GRAM_CLIENT_ID }
+          : null,
       ),
     );
   });
@@ -219,11 +235,12 @@ describe('credential attempt limit for bearer tokens (HybridAuthGuard)', () => {
         Authorization: 'Bearer junk',
         Cookie: `better-auth.session_token=${VALID_SESSION_TOKEN}`,
       });
+    // One repeated token: refused once its own allowance (per IP) is used.
     const statuses: number[] = [];
-    for (let i = 0; i < N; i += 1) {
+    for (let i = 0; i < PER_CREDENTIAL; i += 1) {
       statuses.push((await both('198.51.100.70')).status);
     }
-    expect(statuses).toEqual(Array(N).fill(401));
+    expect(statuses).toEqual(Array(PER_CREDENTIAL).fill(401));
     mockGetSession.mockClear();
     mockGetMcpSession.mockClear();
     expect((await both('198.51.100.70')).status).toBe(429);
@@ -236,31 +253,29 @@ describe('credential attempt limit for bearer tokens (HybridAuthGuard)', () => {
       await withBearer('198.51.100.80', `junk-${i}`);
     }
     const statuses: number[] = [];
-    for (let i = 0; i < N + 5; i += 1) {
+    for (let i = 0; i < 10; i += 1) {
       const response = await send('198.51.100.80', {
         Authorization: 'Bearer unsigned.signature',
         Cookie: `better-auth.session_token=${VALID_SESSION_TOKEN}`,
       });
       statuses.push(response.status);
     }
-    expect(statuses).toEqual(Array(N + 5).fill(200));
+    expect(statuses).toEqual(Array(10).fill(200));
   });
 
-  it('keeps the attempt of a bearer lookup that hits a credential-store outage', async () => {
-    mockGetSession.mockRejectedValue(
-      Object.assign(new Error('cannot reach database'), {
-        code: 'ECONNREFUSED',
-      }),
-    );
+  it('gives the attempt of a bearer lookup that hits a credential-store outage back', async () => {
+    // better-auth's getSession reports an unreachable store as this APIError.
+    mockGetSession.mockRejectedValue(failedToGetSessionError());
+    for (let i = 0; i < N + 5; i += 1) {
+      const response = await withBearer('198.51.100.60', VALID_SESSION_TOKEN);
+      expect(response.status).toBe(503);
+      expect(response.headers['retry-after']).toMatch(/^\d+$/);
+    }
+    mockGetSession.mockResolvedValue(null);
     const statuses: number[] = [];
     for (let i = 0; i < N; i += 1) {
-      statuses.push(
-        (await withBearer('198.51.100.60', VALID_SESSION_TOKEN)).status,
-      );
+      statuses.push((await withBearer('198.51.100.60', `junk-${i}`)).status);
     }
-    expect(statuses).toEqual(Array(N).fill(503));
-    expect(
-      (await withBearer('198.51.100.60', VALID_SESSION_TOKEN)).status,
-    ).toBe(429);
+    expect(statuses).toEqual(Array(N).fill(401));
   });
 });

@@ -46,15 +46,23 @@ function isSelfHosted(): boolean {
  * production with nothing configured, the localhost defaults keep local
  * development working.
  */
-function getSelfHostedTrustedOrigins(): string[] {
-  const explicit = parseOriginList(process.env.AUTH_TRUSTED_ORIGINS);
+export function selfHostedTrustedOrigins({
+  env,
+}: {
+  env: Partial<NodeJS.ProcessEnv>;
+}): string[] {
+  const explicit = parseOriginList(env.AUTH_TRUSTED_ORIGINS);
   const useLocalDefaults =
-    explicit.length === 0 && process.env.NODE_ENV !== 'production';
+    explicit.length === 0 && env.NODE_ENV !== 'production';
   const base = useLocalDefaults
     ? DEFAULT_TRUSTED_ORIGINS.filter(isLocalhostOrigin)
     : explicit;
-  const cookieOrigins = getCookieDomainOrigins({ env: process.env });
+  const cookieOrigins = getCookieDomainOrigins({ env });
   return [...new Set([...base, ...cookieOrigins])];
+}
+
+function getSelfHostedTrustedOrigins(): string[] {
+  return selfHostedTrustedOrigins({ env: process.env });
 }
 
 function isLocalhostOrigin(origin: string): boolean {

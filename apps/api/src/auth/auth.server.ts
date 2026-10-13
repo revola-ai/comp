@@ -17,7 +17,6 @@ import {
   bearer,
   emailOTP,
   magicLink,
-  mcp,
   multiSession,
   organization,
 } from 'better-auth/plugins';
@@ -34,11 +33,13 @@ import {
 } from './origin-policy';
 import { getCookieDomain } from './cookie-domain';
 import { assertEdgeSecrets } from './edge-secrets';
+import { assertMicrosoftTenant, microsoftTenantId } from './microsoft-tenant';
 import {
-  createAllowlistedMagicLinkSender,
+  createAllowlistedEmailSender,
   createEmailDomainAllowlistHook,
 } from './email-domain-allowlist';
 import { withApiKeyRevokingDeletes } from './api-key-revoking-deletes';
+import { gramMcpPlugins } from './gram-mcp-oauth';
 import { CLIENT_IP_HEADER } from '../throttle/client-ip-header.middleware';
 
 export {
@@ -142,7 +143,9 @@ if (
   socialProviders.microsoft = {
     clientId: process.env.AUTH_MICROSOFT_CLIENT_ID,
     clientSecret: process.env.AUTH_MICROSOFT_CLIENT_SECRET,
-    tenantId: process.env.AUTH_MICROSOFT_TENANT_ID || 'common',
+    // One Entra tenant whenever AUTH_ALLOWED_EMAIL_DOMAINS is set (checked at
+    // boot below, ./microsoft-tenant.ts).
+    tenantId: microsoftTenantId({ env: process.env }),
     prompt: 'select_account',
     // Microsoft Entra often omits the `email` claim for work/school accounts,
     // which makes better-auth abort sign-in with `email_not_found`. Fall back to
@@ -159,35 +162,14 @@ if (
 // production deployment, when an edge secret is missing (./edge-secrets.ts).
 const cookieDomain = getCookieDomain({ env: process.env });
 assertEdgeSecrets({ env: process.env });
+assertMicrosoftTenant({ env: process.env });
 
 // ── Hosted MCP (Speakeasy Gram) OAuth ────────────────────────────────────────
 // The MCP server is hosted on Gram. Gram obtains an OAuth access token from this
 // API (better-auth as the authorization server) so users authenticate with
-// "Sign in with Google" instead of pasting an API key.
-//
-// Gram's OAuth Proxy registers as a single static client and handles Dynamic
-// Client Registration toward MCP clients on our behalf - so we keep public DCR
-// off for now and register Gram as a trusted client. Configured via env so the
-// secret isn't committed and the plugin is inert in envs where hosted MCP isn't
-// set up yet.
-const gramMcpClient =
-  process.env.GRAM_OAUTH_CLIENT_ID &&
-  process.env.GRAM_OAUTH_CLIENT_SECRET &&
-  process.env.GRAM_OAUTH_REDIRECT_URI
-    ? {
-        clientId: process.env.GRAM_OAUTH_CLIENT_ID,
-        clientSecret: process.env.GRAM_OAUTH_CLIENT_SECRET,
-        name: 'Comp AI MCP (Gram)',
-        type: 'web' as const,
-        disabled: false,
-        redirectUrls: [process.env.GRAM_OAUTH_REDIRECT_URI],
-        metadata: null,
-        // First-party client: Gram is Comp AI's own hosted MCP, so the user's
-        // login (Sign in with Google) IS the authorization - no separate consent
-        // screen is needed. This also avoids having to build a consent page UI.
-        skipConsent: true,
-      }
-    : null;
+// "Sign in with Google" instead of pasting an API key. Gram's OAuth Proxy is
+// the only client: the MCP endpoints exist only when GRAM_OAUTH_* configures it,
+// and client registration is refused (./gram-mcp-oauth.ts).
 
 // Where better-auth sends the user to authenticate during the OAuth flow.
 const mcpLoginPage = getMcpLoginPage();
@@ -481,12 +463,12 @@ export const auth = betterAuth({
     }),
     magicLink({
       expiresIn: MAGIC_LINK_EXPIRES_IN_SECONDS,
-      // AUTH_ALLOWED_EMAIL_DOMAINS: a link that would sign up a disallowed
-      // new email is refused here (email_domain_not_allowed), before sending.
-      sendMagicLink: createAllowlistedMagicLinkSender({
+      // AUTH_ALLOWED_EMAIL_DOMAINS: no link is mailed to a new address that
+      // may not sign up, with the same answer as a mailed one.
+      sendMagicLink: createAllowlistedEmailSender({
         env: process.env,
         db,
-        send: async ({ email, url }) => {
+        send: async ({ email, url }: { email: string; url: string }) => {
           // The `url` from better-auth points to the API's verify endpoint
           // and includes the callbackURL from the client's sign-in request.
           // Flow: user clicks link → API verifies token & sets session cookie
@@ -506,37 +488,29 @@ export const auth = betterAuth({
     emailOTP({
       otpLength: 6,
       expiresIn: 10 * 60,
-      async sendVerificationOTP({ email, otp }) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[Auth] Sending OTP to:', email);
-        }
-        await triggerEmail({
-          to: email,
-          subject: 'One-Time Password for Comp AI',
-          react: OTPVerificationEmail({ email, otp }),
-        });
-      },
+      // AUTH_ALLOWED_EMAIL_DOMAINS: as for magic links, no code is mailed to
+      // a new address that may not sign up.
+      sendVerificationOTP: createAllowlistedEmailSender({
+        env: process.env,
+        db,
+        send: async ({ email, otp }: { email: string; otp: string }) => {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[Auth] Sending OTP to:', email);
+          }
+          await triggerEmail({
+            to: email,
+            subject: 'One-Time Password for Comp AI',
+            react: OTPVerificationEmail({ email, otp }),
+          });
+        },
+      }),
     }),
     multiSession(),
     bearer(),
     admin({
       defaultRole: 'user',
     }),
-    // OAuth 2.0 / OIDC provider for hosted MCP (Gram). Wraps oidcProvider and
-    // exposes /api/auth/mcp/* (authorize, token, register) + the two
-    // /api/auth/.well-known/* discovery docs, plus the auth.api.getMcpSession()
-    // helper used by HybridAuthGuard. (Gram points its OAuth proxy at /mcp/*.)
-    mcp({
-      loginPage: mcpLoginPage,
-      ...(process.env.MCP_RESOURCE_URL
-        ? { resource: process.env.MCP_RESOURCE_URL }
-        : {}),
-      oidcConfig: {
-        loginPage: mcpLoginPage,
-        allowDynamicClientRegistration: false,
-        ...(gramMcpClient ? { trustedClients: [gramMcpClient] } : {}),
-      },
-    }),
+    ...gramMcpPlugins({ env: process.env, loginPage: mcpLoginPage }),
   ],
   socialProviders,
   user: {
@@ -575,7 +549,11 @@ export const auth = betterAuth({
     modelName: 'Account',
     accountLinking: {
       enabled: true,
-      trustedProviders: ['google', 'github', 'microsoft'],
+      // Trusted providers link to an existing account by email without a
+      // verified-email claim. Microsoft may supply a username claim as the
+      // email (./microsoft-email.ts); GitHub still links whenever it reports
+      // the address verified, so only Google is trusted.
+      trustedProviders: ['google'],
     },
     // Skip the state cookie CSRF check for OAuth flows.
     // In our cross-origin setup (app/portal → API), the state cookie may not
