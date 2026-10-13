@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from '@db';
-import { lockMembersById, lockMembersOfUser } from './api-key-member-lock';
+import { lockMembersById, lockMembersOfUsers } from './api-key-member-lock';
 import { revokeCreatedApiKeys } from './api-key-offboarding';
 
 /**
@@ -8,71 +8,92 @@ import { revokeCreatedApiKeys } from './api-key-offboarding';
  * deletion) and Users with their memberships (/admin/remove-user). Each such
  * delete here runs in one transaction that locks the affected member rows,
  * revokes their personal API keys, then deletes. Revocation therefore happens
- * only when better-auth actually deletes, after its own checks (a refused
- * leave revokes nothing), and there is no moment where the member is gone but
- * its keys still work. Every other call passes through unchanged.
+ * only when better-auth actually deletes, after its own checks, and rolls back
+ * with the delete if the delete fails.
+ *
+ * better-auth's Prisma adapter reaches a model as `db[modelName]`, where the
+ * name comes from its config: `user.modelName: 'User'` gives `db.User`, the
+ * organization plugin's default gives `db.member`. Prisma exposes every model
+ * under both casings, so the model is matched case-insensitively; a delete
+ * through any spelling revokes. Interactive transactions opened through this
+ * client hand out a transaction client with the same behaviour.
  */
 
-function deleteMember({
-  client,
-  args,
+type Tx = Prisma.TransactionClient;
+
+/** Runs `work` atomically: in a new transaction, or in the one already open. */
+type InTransaction = <T>(work: (tx: Tx) => Promise<T>) => Promise<T>;
+
+async function revokeMemberKeys({
+  tx,
+  memberIds,
 }: {
-  client: PrismaClient;
-  args: Prisma.MemberDeleteArgs;
-}) {
-  return client.$transaction(async (tx) => {
-    const member = await tx.member.findUnique({
-      where: args.where,
-      select: { id: true },
-    });
-    if (member) {
-      await lockMembersById({ tx, memberIds: [member.id] });
-      await revokeCreatedApiKeys({ tx, memberIds: [member.id] });
-    }
-    return tx.member.delete(args);
-  });
+  tx: Tx;
+  memberIds: string[];
+}): Promise<void> {
+  if (memberIds.length === 0) return;
+  await lockMembersById({ tx, memberIds });
+  await revokeCreatedApiKeys({ tx, memberIds });
 }
 
-function deleteMembers({
-  client,
-  args,
+async function revokeUserKeys({
+  tx,
+  userIds,
 }: {
-  client: PrismaClient;
-  args?: Prisma.MemberDeleteManyArgs;
-}) {
-  return client.$transaction(async (tx) => {
-    const members = await tx.member.findMany({
-      where: args?.where,
-      select: { id: true },
-    });
-    const memberIds = members.map((member) => member.id);
-    if (memberIds.length > 0) {
-      await lockMembersById({ tx, memberIds });
-      await revokeCreatedApiKeys({ tx, memberIds });
-    }
-    return tx.member.deleteMany(args);
-  });
+  tx: Tx;
+  userIds: string[];
+}): Promise<void> {
+  if (userIds.length === 0) return;
+  const members = await lockMembersOfUsers({ tx, userIds });
+  const memberIds = members.map((member) => member.id);
+  if (memberIds.length > 0) await revokeCreatedApiKeys({ tx, memberIds });
 }
 
-function deleteUser({
-  client,
-  args,
-}: {
-  client: PrismaClient;
-  args: Prisma.UserDeleteArgs;
-}) {
-  return client.$transaction(async (tx) => {
-    const user = await tx.user.findUnique({
-      where: args.where,
-      select: { id: true },
-    });
-    if (user) {
-      const members = await lockMembersOfUser({ tx, userId: user.id });
-      const memberIds = members.map((member) => member.id);
-      if (memberIds.length > 0) await revokeCreatedApiKeys({ tx, memberIds });
-    }
-    return tx.user.delete(args);
-  });
+function memberOverrides(inTransaction: InTransaction) {
+  return {
+    delete: (args: Prisma.MemberDeleteArgs) =>
+      inTransaction(async (tx) => {
+        const member = await tx.member.findUnique({
+          where: args.where,
+          select: { id: true },
+        });
+        await revokeMemberKeys({ tx, memberIds: member ? [member.id] : [] });
+        return tx.member.delete(args);
+      }),
+    deleteMany: (args?: Prisma.MemberDeleteManyArgs) =>
+      inTransaction(async (tx) => {
+        const members = await tx.member.findMany({
+          where: args?.where,
+          select: { id: true },
+        });
+        const memberIds = members.map((member) => member.id);
+        await revokeMemberKeys({ tx, memberIds });
+        return tx.member.deleteMany(args);
+      }),
+  };
+}
+
+function userOverrides(inTransaction: InTransaction) {
+  return {
+    delete: (args: Prisma.UserDeleteArgs) =>
+      inTransaction(async (tx) => {
+        const user = await tx.user.findUnique({
+          where: args.where,
+          select: { id: true },
+        });
+        await revokeUserKeys({ tx, userIds: user ? [user.id] : [] });
+        return tx.user.delete(args);
+      }),
+    deleteMany: (args?: Prisma.UserDeleteManyArgs) =>
+      inTransaction(async (tx) => {
+        const users = await tx.user.findMany({
+          where: args?.where,
+          select: { id: true },
+        });
+        await revokeUserKeys({ tx, userIds: users.map((user) => user.id) });
+        return tx.user.deleteMany(args);
+      }),
+  };
 }
 
 /** `delegate` with some methods replaced; the rest are bound to it. */
@@ -92,31 +113,56 @@ function overrideMethods<Delegate extends object>({
   });
 }
 
-export function withApiKeyRevokingDeletes(client: PrismaClient): PrismaClient {
+/** Prisma accepts `db.member` and `db.Member` alike; so does the override. */
+function interceptedModel(property: PropertyKey): 'member' | 'user' | null {
+  if (typeof property !== 'string') return null;
+  const model = property.toLowerCase();
+  return model === 'member' || model === 'user' ? model : null;
+}
+
+type TransactionMethod = (first: unknown, ...rest: unknown[]) => unknown;
+
+function revokingClient<Client extends Tx>({
+  client,
+  inTransaction,
+}: {
+  client: Client;
+  inTransaction: InTransaction;
+}): Client {
   return new Proxy(client, {
     get(target, property) {
-      if (property === 'member') {
+      const model = interceptedModel(property);
+      if (model === 'member') {
         return overrideMethods({
           delegate: target.member,
-          overrides: {
-            delete: (args: Prisma.MemberDeleteArgs) =>
-              deleteMember({ client: target, args }),
-            deleteMany: (args?: Prisma.MemberDeleteManyArgs) =>
-              deleteMembers({ client: target, args }),
-          },
+          overrides: memberOverrides(inTransaction),
         });
       }
-      if (property === 'user') {
+      if (model === 'user') {
         return overrideMethods({
           delegate: target.user,
-          overrides: {
-            delete: (args: Prisma.UserDeleteArgs) =>
-              deleteUser({ client: target, args }),
-          },
+          overrides: userOverrides(inTransaction),
         });
       }
       const value: unknown = Reflect.get(target, property, target);
-      return typeof value === 'function' ? value.bind(target) : value;
+      if (typeof value !== 'function') return value;
+      if (property !== '$transaction') return value.bind(target);
+      const transaction: TransactionMethod = value.bind(target);
+      return (first: unknown, ...rest: unknown[]) => {
+        if (typeof first !== 'function') return transaction(first, ...rest);
+        const run: (tx: Tx) => unknown = (tx) =>
+          first(
+            revokingClient({ client: tx, inTransaction: (work) => work(tx) }),
+          );
+        return transaction(run, ...rest);
+      };
     },
+  });
+}
+
+export function withApiKeyRevokingDeletes(client: PrismaClient): PrismaClient {
+  return revokingClient({
+    client,
+    inTransaction: (work) => client.$transaction(work),
   });
 }

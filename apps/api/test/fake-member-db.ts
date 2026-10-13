@@ -92,6 +92,15 @@ export class FakeMemberDb {
     return this.transactionClient([]).user;
   }
 
+  /** Prisma also exposes each model under its schema name (db.User, db.Member). */
+  get Member() {
+    return this.member;
+  }
+
+  get User() {
+    return this.user;
+  }
+
   /** Holds the next call of `operation` (e.g. 'apiKey.create') until `until` resolves. */
   pauseNext({
     operation,
@@ -162,6 +171,14 @@ export class FakeMemberDb {
     return member;
   }
 
+  /** Deletes a user and, as the Member.userId cascade does, its memberships. */
+  private deleteUserRow(id: string): void {
+    for (const member of [...this.members.values()]) {
+      if (member.userId === id) this.deleteMemberRow(member.id);
+    }
+    this.users.delete(id);
+  }
+
   private transactionClient(held: Array<() => void>) {
     const queryRaw = async (
       strings: TemplateStringsArray,
@@ -170,11 +187,12 @@ export class FakeMemberDb {
       const sql = strings.join('?');
       if (!sql.includes('FOR UPDATE')) throw new Error(`unexpected SQL ${sql}`);
       const [value] = values;
-      const ids = sql.includes('"userId" =')
+      const keys = value as string[];
+      const ids = sql.includes('"userId" = ANY')
         ? [...this.members.values()]
-            .filter((member) => member.userId === value)
+            .filter((member) => keys.includes(member.userId))
             .map((member) => member.id)
-        : (value as string[]);
+        : keys;
       for (const id of [...ids].sort()) await this.lock(id, held);
       return ids.flatMap((id) => {
         const member = this.members.get(id);
@@ -257,12 +275,26 @@ export class FakeMemberDb {
           settled(() => (this.users.has(where.id) ? { id: where.id } : null)),
         delete: ({ where }: { where: { id: string } }) =>
           settled(() => {
-            for (const member of [...this.members.values()]) {
-              if (member.userId === where.id) this.deleteMemberRow(member.id);
+            if (!this.users.has(where.id)) {
+              throw new Error(`P2025: user ${where.id} not found`);
             }
-            this.users.delete(where.id);
+            this.deleteUserRow(where.id);
             return { id: where.id };
           }),
+        deleteMany: ({ where }: { where: { id?: string } }) =>
+          settled(() => {
+            const ids = [...this.users].filter(
+              (id) => where.id === undefined || id === where.id,
+            );
+            for (const id of ids) this.deleteUserRow(id);
+            return { count: ids.length };
+          }),
+        findMany: ({ where }: { where: { id?: string } }) =>
+          settled(() =>
+            [...this.users]
+              .filter((id) => where.id === undefined || id === where.id)
+              .map((id) => ({ id })),
+          ),
       },
     };
   }

@@ -35,18 +35,18 @@ export function lockMembersById({
     FOR UPDATE`;
 }
 
-/** Locks every membership row of a user; returns them. */
-export function lockMembersOfUser({
+/** Locks every membership row of the given users; returns them. */
+export function lockMembersOfUsers({
   tx,
-  userId,
+  userIds,
 }: {
   tx: LockingClient;
-  userId: string;
+  userIds: string[];
 }): Promise<LockedMember[]> {
   return tx.$queryRaw<LockedMember[]>`
     SELECT "id", "organizationId", "isActive", "deactivated"
     FROM "Member"
-    WHERE "userId" = ${userId}
+    WHERE "userId" = ANY(${userIds})
     ORDER BY "id"
     FOR UPDATE`;
 }
