@@ -4,6 +4,7 @@ import {
   type OnApplicationBootstrap,
 } from '@nestjs/common';
 import { auth } from './auth.server';
+import { readGramMcpClient } from './gram-mcp-client';
 import { syncGramOAuthApplication } from './gram-mcp-client-sync';
 
 /** The error's name and code only: never its message, which could echo data. */
@@ -25,6 +26,8 @@ export class GramMcpClientSync implements OnApplicationBootstrap {
   private readonly logger = new Logger(GramMcpClientSync.name);
 
   async onApplicationBootstrap(): Promise<void> {
+    // Without the Gram client the MCP endpoints do not exist: nothing to write.
+    if (!readGramMcpClient({ env: process.env })) return;
     try {
       const { adapter } = await auth.$context;
       await syncGramOAuthApplication({

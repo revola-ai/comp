@@ -6,8 +6,14 @@ const mockAdapter = {
   create: jest.fn(),
   update: jest.fn(),
 };
+const mockContextRead = jest.fn();
 jest.mock('./auth.server', () => ({
-  auth: { $context: Promise.resolve({ adapter: mockAdapter }) },
+  auth: {
+    get $context() {
+      mockContextRead();
+      return Promise.resolve({ adapter: mockAdapter });
+    },
+  },
 }));
 jest.mock('@thallesp/nestjs-better-auth', () => ({
   AuthModule: { forRoot: () => ({ module: class BetterAuthStub {} }) },
@@ -71,6 +77,13 @@ describe('GramMcpClientSync', () => {
       }),
     });
     expect(logged.join('\n')).not.toContain(GRAM.GRAM_OAUTH_CLIENT_SECRET);
+  });
+
+  it('does not touch better-auth or log anything without GRAM_OAUTH_*', async () => {
+    delete process.env.GRAM_OAUTH_CLIENT_ID;
+    await new GramMcpClientSync().onApplicationBootstrap();
+    expect(mockContextRead).not.toHaveBeenCalled();
+    expect(logged).toEqual([]);
   });
 
   it('logs a failure by name and code only, and lets the API boot', async () => {
