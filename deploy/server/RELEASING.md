@@ -29,6 +29,7 @@ The one exception is a release's up step: its worktree stays for the run while t
 `/opt/comp/src` moves only when a release or rollback is recorded, so a step without a SHA always runs the scripts of the release that serves, never those of a commit that was only migrated, deployed to Trigger.dev or refused.
 When a recorded finish step cannot move it (a full disk, a file changed by hand), the release or rollback stands, but `release.sh` prints a `WARNING` line saying so and exits 1: `rollback`, `prune` and `unlock` would run the scripts of the release that served before it, so `rollback` refuses until `/opt/comp/src` is at the serving tag.
 Fix the cause, then release the tag again, or any newer commit of `revola/self-host`: either release moves it.
+When it did move but could not be made world-readable, nothing lags (`status` shows it at the serving tag and `rollback` works): `release.sh` prints a `WARNING` line saying only that, exits 0, and the next release or rollback tries again.
 After a rollback to a tag whose commit is no longer on `revola/self-host` (force-pushed past it), releasing that tag again is refused, so only the newer commit is a way out; the warning, `status` and the rollback refusal then name only that (the server decides it against `revola/self-host` as `/opt/comp/src` last fetched it).
 SSM parameters carry names, tags and SHAs only: the server reads the secret itself (`render-env.sh`) and no value appears in a command line, an SSM parameter, a log name or this script's output.
 

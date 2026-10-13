@@ -125,9 +125,14 @@ after_prune() { # after a recorded release: a failed or slow post-release prune,
 # /opt/comp/src to $TAG (checkout=failed): the release or rollback stands, but the steps without
 # a SHA run from there, so it warns, naming the way out that works (src_way_out: never releasing
 # $TAG again once the server found it off RELEASE_BRANCH, branch=off), and returns 1: the
-# command fails until the cause is fixed.
+# command fails until the cause is fixed. When /opt/comp/src did move but could not be made
+# world-readable (checkout=unreadable), nothing lags: it only warns.
 after_checkout() {
   local before="the release before it"
+  if [[ "$(result_of checkout)" == unreadable ]]; then
+    echo "WARNING: /opt/comp/src is at $TAG, but making it world-readable failed (above); the steps without a SHA run its scripts all the same, and the next release or rollback tries again."
+    return 0
+  fi
   [[ "$(result_of checkout)" == failed ]] || return 0
   [[ "$1" != rollback ]] || before="the release rolled back from"
   echo "WARNING: /opt/comp/src did not move to $TAG (above), so it still holds the scripts of $before."

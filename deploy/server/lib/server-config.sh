@@ -99,12 +99,19 @@ pin_release() {
 # the steps without a SHA (rollback, prune, unlock) run the scripts of the release that serves.
 # Git writes a changed file as a new file, so a script running from /opt/comp/src reads on
 # unharmed. When it cannot, it says so with the way out and reports comp-result: checkout=failed
-# and branch=<on|off|unknown> (branch_of <sha>), from which the laptop words its warning.
+# and branch=<on|off|unknown> (branch_of <sha>), from which the laptop words its warning. When
+# only making the tree world-readable fails, /opt/comp/src did move (status and rollback see it
+# at <tag>): it says so apart, comp-result: checkout=unreadable.
 serve_checkout() {
   local branch
-  if (umask 022 && git -C "$COMP_SRC" checkout --quiet --detach "$2" && readable_tree "$COMP_SRC"); then
-    echo "== $COMP_SRC is at $2, the serving release"
-    return 0
+  if (umask 022 && git -C "$COMP_SRC" checkout --quiet --detach "$2"); then
+    if readable_tree "$COMP_SRC"; then
+      echo "== $COMP_SRC is at $2, the serving release"
+      return 0
+    fi
+    result "checkout=unreadable"
+    echo "WARNING: $COMP_SRC is at $2, the serving release, but making it world-readable failed (above); the next release or rollback tries again."
+    return 1
   fi
   branch="$(branch_of "$2")"
   result "checkout=failed"

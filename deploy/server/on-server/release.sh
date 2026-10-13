@@ -18,7 +18,8 @@
 #                                     keeps its configuration as the tag's snapshot, records ok
 #                                     and says so (recorded=ok), moves /opt/comp/src to the tag's
 #                                     SHA (checkout=failed and branch=on|off|unknown when it
-#                                     cannot: the laptop warns, naming the way out); after
+#                                     cannot: the laptop warns, naming the way out; checkout=
+#                                     unreadable when it moved but is not world-readable); after
 #                                     a release, then prunes old images when / is over 70% used, for
 #                                     at most 600 s (prune=ok|failed|timed-out), which never fails
 #                                     the step

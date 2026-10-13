@@ -85,6 +85,28 @@ release_sh "$TMP/off-unstuck.out" rollback
 check "off revola/self-host: then rollback works again" test "$?:$(serving):$(cat "$FAKE_GIT_HEAD")" = "0:comp-api:$TAG_D:$SHA_D"
 export FAKE_GIT_SELF_HOST="$SHA_A $SHA_B $SHA_D"
 
+# ---------------------------------------------------------------- /opt/comp/src moves, but cannot be made world-readable
+# A find on PATH that fails for the directory FAKE_FIND_FAIL names (readable_tree of /opt/comp/src).
+# shellcheck disable=SC2016 # expanded by the fake when it runs
+printf '%s\n' '#!/usr/bin/env bash' '[[ "$1" != "${FAKE_FIND_FAIL:-}" ]] || { echo "find: $1/x: Permission denied" >&2; exit 1; }' \
+  'exec /usr/bin/find "$@"' >"$TMP/bin/find"
+chmod 755 "$TMP/bin/find"
+reset_server
+released "$TAG_D" "$TAG_A"
+FAKE_FIND_FAIL="$SERVER/src" release_sh "$TMP/unreadable.out" release "$SHA_B"
+check "/opt/comp/src unreadable: the release stands, exits zero, /opt/comp/src at $TAG_B" \
+  test "$?:$(last_record):$(cat "$FAKE_GIT_HEAD")" = "0:release $TAG_B ok:$SHA_B"
+check "/opt/comp/src unreadable: the server reports it apart from a failed checkout" \
+  bash -c "grep -qxF 'comp-result: checkout=unreadable' '$SERVER'/logs/*-finish-$TAG_B.log && ! grep -qF 'checkout=failed' '$SERVER'/logs/*-finish-$TAG_B.log"
+check "/opt/comp/src unreadable: the laptop says what happened" said "$TMP/unreadable.out" \
+  "WARNING: /opt/comp/src is at $TAG_B, but making it world-readable failed (above); the steps without a SHA run its scripts all the same, and the next release or rollback tries again."
+check "/opt/comp/src unreadable: never says it did not move" bash -c "! grep -qF 'did not move' '$TMP/unreadable.out'"
+release_sh "$TMP/unreadable-status.out" status
+check "/opt/comp/src unreadable: status agrees it is at the current tag" bash -c \
+  "grep -qxF 'current: $TAG_B (/opt/comp/src at $TAG_B)' '$TMP/unreadable-status.out' && ! grep -qF WARNING '$TMP/unreadable-status.out'"
+release_sh "$TMP/unreadable-back.out" rollback
+check "/opt/comp/src unreadable: rollback is not refused" test "$?:$(serving)" = "0:comp-api:$TAG_A"
+
 # ---------------------------------------------------------------- released commits are pinned
 # refs/comp/releases/<tag> keeps each released commit from git gc, so a rollback can check it
 # out even after revola/self-host was force-pushed past it (FAKE_GIT_GONE: no branch holds it).
