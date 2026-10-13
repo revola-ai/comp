@@ -73,6 +73,7 @@ check "Ctrl-C while finish runs: says it is released and how to undo it" \
 for knob in FAKE_AWS_INTERRUPT=INT@fake-command-2 FAKE_AWK_INTERRUPT=INT@3; do # while finish runs, or prints
   reset_server
   released "$TAG_A"
+  # shellcheck disable=SC2163 # $knob is a whole NAME=value assignment, exported as written
   (export "$knob" FAKE_GIT_FAIL_CHECKOUT=1 && release_sh "$TMP/finish-stuck.out" release "$SHA_B")
   check "Ctrl-C at finish ($knob), /opt/comp/src stuck: exits 130, released" test "$?:$(last_record)" = "130:release $TAG_B ok"
   check "Ctrl-C at finish ($knob), /opt/comp/src stuck: says it is released" said "$TMP/finish-stuck.out" \
