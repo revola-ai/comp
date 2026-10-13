@@ -82,6 +82,34 @@ serving_stack() {
 current_tag() { serving_stack | sed -n 1p; }
 previous_tag() { serving_stack | sed -n 2p; }
 
+# branch_of <sha>: "on" when RELEASE_BRANCH (as /opt/comp/src last fetched it) contains <sha>,
+# "off" when it does not (a release of <sha> would be refused), "unknown" when git cannot tell.
+branch_of() {
+  local status=0
+  [[ "$1" =~ ^[0-9a-f]{40}$ ]] || { echo unknown; return 0; }
+  git -C "$COMP_SRC" merge-base --is-ancestor "$1" "refs/remotes/origin/$RELEASE_BRANCH" 2>/dev/null || status=$?
+  case "$status" in 0) echo on ;; 1) echo off ;; *) echo unknown ;; esac
+}
+
+# src_way_out <tag> <on|off|unknown>: how /opt/comp/src gets to the serving <tag> after a finish
+# could not move it there: releasing <tag> again or any newer commit of RELEASE_BRANCH moves it;
+# once <tag> is off RELEASE_BRANCH ("off", branch_of), only the newer commit, as both release.sh
+# and entry.sh refuse <tag> itself.
+src_way_out() {
+  if [[ "$2" == off ]]; then
+    echo "release any newer commit of $RELEASE_BRANCH ($1 is no longer on it, so releasing $1 again is refused)"
+  else
+    echo "release $1 again, or any newer commit of $RELEASE_BRANCH"
+  fi
+}
+
+# src_lag_way_out <tag>: src_way_out for the serving <tag>, its commit read from its snapshot.
+src_lag_way_out() {
+  local sha=""
+  read -r sha <"$COMP_RELEASES/$1/sha" 2>/dev/null || true
+  src_way_out "$1" "$(branch_of "$sha")"
+}
+
 # recent_ok_tags: the tags of ok release and rollback lines, newest first, each once (prune
 # keeps the first four: the current tag, which is always the newest, and 3 others).
 recent_ok_tags() {

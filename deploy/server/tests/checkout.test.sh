@@ -25,20 +25,20 @@ check "/opt/comp/src cannot move: a WARNING line says so" said "$TMP/stuck.out" 
   "WARNING: /opt/comp/src did not move to $TAG_B (above), so it still holds the scripts of the release before it."
 check "/opt/comp/src cannot move: says what that means" said "$TMP/stuck.out" \
   "rollback, prune and unlock run those scripts, and rollback refuses until /opt/comp/src is at $TAG_B;"
-check "/opt/comp/src cannot move: says what to do" said "$TMP/stuck.out" \
-  "fix the cause (above), then release $TAG_B again, which moves it."
+check "/opt/comp/src cannot move: says what to do, both ways out" said "$TMP/stuck.out" \
+  "fix the cause (above), then release $TAG_B again, or any newer commit of revola/self-host, which moves it."
 check "/opt/comp/src cannot move: it stays at $TAG_A" src_at "$SHA_A"
 release_sh "$TMP/stuck-status.out" status
 check "status: the current tag and where /opt/comp/src is" \
   grep -qxF "current: $TAG_B (/opt/comp/src at $TAG_A)" "$TMP/stuck-status.out"
 check "status: a WARNING line when they differ" grep -qxF \
-  "WARNING: /opt/comp/src is at $TAG_A, not at the current tag $TAG_B: rollback refuses until it is; release $TAG_B again to move it" \
+  "WARNING: /opt/comp/src is at $TAG_A, not at the current tag $TAG_B: rollback refuses until it is; to move it, release $TAG_B again, or any newer commit of revola/self-host" \
   "$TMP/stuck-status.out"
 : >"$FAKE_DOCKER_LOG"
 release_sh "$TMP/stuck-back.out" rollback
 check "rollback while /opt/comp/src lags: refused" test "$?" -ne 0
 check "rollback while /opt/comp/src lags: says why and how to fix it" said "$TMP/stuck-back.out" \
-  "Refusing: /opt/comp/src is at $TAG_A, not at the serving $TAG_B, so this rollback would run the scripts of another release; release $TAG_B again (deploy/server/release.sh release $TAG_B), which moves it, then roll back."
+  "Refusing: /opt/comp/src is at $TAG_A, not at the serving $TAG_B, so this rollback would run the scripts of another release; to move it, release $TAG_B again, or any newer commit of revola/self-host, then roll back."
 check "rollback while /opt/comp/src lags: before any container changed" said "$TMP/stuck-back.out" "before any container changed"
 check "rollback while /opt/comp/src lags: no container changed" test -z "$(container_changes)"
 check "rollback while /opt/comp/src lags: recorded failed" test "$(last_record)" = "rollback $TAG_A failed"
@@ -50,6 +50,40 @@ check "status: /opt/comp/src at the current tag, no warning" bash -c \
   "grep -qxF 'current: $TAG_B (/opt/comp/src at $TAG_B)' '$TMP/unstuck-status.out' && ! grep -qF WARNING '$TMP/unstuck-status.out'"
 release_sh "$TMP/unstuck-back.out" rollback
 check "then the rollback works" test "$?:$(serving)" = "0:comp-api:$TAG_A"
+
+# A rollback whose finish cannot move /opt/comp/src: to a tag still on revola/self-host, then to
+# one no longer on it (FAKE_GIT_SELF_HOST without it), which only a newer commit can follow.
+reset_server
+released "$TAG_D" "$TAG_A" "$TAG_B"
+FAKE_GIT_FAIL_CHECKOUT=1 release_sh "$TMP/rb-stuck.out" rollback
+check "a rollback /opt/comp/src cannot follow: exits 1, the rollback stands" \
+  test "$?:$(last_record):$(serving)" = "1:rollback $TAG_A ok:comp-api:$TAG_A"
+check "a rollback /opt/comp/src cannot follow: names the scripts it still holds" said "$TMP/rb-stuck.out" \
+  "WARNING: /opt/comp/src did not move to $TAG_A (above), so it still holds the scripts of the release rolled back from."
+check "a rollback /opt/comp/src cannot follow: both ways out" said "$TMP/rb-stuck.out" \
+  "fix the cause (above), then release $TAG_A again, or any newer commit of revola/self-host, which moves it."
+OFF_BRANCH="release any newer commit of revola/self-host ($TAG_D is no longer on it, so releasing $TAG_D again is refused)"
+reset_server
+released "$TAG_D" "$TAG_A" "$TAG_B"
+export FAKE_GIT_SELF_HOST="$SHA_A $SHA_B" # D was force-pushed off revola/self-host (its pin keeps it)
+FAKE_GIT_FAIL_CHECKOUT=1 release_sh "$TMP/off.out" rollback "$TAG_D"
+check "a rollback to a tag off revola/self-host /opt/comp/src cannot follow: exits 1, it serves" \
+  test "$?:$(last_record):$(serving)" = "1:rollback $TAG_D ok:comp-api:$TAG_D"
+check "off revola/self-host: names only the way out that works" said "$TMP/off.out" "fix the cause (above), then $OFF_BRANCH, which moves it."
+check "off revola/self-host: never offers releasing it again" bash -c "! grep -qF 'release $TAG_D again,' '$TMP/off.out'"
+release_sh "$TMP/off-status.out" status
+check "off revola/self-host: status says the same" grep -qxF \
+  "WARNING: /opt/comp/src is at $TAG_B, not at the current tag $TAG_D: rollback refuses until it is; to move it, $OFF_BRANCH" "$TMP/off-status.out"
+release_sh "$TMP/off-back.out" rollback "$TAG_A"
+check "off revola/self-host: a rollback refuses, saying the same" said "$TMP/off-back.out" \
+  "Refusing: /opt/comp/src is at $TAG_B, not at the serving $TAG_D, so this rollback would run the scripts of another release; to move it, $OFF_BRANCH, then roll back."
+release_sh "$TMP/off-again.out" release "$SHA_D"
+check "off revola/self-host: releasing it again is indeed refused" test "$?:$(serving)" = "1:comp-api:$TAG_D"
+release_sh "$TMP/off-newer.out" release "$SHA_B"
+check "off revola/self-host: a newer commit is released and moves /opt/comp/src" test "$?:$(cat "$FAKE_GIT_HEAD")" = "0:$SHA_B"
+release_sh "$TMP/off-unstuck.out" rollback
+check "off revola/self-host: then rollback works again" test "$?:$(serving):$(cat "$FAKE_GIT_HEAD")" = "0:comp-api:$TAG_D:$SHA_D"
+export FAKE_GIT_SELF_HOST="$SHA_A $SHA_B $SHA_D"
 
 # ---------------------------------------------------------------- released commits are pinned
 # refs/comp/releases/<tag> keeps each released commit from git gc, so a rollback can check it

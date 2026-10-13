@@ -95,14 +95,20 @@ pin_release() {
   return 1
 }
 
-# serve_checkout <sha>: moves /opt/comp/src to <sha> (under umask 022, world-readable), so the
-# steps without a SHA (rollback, prune, unlock) run the scripts of the release that serves. Git
-# writes a changed file as a new file, so a script running from /opt/comp/src reads on unharmed.
+# serve_checkout <tag> <sha>: moves /opt/comp/src to <sha> (under umask 022, world-readable), so
+# the steps without a SHA (rollback, prune, unlock) run the scripts of the release that serves.
+# Git writes a changed file as a new file, so a script running from /opt/comp/src reads on
+# unharmed. When it cannot, it says so with the way out and reports comp-result: checkout=failed
+# and branch=<on|off|unknown> (branch_of <sha>), from which the laptop words its warning.
 serve_checkout() {
-  if (umask 022 && git -C "$COMP_SRC" checkout --quiet --detach "$1" && readable_tree "$COMP_SRC"); then
-    echo "== $COMP_SRC is at $1, the serving release"
+  local branch
+  if (umask 022 && git -C "$COMP_SRC" checkout --quiet --detach "$2" && readable_tree "$COMP_SRC"); then
+    echo "== $COMP_SRC is at $2, the serving release"
     return 0
   fi
-  echo "WARNING: could not check $1 out in $COMP_SRC (above): the steps without a SHA (rollback, prune, unlock) run the scripts of the release before it until ${1:0:12} is released again."
+  branch="$(branch_of "$2")"
+  result "checkout=failed"
+  result "branch=$branch"
+  echo "WARNING: could not check $2 out in $COMP_SRC (above): the steps without a SHA (rollback, prune, unlock) run the scripts of the release that served before $1 until it moves; to move it, $(src_way_out "$1" "$branch")."
   return 1
 }

@@ -119,15 +119,19 @@ after_prune() { # after a recorded release: a failed or slow post-release prune,
   esac
 }
 
-# after_checkout: after a recorded finish whose server could not move /opt/comp/src to $TAG
-# (checkout=failed): the release stands, but the steps without a SHA run from there, so it
-# warns and fails the command until the cause is fixed.
+# after_checkout <release|rollback>: after a recorded finish whose server could not move
+# /opt/comp/src to $TAG (checkout=failed): the release or rollback stands, but the steps without
+# a SHA run from there, so it warns, naming the way out that works (src_way_out: never releasing
+# $TAG again once the server found it off RELEASE_BRANCH, branch=off), and returns 1: the
+# command fails until the cause is fixed.
 after_checkout() {
+  local before="the release before it"
   [[ "$(result_of checkout)" == failed ]] || return 0
-  echo "WARNING: /opt/comp/src did not move to $TAG (above), so it still holds the scripts of the release before it."
+  [[ "$1" != rollback ]] || before="the release rolled back from"
+  echo "WARNING: /opt/comp/src did not move to $TAG (above), so it still holds the scripts of $before."
   echo "rollback, prune and unlock run those scripts, and rollback refuses until /opt/comp/src is at $TAG;"
-  echo "fix the cause (above), then release $TAG again, which moves it."
-  exit 1
+  echo "fix the cause (above), then $(src_way_out "$TAG" "$(result_of branch)"), which moves it."
+  return 1
 }
 
 # not_recorded: after a finish step without recorded=ok: its output was cut short (the server
@@ -177,7 +181,7 @@ bring_up() {
     echo
     echo "Released $TAG: it serves and passes the smoke checks ($action)."
     after_prune
-    after_checkout
+    after_checkout "$action" || exit 1
     return 0
   fi
   echo "The smoke checks of $TAG failed; bringing the previous release back."

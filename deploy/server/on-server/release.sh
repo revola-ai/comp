@@ -17,7 +17,8 @@
 #                                     commit (refs/comp/releases/<tag>, lib/server-config.sh) and
 #                                     keeps its configuration as the tag's snapshot, records ok
 #                                     and says so (recorded=ok), moves /opt/comp/src to the tag's
-#                                     SHA (checkout=failed when it cannot: the laptop warns); after
+#                                     SHA (checkout=failed and branch=on|off|unknown when it
+#                                     cannot: the laptop warns, naming the way out); after
 #                                     a release, then prunes old images when / is over 70% used, for
 #                                     at most 600 s (prune=ok|failed|timed-out), which never fails
 #                                     the step
@@ -182,7 +183,7 @@ case "$step" in
       # This step runs the scripts of /opt/comp/src, which a release's finish may have failed to move.
       src="$(git -C "$COMP_SRC" rev-parse HEAD 2>/dev/null)" || src=unknown
       [[ -z "$current" || "${src:0:12}" == "$current" ]] ||
-        failed_before_change 1 "Refusing: /opt/comp/src is at ${src:0:12}, not at the serving $current, so this rollback would run the scripts of another release; release $current again (deploy/server/release.sh release $current), which moves it, then roll back."
+        failed_before_change 1 "Refusing: /opt/comp/src is at ${src:0:12}, not at the serving $current, so this rollback would run the scripts of another release; to move it, $(src_lag_way_out "$current"), then roll back."
       missing="$(missing_images "$tag" "${STACK_IMAGES[@]}")"
       [[ -z "$missing" ]] || failed_before_change 1 "Refusing: missing images: $(tr '\n' ' ' <<<"$missing")(pruned?); rollback needs all three."
       config="$(snapshot_of "$tag")" ||
@@ -208,7 +209,7 @@ case "$step" in
     result "serving=$tag"
     result "recorded=ok"
     echo "Recorded: $action $tag ok."
-    [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]] || serve_checkout "$sha" || result "checkout=failed"
+    [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]] || serve_checkout "$tag" "$sha"
     [[ "$action" != release ]] || prune_after_release
     ;;
   revert)

@@ -26,7 +26,7 @@ show() {
   src="$(git -C "$COMP_SRC" rev-parse HEAD 2>/dev/null)" || src="unknown"
   echo "current: $current (/opt/comp/src at ${src:0:12})"
   if [[ -n "$current" && "${src:0:12}" != "$current" ]]; then
-    echo "WARNING: /opt/comp/src is at ${src:0:12}, not at the current tag $current: rollback refuses until it is; release $current again to move it"
+    echo "WARNING: /opt/comp/src is at ${src:0:12}, not at the current tag $current: rollback refuses until it is; to move it, $(src_lag_way_out "$current")"
   fi
   echo "previous: $(previous_tag)"
   local dir snapshots=""
