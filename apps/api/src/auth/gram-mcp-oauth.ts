@@ -10,10 +10,13 @@ type Env = Partial<NodeJS.ProcessEnv>;
  * allowDynamicClientRegistration says, and /mcp/authorize skips consent unless
  * prompt=consent, so a self-registered client with its own redirect_uri could
  * collect a signed-in member's token in one click. Registration is refused
- * for every caller (Gram is pre-registered as a trusted client), and an
- * authorization request naming any other client_id is refused before a code
- * is issued. The hooks match the endpoint path, not the request URL, so no
- * spelling of the URL gets around them.
+ * for every caller, and an authorization request naming any other client_id
+ * is refused before a code is issued. Gram's own client is the
+ * oauthApplication row the API writes from GRAM_OAUTH_* at boot
+ * (gram-mcp-client-sync.ts): /mcp/authorize and /mcp/token read clients only
+ * from that table, never from oidcConfig.trustedClients. The hooks match the
+ * endpoint path, not the request URL, so no spelling of the URL gets around
+ * them.
  */
 function gramClientGate({ clientId }: { clientId: string }) {
   return {
@@ -56,32 +59,24 @@ function buildGramPlugins({
   loginPage: string;
   resource: string | undefined;
 }) {
+  // better-auth spreads the mcp() options' `metadata` over its discovery
+  // document (/.well-known/oauth-authorization-server, better-auth 1.6.23
+  // plugins/mcp/index.mjs), though MCPOptions does not declare it: an
+  // undefined registration_endpoint leaves the refused /mcp/register out of
+  // the JSON.
+  const options = {
+    loginPage,
+    ...(resource ? { resource } : {}),
+    oidcConfig: { loginPage, allowDynamicClientRegistration: false },
+    metadata: { registration_endpoint: undefined },
+  };
   return [
     // OAuth 2.0 / OIDC provider for hosted MCP (Gram): /api/auth/mcp/*
     // (authorize, token, get-session), the two /api/auth/.well-known/*
     // discovery documents and auth.api.getMcpSession() for HybridAuthGuard.
-    mcp({
-      loginPage,
-      ...(resource ? { resource } : {}),
-      oidcConfig: {
-        loginPage,
-        allowDynamicClientRegistration: false,
-        trustedClients: [
-          {
-            clientId: client.clientId,
-            clientSecret: client.clientSecret,
-            name: 'Comp AI MCP (Gram)',
-            type: 'web',
-            disabled: false,
-            redirectUrls: [client.redirectUri],
-            metadata: null,
-            // First-party client: Gram is Comp AI's own hosted MCP, so the
-            // user's sign-in IS the authorization, with no consent screen.
-            skipConsent: true,
-          },
-        ],
-      },
-    }),
+    // Gram signs users in without a consent screen (consent is asked only for
+    // prompt=consent): Gram is Comp AI's own hosted MCP.
+    mcp(options),
     gramClientGate({ clientId: client.clientId }),
   ];
 }

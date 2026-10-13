@@ -169,7 +169,9 @@ assertMicrosoftTenant({ env: process.env });
 // API (better-auth as the authorization server) so users authenticate with
 // "Sign in with Google" instead of pasting an API key. Gram's OAuth Proxy is
 // the only client: the MCP endpoints exist only when GRAM_OAUTH_* configures it,
-// and client registration is refused (./gram-mcp-oauth.ts).
+// client registration is refused (./gram-mcp-oauth.ts), and Gram's
+// oauthApplication row is written from GRAM_OAUTH_* at boot
+// (./gram-mcp-client-sync.ts).
 
 // Where better-auth sends the user to authenticate during the OAuth flow.
 const mcpLoginPage = getMcpLoginPage();
