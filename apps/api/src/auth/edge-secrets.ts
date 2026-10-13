@@ -31,7 +31,7 @@ function bootError({
  * A production SELF_HOSTED=true API must trust some browser origin, and the
  * deployment that shares its session cookie through AUTH_COOKIE_DOMAIN must
  * be SELF_HOSTED=true: otherwise the origin policy also trusts Comp AI's own
- * domains (*.trycomp.ai and published trust-portal custom domains).
+ * domains (its hosted subdomains and published trust-portal custom domains).
  */
 function assertSelfHostedOrigins({ env }: { env: Env }): void {
   const selfHosted = env.SELF_HOSTED === 'true';
@@ -39,7 +39,7 @@ function assertSelfHostedOrigins({ env }: { env: Env }): void {
     throw bootError({
       detail: 'SELF_HOSTED must be set to "true"',
       consequence:
-        "Without it the API also trusts Comp AI's own origins (*.trycomp.ai and trust-portal custom domains) for CORS and sign-in redirects.",
+        "Without it the API also trusts Comp AI's own hosted origins and trust-portal custom domains for CORS and sign-in redirects.",
     });
   }
   if (!selfHosted) return;
