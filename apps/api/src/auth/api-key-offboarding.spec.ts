@@ -9,7 +9,15 @@ const record = (op: string) => (args: unknown) => {
 const mockTx = {
   $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) => {
     mockCalls.push({ op: 'lock', args: { sql: strings.join('?'), values } });
-    return Promise.resolve([]);
+    return Promise.resolve([
+      {
+        id: 'mem_1',
+        organizationId: 'org_1',
+        role: 'admin',
+        isActive: true,
+        deactivated: false,
+      },
+    ]);
   },
   apiKey: { updateMany: record('apiKey.updateMany') },
   member: {
@@ -27,10 +35,10 @@ jest.mock('@db', () => ({
   },
 }));
 
+import { revokeCreatedApiKeys } from './api-key-access-loss';
 import {
   deactivateMemberAndRevokeApiKeys,
   deleteMemberAndRevokeApiKeys,
-  revokeCreatedApiKeys,
 } from './api-key-offboarding';
 
 const PERSONAL_ACTIVE_KEYS = { organizationOwned: false, isActive: true };

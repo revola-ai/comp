@@ -44,6 +44,20 @@ export type FakeOperation =
 /** Undo steps of the writes made so far in one transaction; null outside one. */
 export type Journal = Array<() => void> | null;
 
+/** Puts a row back exactly as it was, dropping columns a write added. */
+function restore<Row extends object>({
+  row,
+  previous,
+}: {
+  row: Row;
+  previous: Row;
+}): void {
+  for (const key of Object.keys(row)) {
+    if (!(key in previous)) Reflect.deleteProperty(row, key);
+  }
+  Object.assign(row, previous);
+}
+
 export class FakeMemberDb {
   readonly members = new Map<string, FakeMember>();
   readonly users = new Map<string, FakeUser>();
@@ -94,10 +108,6 @@ export class FakeMemberDb {
 
   get user() {
     return this.autocommit.user;
-  }
-
-  get apiKey() {
-    return this.autocommit.apiKey;
   }
 
   /** Prisma also exposes each model under its schema name (db.User, db.Member). */
@@ -233,7 +243,7 @@ export class FakeMemberDb {
     if (!member) throw new Error(`P2025: member ${id} not found`);
     const previous = { ...member };
     Object.assign(member, data);
-    journal?.push(() => Object.assign(member, previous));
+    journal?.push(() => restore({ row: member, previous }));
     return member;
   }
 
@@ -250,7 +260,7 @@ export class FakeMemberDb {
     if (!user) throw new Error(`P2025: user ${id} not found`);
     const previous = { ...user };
     Object.assign(user, data);
-    journal?.push(() => Object.assign(user, previous));
+    journal?.push(() => restore({ row: user, previous }));
     return user;
   }
 

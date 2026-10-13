@@ -13,6 +13,7 @@ import type { Prisma } from '@db';
 export type LockedMember = {
   id: string;
   organizationId: string;
+  role: string;
   isActive: boolean;
   deactivated: boolean;
 };
@@ -28,7 +29,7 @@ export function lockMembersById({
   memberIds: string[];
 }): Promise<LockedMember[]> {
   return tx.$queryRaw<LockedMember[]>`
-    SELECT "id", "organizationId", "isActive", "deactivated"
+    SELECT "id", "organizationId", "role", "isActive", "deactivated"
     FROM "Member"
     WHERE "id" = ANY(${memberIds})
     ORDER BY "id"
@@ -44,7 +45,7 @@ export function lockMembersOfUsers({
   userIds: string[];
 }): Promise<LockedMember[]> {
   return tx.$queryRaw<LockedMember[]>`
-    SELECT "id", "organizationId", "isActive", "deactivated"
+    SELECT "id", "organizationId", "role", "isActive", "deactivated"
     FROM "Member"
     WHERE "userId" = ANY(${userIds})
     ORDER BY "id"

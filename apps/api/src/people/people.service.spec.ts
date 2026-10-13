@@ -742,6 +742,16 @@ describe('PeopleService', () => {
     });
 
     it("revokes the member's personal API keys in the deactivation transaction", async () => {
+      // The row lock returns the member it locked.
+      (db.$queryRaw as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'mem_1',
+          organizationId: 'org_123',
+          role: 'employee',
+          isActive: true,
+          deactivated: false,
+        },
+      ]);
       await service.deleteById('mem_1', 'org_123', 'usr_actor');
 
       expect(db.apiKey.updateMany).toHaveBeenCalledWith({
