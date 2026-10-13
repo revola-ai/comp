@@ -98,14 +98,35 @@ describe('auth.server sign-up allowlist wiring', () => {
     ).resolves.toBeUndefined();
   });
 
+  // The same success for every address: a refusal would reveal which
+  // outside addresses already have an account.
   it('mails no magic link to a new address outside the allowed domains', async () => {
-    await auth.api
-      .signInMagicLink({
+    await expect(
+      auth.api.signInMagicLink({
         body: { email: 'someone@gmail.com' },
         headers: new Headers(),
-      })
-      .catch(() => undefined);
+      }),
+    ).resolves.toEqual({ status: true });
     expect(recipients()).toEqual([]);
+  });
+
+  it('mails no sign-in code to a new address outside the allowed domains', async () => {
+    await expect(
+      auth.api.sendVerificationOTP({
+        body: { email: 'someone@gmail.com', type: 'sign-in' },
+        headers: new Headers(),
+      }),
+    ).resolves.toEqual({ success: true });
+    expect(recipients()).toEqual([]);
+  });
+
+  it('mails the sign-in code to an existing user outside the allowed domains', async () => {
+    mockUserFindFirst.mockResolvedValue({ id: 'usr_auditor' });
+    await auth.api.sendVerificationOTP({
+      body: { email: 'auditor@firm.com', type: 'sign-in' },
+      headers: new Headers(),
+    });
+    expect(recipients()).toEqual(['auditor@firm.com']);
   });
 
   it('mails the magic link to an address in an allowed domain', async () => {

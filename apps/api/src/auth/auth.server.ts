@@ -35,7 +35,7 @@ import { getCookieDomain } from './cookie-domain';
 import { assertEdgeSecrets } from './edge-secrets';
 import { assertMicrosoftTenant, microsoftTenantId } from './microsoft-tenant';
 import {
-  createAllowlistedMagicLinkSender,
+  createAllowlistedEmailSender,
   createEmailDomainAllowlistHook,
 } from './email-domain-allowlist';
 import { withApiKeyRevokingDeletes } from './api-key-revoking-deletes';
@@ -463,12 +463,12 @@ export const auth = betterAuth({
     }),
     magicLink({
       expiresIn: MAGIC_LINK_EXPIRES_IN_SECONDS,
-      // AUTH_ALLOWED_EMAIL_DOMAINS: a link that would sign up a disallowed
-      // new email is refused here (email_domain_not_allowed), before sending.
-      sendMagicLink: createAllowlistedMagicLinkSender({
+      // AUTH_ALLOWED_EMAIL_DOMAINS: no link is mailed to a new address that
+      // may not sign up, with the same answer as a mailed one.
+      sendMagicLink: createAllowlistedEmailSender({
         env: process.env,
         db,
-        send: async ({ email, url }) => {
+        send: async ({ email, url }: { email: string; url: string }) => {
           // The `url` from better-auth points to the API's verify endpoint
           // and includes the callbackURL from the client's sign-in request.
           // Flow: user clicks link → API verifies token & sets session cookie
@@ -488,16 +488,22 @@ export const auth = betterAuth({
     emailOTP({
       otpLength: 6,
       expiresIn: 10 * 60,
-      async sendVerificationOTP({ email, otp }) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[Auth] Sending OTP to:', email);
-        }
-        await triggerEmail({
-          to: email,
-          subject: 'One-Time Password for Comp AI',
-          react: OTPVerificationEmail({ email, otp }),
-        });
-      },
+      // AUTH_ALLOWED_EMAIL_DOMAINS: as for magic links, no code is mailed to
+      // a new address that may not sign up.
+      sendVerificationOTP: createAllowlistedEmailSender({
+        env: process.env,
+        db,
+        send: async ({ email, otp }: { email: string; otp: string }) => {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[Auth] Sending OTP to:', email);
+          }
+          await triggerEmail({
+            to: email,
+            subject: 'One-Time Password for Comp AI',
+            react: OTPVerificationEmail({ email, otp }),
+          });
+        },
+      }),
     }),
     multiSession(),
     bearer(),
