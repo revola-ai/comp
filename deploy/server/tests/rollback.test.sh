@@ -141,35 +141,35 @@ check "expired lease: ignored" test "$(last_record)" = "rollback $TAG_D ok"
 entry() { COMP_ROOT="$SERVER" bash "$SERVER_DIR/on-server/entry.sh" "$@" >"$TMP/entry.out" 2>&1; }
 reset_server
 released "$TAG_A"
-entry 20261007T120000Z-finish-"$TAG_B".log 20261007T115900Z-release-"$TAG_B"-0123abcd own - release finish release "$TAG_B"
+entry 20261007T120000Z-finish-"$TAG_B".log 20261007T115900Z-release-"$TAG_B"-0123abcd "$OPERATOR" own - release finish release "$TAG_B"
 check "lapsed lease: refused with 75" test "$?" -eq 75
 check "lapsed lease: says the run no longer holds the server" grep -qF "no longer holds the server" "$TMP/entry.out"
 check "lapsed lease: records nothing" test "$(last_record)" = "release $TAG_A ok"
 check "lapsed lease: ends with the meta block" test "$(tail -n 1 "$TMP/entry.out")" = "comp-end: 75"
-for bad in "../../env/api.env 20261007T120000Z-release-$TAG_B-0123abcd new - release up release $TAG_B" \
-  "20261007T120000Z-release-$TAG_B.log 20261007T120000Z-release-$TAG_B-0123abcd new main release up release $TAG_B" \
-  "20261007T120000Z-release-$TAG_B.log 20261007T120000Z-release-$TAG_B-0123abcd new - ../x" \
-  "20261007T120000Z-release-$TAG_B.log 20261007T120000Z-release-$TAG_B new - release up release $TAG_B"; do
+for bad in "../../env/api.env 20261007T120000Z-release-$TAG_B-0123abcd $OPERATOR new - release up release $TAG_B" \
+  "20261007T120000Z-release-$TAG_B.log 20261007T120000Z-release-$TAG_B-0123abcd $OPERATOR new main release up release $TAG_B" \
+  "20261007T120000Z-release-$TAG_B.log 20261007T120000Z-release-$TAG_B-0123abcd $OPERATOR new - ../x" \
+  "20261007T120000Z-release-$TAG_B.log 20261007T120000Z-release-$TAG_B $OPERATOR new - release up release $TAG_B"; do
   # shellcheck disable=SC2086 # one word per argument
   entry $bad
   check "entry refuses: $bad" test "$?" -eq 2
 done
 check "entry refusals: nothing ran" test ! -s "$FAKE_DOCKER_LOG"
-entry 20261007T120000Z-release-"$TAG_X".log 20261007T120000Z-release-"$TAG_X"-0123abcd new "$SHA_X" release up release "$TAG_X"
+entry 20261007T120000Z-release-"$TAG_X".log 20261007T120000Z-release-"$TAG_X"-0123abcd "$OPERATOR" new "$SHA_X" release up release "$TAG_X"
 check "entry refuses a SHA only on a feature branch" test "$?" -eq 1
 check "entry refuses a SHA only on a feature branch: names revola/self-host" grep -qF "is not on revola/self-host" "$TMP/entry.out"
 check "entry refuses a SHA only on a feature branch: changed nothing" grep -qxF "comp-result: changed=no" "$TMP/entry.out"
 check "entry refuses a SHA only on a feature branch: never checks it out, no docker call" \
   bash -c "! grep -q 'checkout' '$FAKE_GIT_LOG' && test ! -s '$FAKE_DOCKER_LOG'"
 printf 'stale\n' >"$SERVER/logs/20261007T120000Z-release-$TAG_B.log"
-entry 20261007T120000Z-release-"$TAG_B".log 20261007T120000Z-release-"$TAG_B"-0123abcd new - release up rollback "$TAG_B"
+entry 20261007T120000Z-release-"$TAG_B".log 20261007T120000Z-release-"$TAG_B"-0123abcd "$OPERATOR" new - release up rollback "$TAG_B"
 check "entry never overwrites a log" test "$(cat "$SERVER/logs/20261007T120000Z-release-$TAG_B.log")" = stale
 
 # The server lock: finish, revert and unlock ("own" steps of a run) wait up to 120 s for it, so
 # the reboot check or a security update skipping under the lease cannot make them fail; a new
 # step never waits. The fake flock waits at most 2 real seconds (FAKE_FLOCK_MAX_WAIT).
 own_lease() { printf '20261007T120000Z-release-%s-0123abcd %s release %s\n' "$TAG_C" "$(($(date +%s) + 600))" "$TAG_C" >"$SERVER/release.lease"; }
-unlock_c() { entry "20261007T12010$1Z-unlock-$TAG_C.log" "20261007T120000Z-release-$TAG_C-0123abcd" own - release unlock release "$TAG_C"; }
+unlock_c() { entry "20261007T12010$1Z-unlock-$TAG_C.log" "20261007T120000Z-release-$TAG_C-0123abcd" "$OPERATOR" own - release unlock release "$TAG_C"; }
 reset_server
 released "$TAG_A"
 own_lease
@@ -198,7 +198,7 @@ check "an own step refused after its wait: says how long it waited" grep -qF "wa
 check "an own step refused after its wait: the lease stays" test -s "$SERVER/release.lease"
 : >"$FAKE_FLOCK_LOG"
 rm -f "$SERVER/release.lease"
-entry "20261007T120200Z-release-$TAG_B.log" "20261007T120200Z-release-$TAG_B-0123abcd" new "$SHA_B" build "$TAG_B"
+entry "20261007T120200Z-release-$TAG_B.log" "20261007T120200Z-release-$TAG_B-0123abcd" "$OPERATOR" new "$SHA_B" build "$TAG_B"
 check "a new step never waits for the lock" test "$?:$(cat "$FAKE_FLOCK_LOG")" = "75:flock -n 9"
 exec 8>&-
 unset FAKE_FLOCK_LOG

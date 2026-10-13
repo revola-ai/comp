@@ -7,6 +7,7 @@ operation answers with the text the caller asks for; the tests pin every call's 
 
 Knobs (environment):
   FAKE_AWS_ACCOUNT             the account get-caller-identity reports (default 455986776194)
+  FAKE_AWS_ARN                 the caller ARN it reports beside it for --query '[Account, Arn]'
   FAKE_AWS_DENY                "service operation" that fails with AccessDenied
   FAKE_AWS_PROFILE_NOT_READY   run-instances fails this many times with the IAM-propagation error
   FAKE_AWS_WARN                every successful call also writes a warning to stderr
@@ -118,6 +119,9 @@ ACCOUNT = os.environ.get('FAKE_AWS_ACCOUNT', '455986776194')
 TOPIC_ARN = f'arn:aws:sns:us-east-1:{ACCOUNT}:comp-alerts'
 
 if (service, operation) == ('sts', 'get-caller-identity'):
+    if opt('--query') == '[Account, Arn]':  # release.sh: the account and the caller ARN, as text
+        default_arn = f'arn:aws:sts::{ACCOUNT}:assumed-role/comp-release-test/operator'
+        out(f"{ACCOUNT}\t{os.environ.get('FAKE_AWS_ARN', default_arn)}")
     out(ACCOUNT)
 
 # ---------------------------------------------------------------- iam

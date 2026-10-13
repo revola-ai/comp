@@ -10,7 +10,8 @@
 # follows: comp-log (the server's log path), comp-result lines and comp-end.
 
 INSTANCE_ID=""
-REMOTE_CODE=0    # the step's exit status (1 when SSM itself failed)
+OPERATOR=""      # the caller ARN of these credentials, sent with each step (OPERATOR_RE, lib/server-common.sh)
+REMOTE_CODE=0   # the step's exit status (1 when SSM itself failed)
 REMOTE_STATUS="" # how SSM says the command ended (Success, Failed, TimedOut, Cancelled...)
 REMOTE_ENDED=""  # set when the server's end marker (comp-end) arrived
 REMOTE_LOG=""    # the server's log of the last step, when it reported one
@@ -71,11 +72,17 @@ resolve_pushed() {
   TAG="${FULL_SHA:0:12}"
 }
 
-# connect: the account check, then INSTANCE_ID of the one running comp-server.
+# connect: the account check and OPERATOR (the caller ARN, which the server records with each
+# step it runs; not a secret: it names who ran it), then INSTANCE_ID of the one running comp-server.
 connect() {
-  capture aws sts get-caller-identity --query Account --output text --region "$REGION" ||
+  local account arn
+  capture aws sts get-caller-identity --query '[Account, Arn]' --output text --region "$REGION" ||
     die "could not read the caller identity: $ERR"
-  [[ "$OUT" == "$ACCOUNT" ]] || die "these credentials are for account $OUT, not $ACCOUNT; refusing"
+  read -r account arn <<<"$OUT" || true
+  [[ "$account" == "$ACCOUNT" ]] || die "these credentials are for account $account, not $ACCOUNT; refusing"
+  [[ "$arn" =~ $OPERATOR_RE ]] ||
+    die "the caller identity '$arn' is not the ARN of an IAM user, role or assumed-role session; refusing"
+  OPERATOR="$arn"
   capture aws ec2 describe-instances \
     --filters "Name=tag:Name,Values=$NAME" Name=instance-state-name,Values=running \
     --query 'Reservations[].Instances[].InstanceId' --output text --region "$REGION" ||
@@ -222,13 +229,14 @@ unchanged() {
 }
 
 # step <step> <timeout> <run-id> <new|own> <sha|-> <script> [args...]: a server step through
-# on-server/entry.sh, with its log named after <step> and the run's tag; prints where the log is.
+# on-server/entry.sh, with its log named after <step> and the run's tag, and OPERATOR as the one
+# who runs it; prints where the log is.
 step() {
   local name="$1" timeout="$2" run="$3" lease="$4" sha="$5" log
   shift 5
   log="$(step_name "$name" "$TAG").log"
   CUT_SHORT="" INFLIGHT_STEP="$name" INFLIGHT_LOG="$log"
-  remote "comp release.sh $name${TAG:+ $TAG}" "$timeout" entry "$log" "$run" "$lease" "$sha" "$@"
+  remote "comp release.sh $name${TAG:+ $TAG}" "$timeout" entry "$log" "$run" "$OPERATOR" "$lease" "$sha" "$@"
   if [[ -n "$CUT_SHORT" ]]; then
     echo "Full log: /opt/comp/logs/$log (fetch it with: deploy/server/release.sh logs --release $log)"
   elif [[ -n "$REMOTE_LOG" ]]; then

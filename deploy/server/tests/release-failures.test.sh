@@ -80,7 +80,7 @@ check "restore up fails too: never claims the server did not report" bash -c "! 
 reset_server
 released "$TAG_A"
 COMP_ROOT="$SERVER" bash "$SERVER_DIR/on-server/entry.sh" "20261007T120000Z-release-$TAG_B.log" \
-  "20261007T120000Z-release-$TAG_B-0123abcd" new "$SHA_B" release up release "$TAG_B" >"$TMP/unbuilt.out" 2>&1
+  "20261007T120000Z-release-$TAG_B-0123abcd" "$OPERATOR" new "$SHA_B" release up release "$TAG_B" >"$TMP/unbuilt.out" 2>&1
 check "up with an image missing since the build: refused" test "$?" -eq 1
 check "up with an image missing since the build: says to release again" \
   grep -qF "(removed since the build step?); release $TAG_B again, which builds them" "$TMP/unbuilt.out"

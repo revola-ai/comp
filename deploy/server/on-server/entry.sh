@@ -3,8 +3,11 @@
 # release.sh sends lib/server-common.sh and this file as the text of one SSM command, so it runs
 # as root on any server, even one whose checkout predates it:
 #
-#   entry.sh <log-name> <run-id> <new|own> <sha|-> <script> [args...]
+#   entry.sh <log-name> <run-id> <operator> <new|own> <sha|-> <script> [args...]
 #
+# <operator> is the caller ARN of the laptop that sent the step (OPERATOR_RE in
+# lib/server-common.sh): a malformed one is refused before anything else, and the step's script
+# gets it as COMP_OPERATOR, which record() writes into each releases.log line.
 # 1. Takes the server lock (flock on /opt/comp/release.lock), so release, rollback, migrate,
 #    trigger, prune and unlock run one at a time: a "new" step never waits (a second caller fails
 #    at once); an "own" step (finish, revert, unlock of a run) waits up to OWN_LOCK_SECONDS,
@@ -29,8 +32,8 @@
 #    must read what BuildKit copies), then made world-readable (readable_tree). Logs, env
 #    files, snapshots, lock and lease stay 077. Without a sha, the step runs from /opt/comp/src:
 #    the scripts of the serving release.
-# 5. Runs deploy/server/on-server/<script>.sh [args...] from that checkout, with COMP_RUN_ID and
-#    COMP_SHA (the full sha, or empty).
+# 5. Runs deploy/server/on-server/<script>.sh [args...] from that checkout, with COMP_RUN_ID,
+#    COMP_OPERATOR and COMP_SHA (the full sha, or empty).
 # 6. Prints the end of the log (200 lines, at most 20000 bytes: SSM keeps 24000 characters),
 #    then the lines release.sh reads (see `meta`), and exits with the script's status.
 # Exit 75: the lock or the lease belongs to another run; nothing was done. Whenever a step
@@ -51,13 +54,15 @@ refuse() { # refuse <status> <message>: before the log exists, so before any cha
   exit "$1"
 }
 
-if (($# < 5)); then
-  refuse 2 "usage: entry.sh <log-name> <run-id> <new|own> <sha|-> <script> [args...]"
+if (($# < 6)); then
+  refuse 2 "usage: entry.sh <log-name> <run-id> <operator> <new|own> <sha|-> <script> [args...]"
 fi
-log_name="$1" run_id="$2" lease_mode="$3" sha="$4" script="$5"
-shift 5
+log_name="$1" run_id="$2" operator="$3" lease_mode="$4" sha="$5" script="$6"
+shift 6
 [[ "$log_name" == *.log && "${log_name%.log}" =~ $STEP_NAME_RE ]] || refuse 2 "bad log name '$log_name'"
 [[ "$run_id" =~ $RUN_ID_RE ]] || refuse 2 "bad run id '$run_id'"
+[[ "$operator" =~ $OPERATOR_RE ]] || refuse 2 "bad operator '$operator' (not the caller ARN of release.sh's credentials)"
+export COMP_OPERATOR="$operator"
 [[ "$lease_mode" == new || "$lease_mode" == own ]] || refuse 2 "bad lease mode '$lease_mode'"
 [[ "$sha" == - || "$sha" =~ ^[0-9a-f]{40}$ ]] || refuse 2 "bad sha '$sha'"
 [[ "$script" =~ ^[a-z]+$ ]] || refuse 2 "bad script name '$script'"

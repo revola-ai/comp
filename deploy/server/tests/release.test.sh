@@ -68,7 +68,7 @@ status=$?
 cp -f "$FAKE_AWS_LOG" "$TMP/ok.aws.log"
 check "release: exits zero" test "$status" -eq 0
 check "release: checks the account first" test "$(sed -n 1p "$FAKE_AWS_LOG")" = \
-  "aws sts get-caller-identity --query Account --output text --region us-east-2"
+  "aws sts get-caller-identity --query '[Account, Arn]' --output text --region us-east-2"
 check "release: finds the one running comp-server" test "$(sed -n 2p "$FAKE_AWS_LOG")" = \
   "aws ec2 describe-instances --filters Name=tag:Name,Values=comp-server Name=instance-state-name,Values=running --query 'Reservations[].Instances[].InstanceId' --output text --region us-east-2"
 check "release: three SSM commands (build, up, finish)" test "$(ssm_sends)" -eq 3
@@ -77,11 +77,11 @@ check "release: the build step may take 2 hours" test "$(ssm_call 1 timeout)" = 
 check "release: the up step 40 minutes (two renders, migration status, three 600 s waits)" test "$(ssm_call 2 timeout)" = 2400
 check "release: delivery timeout 600 s" test "$(ssm_call 1 delivery)" = 600
 check "release: step 1 builds from the checkout of the full SHA" grep -qE \
-  "^[0-9]{8}T[0-9]{6}Z-build-$TAG_B\.log [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} new $SHA_B build $TAG_B\$" <<<"$(ssm_call 1 args)"
+  "^[0-9]{8}T[0-9]{6}Z-build-$TAG_B\.log [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} $OPERATOR new $SHA_B build $TAG_B\$" <<<"$(ssm_call 1 args)"
 check "release: step 2 brings it up under the same run" test "$(ssm_call 2 args | cut -d' ' -f2-)" = \
-  "$(ssm_call 1 args | cut -d' ' -f2) new $SHA_B release up release $TAG_B"
+  "$(ssm_call 1 args | cut -d' ' -f2) $OPERATOR new $SHA_B release up release $TAG_B"
 check "release: step 3 records it under the same run" grep -qE \
-  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} own $SHA_B release finish release $TAG_B\$" <<<"$(ssm_call 3 args)"
+  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} $OPERATOR own $SHA_B release finish release $TAG_B\$" <<<"$(ssm_call 3 args)"
 check "release: polls each command until it ends" test "$(grep -c "^aws ssm get-command-invocation --command-id fake-command-[012] --instance-id $INSTANCE --output json --region us-east-2\$" "$FAKE_AWS_LOG")" -eq 6
 check "release: the server fetches every branch of the fork by URL" \
   has_line "$FAKE_GIT_LOG" "git -C $SERVER/src fetch --quiet $FORK +refs/heads/*:refs/remotes/origin/*"
@@ -221,7 +221,7 @@ released "$TAG_A"
 FAKE_CURL_BAD_TAG="$TAG_B" release_sh "$TMP/smoke.out" release "$SHA_B"
 check "failed smoke: exits non-zero" test "$?" -ne 0
 check "failed smoke: second SSM command reverts under the same run" grep -qE \
-  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 3 args)"
+  "^$LOG_NAME_RE [0-9]{8}T[0-9]{6}Z-release-$TAG_B-[0-9a-f]{8} $OPERATOR own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 3 args)"
 check "failed smoke: the new tag went up, then the previous one" test "$(container_changes)" = "$(printf '%s\n' \
   "TAG=$TAG_B $COMPOSE_ARGV up -d --no-build --wait --wait-timeout 600" \
   "TAG=$TAG_A $COMPOSE_ARGV up -d --no-build --wait --wait-timeout 600")"

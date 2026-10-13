@@ -25,7 +25,7 @@ check "Ctrl-C during up: exits non-zero" test "$?" -ne 0
 check "Ctrl-C during up: says so" said "$TMP/up.out" "interrupted (INT)"
 check "Ctrl-C during up: never cancels the up step" test "$(cancels)" -eq 0
 check "Ctrl-C during up: waits for it, then reverts under the same run" grep -qE \
-  "^$LOG_RE $RUN_RE own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 3 args)"
+  "^$LOG_RE $RUN_RE $OPERATOR own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 3 args)"
 check "Ctrl-C during up: no finish (build, up, then revert)" test "$(ssm_sends)" -eq 3
 check "Ctrl-C during up: the new tag came up, then the previous one" test "$(container_changes)" = \
   "$(printf '%s\n' "TAG=$TAG_B $COMPOSE_ARGV $UP" "TAG=$TAG_A $COMPOSE_ARGV $UP")"
@@ -39,14 +39,14 @@ released "$TAG_A"
 FAKE_CURL_INTERRUPT=TERM release_sh "$TMP/smoke.out" release "$SHA_B"
 check "SIGTERM during the smoke checks: exits non-zero" test "$?" -ne 0
 check "SIGTERM during the smoke checks: says so" said "$TMP/smoke.out" "interrupted (TERM)"
-check "SIGTERM during the smoke checks: reverts" grep -qE " own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 3 args)"
+check "SIGTERM during the smoke checks: reverts" grep -qE " $OPERATOR own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 3 args)"
 check "SIGTERM during the smoke checks: serving the previous tag" test "$(serving)" = "comp-api:$TAG_A"
 check "SIGTERM during the smoke checks: recorded as rolled back" test "$(last_record)" = "release $TAG_B rolled-back"
 
 reset_server
 FAKE_AWS_INTERRUPT="HUP@fake-command-1" release_sh "$TMP/first.out" release "$SHA_B"
 check "closed terminal during a first release: exits non-zero" test "$?" -ne 0
-check "closed terminal during a first release: reverts" grep -qE " own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 3 args)"
+check "closed terminal during a first release: reverts" grep -qE " $OPERATOR own $SHA_B release revert release $TAG_B\$" <<<"$(ssm_call 3 args)"
 check "closed terminal during a first release: stops the stack" test "$(serving)" = none
 check "closed terminal during a first release: says the site is down" said "$TMP/first.out" "THE SITE IS DOWN"
 check "closed terminal during a first release: recorded as failed" test "$(last_record)" = "release $TAG_B failed"
@@ -230,7 +230,7 @@ check "Ctrl-C while rollback reads the tags: nothing else sent" test "$(ssm_send
 reset_server
 released "$TAG_A" "$TAG_B"
 FAKE_AWS_INTERRUPT="INT@fake-command-1" release_sh "$TMP/rollback.out" rollback
-check "Ctrl-C during a rollback's up: reverts" grep -qE " own - release revert rollback $TAG_A\$" <<<"$(ssm_call 3 args)"
+check "Ctrl-C during a rollback's up: reverts" grep -qE " $OPERATOR own - release revert rollback $TAG_A\$" <<<"$(ssm_call 3 args)"
 check "Ctrl-C during a rollback's up: serving the tag from before" test "$(serving)" = "comp-api:$TAG_B"
 check "Ctrl-C during a rollback's up: recorded as rolled back" test "$(last_record)" = "rollback $TAG_A rolled-back"
 
@@ -259,7 +259,7 @@ release_typed "unlock" "$TMP/u-yes.out" unlock
 check "unlock: exits zero" test "$?" -eq 0
 check "unlock: asks for the word unlock" said "$TMP/u-yes.out" "Type unlock"
 check "unlock: removes the lease under that run" grep -qE \
-  "^[0-9]{8}T[0-9]{6}Z-unlock-$TAG_C\.log 20261007T120000Z-release-$TAG_C-0123abcd own - release unlock release $TAG_C\$" <<<"$(ssm_call 2 args)"
+  "^[0-9]{8}T[0-9]{6}Z-unlock-$TAG_C\.log 20261007T120000Z-release-$TAG_C-0123abcd $OPERATOR own - release unlock release $TAG_C\$" <<<"$(ssm_call 2 args)"
 check "unlock: the lease is gone" test ! -e "$SERVER/release.lease"
 check "unlock: recorded" test "$(last_record)" = "release $TAG_C unlocked"
 check "unlock: no container changed" test -z "$(container_changes)"

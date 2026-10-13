@@ -33,10 +33,12 @@
 # the previous ok tag back by itself. Before the containers change nothing live does: an up
 # refused before then drops its staged configuration, so the snapshots, the containers and
 # /opt/comp/src stay as they were (comp-result: changed=no). Every attempt adds one line to
-# /opt/comp/releases.log, "<utc> <action> <sha12> <outcome>", the outcome ok, failed,
-# rolled-back, rolled-back-fresh or unlocked (migrate.sh
-# and trigger.sh add "migrate" and "trigger" lines, ok or failed); the current tag is the top of
-# the serving history (lib/server-common.sh). The serving tag after a step is printed as
+# /opt/comp/releases.log, "<utc> <action> <sha12> <outcome> <operator>", the outcome ok, failed,
+# rolled-back, rolled-back-fresh or unlocked, the operator the caller ARN of the laptop command
+# that ran the step (COMP_OPERATOR from entry.sh; not a secret; "-" without one; older lines have
+# only the first four fields, which are all any reader uses). migrate.sh and trigger.sh add
+# "migrate" and "trigger" lines, ok or failed, and build.sh a failed release; the current tag is
+# the top of the serving history (lib/server-common.sh). The serving tag after a step is printed as
 # "comp-result: serving=<tag>" (none: the site is down; unknown: see the log).
 # Exit: 0 done; 1 failed before any container changed (or finish could not pin the commit or
 # keep the configuration); 3 migrations pending or failed; 4 the previous tag serves again; 5

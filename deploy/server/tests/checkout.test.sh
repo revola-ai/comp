@@ -128,10 +128,10 @@ RUN="20261007T120000Z-release-$TAG_B-0123abcd"
 reset_server
 released "$TAG_A"
 docker_state "s['images'] += ['comp-api:$TAG_B', 'comp-app:$TAG_B', 'comp-portal:$TAG_B', 'comp-migrate:$TAG_B']"
-entry "20261007T120000Z-release-$TAG_B.log" "$RUN" new "$SHA_B" release up release "$TAG_B"
+entry "20261007T120000Z-release-$TAG_B.log" "$RUN" "$OPERATOR" new "$SHA_B" release up release "$TAG_B"
 check "the up step leaves its checkout for the run" test "$?:$(adds):$(sed -n 's/^HEAD: //p' "$SERVER/work/$TAG_B/.git" 2>/dev/null)" = "0:1:$SHA_B"
 printf 'gitdir: x\nHEAD: %s\n' "$SHA_D" >"$SERVER/work/$TAG_B/.git"
-entry "20261007T120100Z-finish-$TAG_B.log" "$RUN" own "$SHA_B" release finish release "$TAG_B"
+entry "20261007T120100Z-finish-$TAG_B.log" "$RUN" "$OPERATOR" own "$SHA_B" release finish release "$TAG_B"
 check "a checkout at another commit is checked out again, not reused" \
   test "$?:$(adds):$(last_record)" = "0:2:release $TAG_B ok"
 

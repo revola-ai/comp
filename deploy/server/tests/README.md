@@ -18,6 +18,7 @@ bash deploy/server/tests/interrupt.test.sh    # INT, TERM and HUP before and aft
 bash deploy/server/tests/snapshot.test.sh     # per-release configuration snapshots: revert, rollback, refusals (a key missing from the secret, a serving tag without one), prune, staged configurations left behind, a snapshot that no longer comes up (rendered again)
 bash deploy/server/tests/release-failures.test.sh   # abnormal endings, cut-short output, failed state writes, a lapsed lease, slow or lost SSM answers
 bash deploy/server/tests/checkout.test.sh     # /opt/comp/src following the serving release (a warning when it cannot, status, rollback refusing), pinned releases, the run worktree finish and revert reuse
+bash deploy/server/tests/operator.test.sh     # the operator (caller ARN) in every releases.log line, malformed ones refused on the laptop and the server, four-field lines from before
 (cd deploy/server && bun test)                # push-secrets: sources, refusals, diff, create or put, terminal; workspace; one .keys grammar and one edge-whitespace set with render-env
 ```
 

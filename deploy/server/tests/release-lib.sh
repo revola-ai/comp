@@ -22,6 +22,9 @@ INSTANCE=i-0fake000000000001
 SERVER="$TMP/server"
 TUNNEL_REF='cloudflare/cloudflared:<none>' # how `docker image ls` shows a digest-pinned pull
 COMPOSE_ARGV="docker compose -f CONFIG" # any compose file, as docker_log shows it
+# The caller ARN the fake aws reports by default (FAKE_AWS_ARN): the operator of every step.
+# shellcheck disable=SC2034 # used by the tests that source this file
+OPERATOR="arn:aws:sts::455986776194:assumed-role/comp-release-test/operator"
 
 install_release_fakes() {
   install_fake_aws
@@ -110,7 +113,7 @@ reset_server() {
     FAKE_AWS_INTERRUPT FAKE_SSM_CANCEL FAKE_CURL_INTERRUPT FAKE_DF_USE FAKE_DOCKER_FAIL_PRUNE \
     FAKE_AWK_INTERRUPT FAKE_TIMEOUT_EXPIRE FAKE_CURL_BAD_ENV FAKE_CLOCK FAKE_CURL_SLOW \
     FAKE_DOCKER_FAIL_MIGRATE FAKE_CURL_JUMP FAKE_SSM_NOT_YET FAKE_GIT_GONE FAKE_GIT_FAIL_CHECKOUT \
-    FAKE_GIT_FAIL_UPDATE_REF FAKE_GIT_WORKTREE_ADDS FAKE_DOCKER_UNHEALTHY_ENV
+    FAKE_GIT_FAIL_UPDATE_REF FAKE_GIT_WORKTREE_ADDS FAKE_DOCKER_UNHEALTHY_ENV FAKE_AWS_ARN
 }
 
 overlay() { # overlay <full sha> <path in the repository>: stdin is that file at <sha> (fake git)
@@ -190,7 +193,7 @@ up_configs() {
 }
 container_changes() { docker_log | grep -E "^TAG=[^ ]+ $COMPOSE_ARGV (up|stop)( |$)"; }
 ssm_sends() { grep -c '^aws ssm send-command ' "$FAKE_AWS_LOG"; }
-last_record() { tail -n 1 "$SERVER/releases.log" | cut -d' ' -f2-; }
+last_record() { tail -n 1 "$SERVER/releases.log" | cut -d' ' -f2-4; } # action, tag, outcome
 
 # ssm_call <n> <field>: from the n-th send-command (1-based): "timeout" (executionTimeout),
 # "args" (the arguments the inline script runs with), "comment" or "delivery".

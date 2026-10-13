@@ -28,6 +28,12 @@ STEP_NAME_RE='^[0-9]{8}T[0-9]{6}Z-[a-z]+(-[a-z]+)?(-[0-9a-f]{12})?$'
 # A run: the name of its first step and 8 random hex characters, unique per operator.
 RUN_ID_RE='^[0-9]{8}T[0-9]{6}Z-[a-z]+(-[0-9a-f]{12})?-[0-9a-f]{8}$'
 TAG_RE='^[0-9a-f]{12}$'
+# The operator of a step: the caller ARN of the laptop's AWS credentials (an IAM user or role, or
+# an assumed-role session), which release.sh reads with sts get-caller-identity and entry.sh gets
+# as an argument. It is not a secret (it names a principal and its session, nothing that grants
+# access), so it may sit in a command line, a log and releases.log; this pattern keeps it to one
+# word of plain characters, so it can never split a releases.log line or reach a shell as code.
+OPERATOR_RE='^arn:aws:(iam|sts)::[0-9]{12}:[A-Za-z0-9+=,.@_/:-]+$'
 STACK_IMAGES=(api app portal)
 
 result() { printf 'comp-result: %s\n' "$*"; } # a line release.sh reads back from the output
@@ -37,11 +43,15 @@ utc_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # root_use_percent: the use of / in percent, digits only (df -P prints "73%").
 root_use_percent() { df -P / | awk 'NR == 2 { sub(/%$/, "", $5); print $5 }'; }
 
-# record <action> <sha12> <outcome>: one line per attempt in releases.log; fails, saying so,
-# when the line could not be written (a full disk, a read-only file). Every state write here
-# reports its own failure, so a caller only decides what the failure means for its step.
+# record <action> <sha12> <outcome>: one line per attempt in releases.log, "<utc> <action>
+# <sha12> <outcome> <operator>", the operator COMP_OPERATOR (entry.sh exports it), or "-" without
+# a valid one (lines from before the field have four fields; every reader uses the first four).
+# Fails, saying so, when the line could not be written (a full disk, a read-only file). Every
+# state write here reports its own failure, so a caller only decides what it means for its step.
 record() {
-  printf '%s %s %s %s\n' "$(utc_now)" "$1" "$2" "$3" 2>/dev/null >>"$RELEASES_LOG" && return 0
+  local operator="${COMP_OPERATOR:--}"
+  [[ "$operator" =~ $OPERATOR_RE ]] || operator=-
+  printf '%s %s %s %s %s\n' "$(utc_now)" "$1" "$2" "$3" "$operator" 2>/dev/null >>"$RELEASES_LOG" && return 0
   echo "COULD NOT RECORD '$1 $2 $3' in $RELEASES_LOG (a full disk or a read-only file?)"
   return 1
 }

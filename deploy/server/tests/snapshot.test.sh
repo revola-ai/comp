@@ -253,9 +253,9 @@ RUN="20261007T120000Z-release-$TAG_B-0123abcd"
 reset_server
 released "$TAG_A"
 docker_state "s['images'] += ['comp-api:$TAG_B', 'comp-app:$TAG_B', 'comp-portal:$TAG_B', 'comp-migrate:$TAG_B']"
-entry "20261007T120000Z-release-$TAG_B.log" "$RUN" new "$SHA_B" release up release "$TAG_B"
+entry "20261007T120000Z-release-$TAG_B.log" "$RUN" "$OPERATOR" new "$SHA_B" release up release "$TAG_B"
 left_behind "20261007T110000Z-trigger-$TAG_B-0123abcd"
-entry "20261007T120100Z-finish-$TAG_B.log" "$RUN" own "$SHA_B" release finish release "$TAG_B"
+entry "20261007T120100Z-finish-$TAG_B.log" "$RUN" "$OPERATOR" own "$SHA_B" release finish release "$TAG_B"
 check "the lease holder's staged configuration is spared: finish keeps it as the snapshot" \
   test "$?:$(last_record):$(cat "$SERVER/releases/$TAG_B/sha" 2>/dev/null)" = "0:release $TAG_B ok:$SHA_B"
 check "the lease holder's run spared, the other cleared" empty_dir "$SERVER/stage"
