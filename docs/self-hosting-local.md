@@ -125,6 +125,15 @@ The schema flow:
 
 Until `release.sh migrate` exists, Kyle applies reviewed migrations to the shared database by hand, after review, from `packages/db`: `COMP_I_AM_TOUCHING_PROD=1 bunx prisma migrate deploy`.
 Nobody runs new code that needs a migration the shared database does not have yet: the API, app and portal query the new columns and fail with "column does not exist" until it is applied (for example `ApiKey.organizationOwned`, which API-key validation and member offboarding read).
+
+#### Release order: migrations first, then the image
+
+Every release applies its migrations to the shared database before any new API, app or portal image (or laptop build) runs against it.
+Migrations here are additive, so the running old images keep working on the migrated database; the reverse order breaks the new image.
+The API checks this at boot: it reads one API key with every column API-key validation selects, and when one is missing it refuses to start with `ApiKeySchemaOutOfDateError` ("The database is missing ApiKey.<column> ... Apply the pending migrations before deploying this image").
+On ECS the new task then never becomes healthy and the old one keeps serving; apply the migrations and redeploy the same image.
+An unreachable database at boot is only a warning, since it says nothing about the schema.
+Migrations `20261006063557` to `20261013130000` (the `ApiKey` columns `organizationOwned` and `legacyCreatorless`, and the API-key revocation triggers) are the current example: apply them before deploying an API image that contains them.
 The onboarding advice below to skip the migrate step holds only once every committed migration has been applied this way.
 
 Moving an existing local database to Supabase (done once, 2026-09-16):
