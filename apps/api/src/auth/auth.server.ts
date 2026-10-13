@@ -33,6 +33,7 @@ import {
 } from './origin-policy';
 import { getCookieDomain } from './cookie-domain';
 import { assertEdgeSecrets } from './edge-secrets';
+import { assertMicrosoftTenant, microsoftTenantId } from './microsoft-tenant';
 import {
   createAllowlistedMagicLinkSender,
   createEmailDomainAllowlistHook,
@@ -142,7 +143,9 @@ if (
   socialProviders.microsoft = {
     clientId: process.env.AUTH_MICROSOFT_CLIENT_ID,
     clientSecret: process.env.AUTH_MICROSOFT_CLIENT_SECRET,
-    tenantId: process.env.AUTH_MICROSOFT_TENANT_ID || 'common',
+    // One Entra tenant whenever AUTH_ALLOWED_EMAIL_DOMAINS is set (checked at
+    // boot below, ./microsoft-tenant.ts).
+    tenantId: microsoftTenantId({ env: process.env }),
     prompt: 'select_account',
     // Microsoft Entra often omits the `email` claim for work/school accounts,
     // which makes better-auth abort sign-in with `email_not_found`. Fall back to
@@ -159,6 +162,7 @@ if (
 // production deployment, when an edge secret is missing (./edge-secrets.ts).
 const cookieDomain = getCookieDomain({ env: process.env });
 assertEdgeSecrets({ env: process.env });
+assertMicrosoftTenant({ env: process.env });
 
 // ── Hosted MCP (Speakeasy Gram) OAuth ────────────────────────────────────────
 // The MCP server is hosted on Gram. Gram obtains an OAuth access token from this
@@ -539,7 +543,11 @@ export const auth = betterAuth({
     modelName: 'Account',
     accountLinking: {
       enabled: true,
-      trustedProviders: ['google', 'github', 'microsoft'],
+      // Trusted providers link to an existing account by email without a
+      // verified-email claim. Microsoft may supply a username claim as the
+      // email (./microsoft-email.ts); GitHub still links whenever it reports
+      // the address verified, so only Google is trusted.
+      trustedProviders: ['google'],
     },
     // Skip the state cookie CSRF check for OAuth flows.
     // In our cross-origin setup (app/portal → API), the state cookie may not
