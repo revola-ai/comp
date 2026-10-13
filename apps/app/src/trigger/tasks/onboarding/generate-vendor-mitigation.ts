@@ -1,8 +1,7 @@
 import { isOrgParticipant } from '@/lib/org-participation-rule';
 import { VendorStatus, db } from '@db/server';
 import { logger, metadata, queue, tags, task, tasks } from '@trigger.dev/sdk';
-import axios from 'axios';
-import { getRevalidateUrl } from '../../lib/revalidate-url';
+import { revalidateAppPath } from '../../lib/revalidate-app-path';
 import {
   createVendorRiskComment,
   findCommentAuthor,
@@ -90,16 +89,7 @@ export const generateVendorMitigation = task({
     metadataHandle.decrement('vendorsRemaining', 1);
 
     // Revalidate the vendor detail page so the new comment shows up
-    try {
-      const detailPath = `/${organizationId}/vendors/${vendorId}`;
-      await axios.post(getRevalidateUrl(), {
-        path: detailPath,
-        secret: process.env.REVALIDATION_SECRET,
-      });
-      logger.info(`Revalidated vendor path: ${detailPath}`);
-    } catch (e) {
-      logger.error('Failed to revalidate vendor paths after mitigation', { e });
-    }
+    await revalidateAppPath({ path: `/${organizationId}/vendors/${vendorId}` });
   },
 });
 
@@ -153,15 +143,6 @@ export const generateVendorMitigationsForOrg = task({
     }
 
     // Revalidate the parent vendors route after batch triggering
-    try {
-      const parentPath = `/${organizationId}/vendors`;
-      await axios.post(getRevalidateUrl(), {
-        path: parentPath,
-        secret: process.env.REVALIDATION_SECRET,
-      });
-      logger.info(`Revalidated vendors parent path: ${parentPath}`);
-    } catch (e) {
-      logger.error('Failed to revalidate vendors parent path after batch', { e });
-    }
+    await revalidateAppPath({ path: `/${organizationId}/vendors` });
   },
 });
