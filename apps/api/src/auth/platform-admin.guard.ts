@@ -50,13 +50,17 @@ export class PlatformAdminGuard implements CanActivate {
     }
 
     // A bearer token is looked up in the database as it is, so it takes an
-    // attempt of the verified client IP bucket first (429 once the bucket is
-    // full, with no lookup), given back once the lookup accepts it or the
+    // attempt of the verified client IP bucket and of that token from that IP
+    // first (429 once either is full, with no lookup), given back once the lookup accepts it or the
     // credential store is down; the same rule as HybridAuthGuard. Cookies are
     // signed, so a forged one is refused before any lookup, and cookie-only
     // requests never take an attempt.
     const release = authHeader
-      ? credentialAttemptTaker({ limiter: this.attemptLimiter, context })()
+      ? credentialAttemptTaker({
+          limiter: this.attemptLimiter,
+          context,
+          credential: authHeader,
+        })()
       : () => undefined;
     // A database outage answers 503 (with Retry-After), never 401 or 500.
     const storeOutage = (error: unknown): never => {

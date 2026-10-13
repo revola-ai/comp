@@ -28,11 +28,16 @@ jest.mock('@db', () => ({
   db: { user: { findUnique: (...args: unknown[]) => mockFindUser(...args) } },
 }));
 
-import { AUTH_FAILURE_LIMIT, AuthFailureLimiter } from './auth-failure-limiter';
+import {
+  AUTH_FAILURE_CREDENTIAL_LIMIT,
+  AUTH_FAILURE_LIMIT,
+  AuthFailureLimiter,
+} from './auth-failure-limiter';
 import { ThrottleModule } from './throttle.module';
 
 const ORIGIN = 'D'.repeat(64);
 const N = AUTH_FAILURE_LIMIT;
+const PER_CREDENTIAL = AUTH_FAILURE_CREDENTIAL_LIMIT;
 const ADMIN_TOKEN = 'admin-session-token';
 const USER_TOKEN = 'user-session-token';
 const SESSION_USERS: Record<string, { id: string; role: string | null }> = {
@@ -164,11 +169,12 @@ describe('credential attempt limit on platform admin routes (PlatformAdminGuard)
         Authorization: 'Bearer junk',
         Cookie: `better-auth.session_token=${ADMIN_TOKEN}`,
       });
+    // One repeated token: refused once its own allowance (per IP) is used.
     const statuses: number[] = [];
-    for (let i = 0; i < N; i += 1) {
+    for (let i = 0; i < PER_CREDENTIAL; i += 1) {
       statuses.push((await both('203.0.113.40')).status);
     }
-    expect(statuses).toEqual(Array(N).fill(401));
+    expect(statuses).toEqual(Array(PER_CREDENTIAL).fill(401));
     mockGetSession.mockClear();
     expect((await both('203.0.113.40')).status).toBe(429);
     expect(mockGetSession).not.toHaveBeenCalled();
@@ -207,7 +213,7 @@ describe('credential attempt limit on platform admin routes (PlatformAdminGuard)
 
   it('keeps the attempt when the session lookup fails for another reason', async () => {
     mockGetSession.mockRejectedValue(new TypeError('unexpected'));
-    for (let i = 0; i < N; i += 1) {
+    for (let i = 0; i < PER_CREDENTIAL; i += 1) {
       expect((await withBearer('203.0.113.52', ADMIN_TOKEN)).status).toBe(500);
     }
     expect((await withBearer('203.0.113.52', ADMIN_TOKEN)).status).toBe(429);

@@ -49,11 +49,16 @@ jest.mock('@trycompai/auth', () => ({
   BUILT_IN_ROLE_PERMISSIONS: { admin: { app: ['read'] } },
 }));
 
-import { AUTH_FAILURE_LIMIT, AuthFailureLimiter } from './auth-failure-limiter';
+import {
+  AUTH_FAILURE_CREDENTIAL_LIMIT,
+  AUTH_FAILURE_LIMIT,
+  AuthFailureLimiter,
+} from './auth-failure-limiter';
 import { ThrottleModule } from './throttle.module';
 
 const ORIGIN = 'C'.repeat(64);
 const N = AUTH_FAILURE_LIMIT;
+const PER_CREDENTIAL = AUTH_FAILURE_CREDENTIAL_LIMIT;
 const VALID_SESSION_TOKEN = 'valid-session-token';
 const VALID_MCP_TOKEN = 'valid-mcp-token';
 const GRAM_CLIENT_ID = 'gram-client-id';
@@ -230,11 +235,12 @@ describe('credential attempt limit for bearer tokens (HybridAuthGuard)', () => {
         Authorization: 'Bearer junk',
         Cookie: `better-auth.session_token=${VALID_SESSION_TOKEN}`,
       });
+    // One repeated token: refused once its own allowance (per IP) is used.
     const statuses: number[] = [];
-    for (let i = 0; i < N; i += 1) {
+    for (let i = 0; i < PER_CREDENTIAL; i += 1) {
       statuses.push((await both('198.51.100.70')).status);
     }
-    expect(statuses).toEqual(Array(N).fill(401));
+    expect(statuses).toEqual(Array(PER_CREDENTIAL).fill(401));
     mockGetSession.mockClear();
     mockGetMcpSession.mockClear();
     expect((await both('198.51.100.70')).status).toBe(429);
@@ -247,14 +253,14 @@ describe('credential attempt limit for bearer tokens (HybridAuthGuard)', () => {
       await withBearer('198.51.100.80', `junk-${i}`);
     }
     const statuses: number[] = [];
-    for (let i = 0; i < N + 5; i += 1) {
+    for (let i = 0; i < 10; i += 1) {
       const response = await send('198.51.100.80', {
         Authorization: 'Bearer unsigned.signature',
         Cookie: `better-auth.session_token=${VALID_SESSION_TOKEN}`,
       });
       statuses.push(response.status);
     }
-    expect(statuses).toEqual(Array(N + 5).fill(200));
+    expect(statuses).toEqual(Array(10).fill(200));
   });
 
   it('gives the attempt of a bearer lookup that hits a credential-store outage back', async () => {
