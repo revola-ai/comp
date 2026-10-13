@@ -95,6 +95,18 @@ for bad in "-" "arn:aws:sts::455986776194:assumed-role/x/;reboot" "arn:aws:sts::
     test ! -e '$SERVER/release.lease' && test '$(last_record)' = 'release $TAG_A ok'"
 done
 
+# record() on its own: without an operator, or with one that is not an ARN, the field is "-".
+reset_server
+for value in unset "bad operator" "$OPERATOR"; do
+  (
+    if [[ "$value" == unset ]]; then unset COMP_OPERATOR; else export COMP_OPERATOR="$value"; fi
+    # shellcheck source=deploy/server/lib/server-common.sh
+    COMP_ROOT="$SERVER" && source "$SERVER_DIR/lib/server-common.sh" && record release "$TAG_B" failed
+  )
+done
+check "record: '-' without a valid operator, the ARN with one" \
+  test "$(cut -d' ' -f2- "$SERVER/releases.log")" = "$(printf 'release %s failed %s\n' "$TAG_B" - "$TAG_B" - "$TAG_B" "$OPERATOR")"
+
 # ---------------------------------------------------------------- lines from before the field
 # released() writes four-field lines, as the server did before; a new line has five.
 reset_server
