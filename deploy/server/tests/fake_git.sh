@@ -18,6 +18,7 @@
 #                      checkout or `worktree add` of one fails unless a ref of FAKE_GIT_REFS pins it
 #   FAKE_GIT_FAIL_CHECKOUT    `checkout` fails (as when the index cannot be written)
 #   FAKE_GIT_FAIL_UPDATE_REF  `update-ref` fails
+#   FAKE_GIT_FAIL_PINS        `for-each-ref` of refs/comp/releases/ (the pins) fails
 #   FAKE_GIT_WORKTREE_ADDS    only this many `worktree add` calls (of the log) succeed (a full disk)
 # Every fetch must name the fork's URL (never a remote name); any other source fails.
 # A checkout (and `worktree add`, which writes the whole tree of FAKE_GIT_TREE) writes the files
@@ -132,6 +133,7 @@ case "${args[0]:-}" in
     ;;
   for-each-ref) # --contains <sha> --format=%(refname) <prefix> | --format=%(refname) refs/comp/releases/
     if [[ "${args[*]:1}" == '--format=%(refname) refs/comp/releases/' ]]; then
+      [[ -z "${FAKE_GIT_FAIL_PINS:-}" ]] || { echo "fatal: could not open '.git/packed-refs': No space left on device" >&2; exit 128; }
       awk '$1 ~ /^refs\/comp\/releases\// { print $1 }' "$refs" 2>/dev/null
       exit 0
     fi

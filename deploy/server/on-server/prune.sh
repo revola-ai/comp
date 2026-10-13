@@ -53,12 +53,17 @@ pinned_tags() { # the tags whose commits are pinned (refs/comp/releases/<tag>, o
   git -C "$COMP_SRC" for-each-ref --format='%(refname)' refs/comp/releases/ | sed -n 's|^refs/comp/releases/||p'
 }
 
+pins_unlisted() { # the warning when the pins cannot be read: snapshots and pins then all stay
+  echo "WARNING: could not list the pinned releases in $COMP_SRC (git for-each-ref failed); no snapshot or pin is pruned this time"
+}
+
 # stale_snapshots: prints, one per line, every tag with a snapshot or a pinned commit that is not
-# a kept tag. Fails when the pins cannot be read.
+# a kept tag. Fails, warning on stderr, when the pins cannot be read (a near-full disk, say): the
+# callers then prune the images and the build cache all the same, and no snapshot or pin.
 stale_snapshots() {
   local keep pins dir tag
   keep="$(kept_tags)"
-  pins="$(pinned_tags)" || { echo "could not list the pinned releases in $COMP_SRC" >&2; return 1; }
+  pins="$(pinned_tags)" || { pins_unlisted >&2; return 1; }
   for tag in $({ for dir in "$COMP_RELEASES"/*; do [[ -d "$dir" ]] && echo "${dir##*/}"; done; echo "$pins"; } | sort -u); do
     [[ "$tag" =~ $TAG_RE ]] || continue
     grep -qxF -- "$tag" <<<"$keep" || echo "$tag"
@@ -70,8 +75,9 @@ stale_snapshots() {
 # does the pin of a snapshot that could not be removed (the step fails, saying so).
 remove_snapshots() {
   local tag pins stale status=0
+  (($# > 0)) || return 0
   stale="$(stale_snapshots)" || return 1
-  pins="$(pinned_tags)" || return 1
+  pins="$(pinned_tags)" || { pins_unlisted; return 1; }
   for tag in "$@"; do
     if ! grep -qxF -- "$tag" <<<"$stale"; then
       if kept_tags | grep -qxF -- "$tag"; then echo "skipping the snapshot of $tag: kept now"; else echo "skipping the snapshot of $tag: gone already"; fi
@@ -97,9 +103,9 @@ remove_snapshots() {
 }
 
 plan() {
-  local remove tunnel ref snapshots
+  local remove tunnel ref snapshots listed=1
   remove="$(removable)" || { echo "could not list the images or containers"; return 1; }
-  snapshots="$(stale_snapshots)" || return 1
+  snapshots="$(stale_snapshots)" || listed=""
   snapshots="$(paste -sd ' ' - <<<"$snapshots")"
   tunnel="$(grep -oE 'docker\.io/cloudflare/cloudflared:[^@[:space:]]+@sha256:[0-9a-f]{64}' "$COMPOSE_FILE" | head -n 1)"
   echo "Keeping the tags of the current release, the last 3 others and the rollback target: $(kept_tags | tr '\n' ' ')"
@@ -111,7 +117,11 @@ plan() {
   else
     echo "Removing no image."
   fi
-  echo "Removing the snapshots (the configurations in $COMP_RELEASES) and pinned commits (refs/comp/releases/<tag>) of: ${snapshots:-no tag}"
+  if [[ -n "$listed" ]]; then
+    echo "Removing the snapshots (the configurations in $COMP_RELEASES) and pinned commits (refs/comp/releases/<tag>) of: ${snapshots:-no tag}"
+  else
+    echo "Removing no snapshot or pin: the pinned releases could not be listed (above)."
+  fi
   echo "Then trimming the build cache to 20 GB: docker builder prune --keep-storage 20GB -f"
   result "remove=$(tr '\n' ' ' <<<"$remove" | sed 's/ *$//')"
   result "snapshots=$snapshots"
@@ -136,7 +146,7 @@ apply() {
 }
 
 auto() {
-  local use remove stale tag snapshots=()
+  local use remove stale tag status=0 snapshots=()
   use="$(root_use_percent)"
   [[ "$use" =~ ^[0-9]+$ ]] || { echo "could not read the disk use of / (df -P /)"; return 1; }
   if ((use <= DISK_PRUNE_PERCENT)); then
@@ -146,10 +156,11 @@ auto() {
   echo "Disk: / is $use% used, over $DISK_PRUNE_PERCENT%: removing old images by the rules of release.sh prune."
   remove="$(removable)" || { echo "could not list the images or containers"; return 1; }
   [[ -n "$remove" ]] || echo "No image to remove."
-  stale="$(stale_snapshots)" || return 1
+  stale="$(stale_snapshots)" || status=1 # the images go all the same
   for tag in $stale; do snapshots+=("snapshot:$tag"); done
   # shellcheck disable=SC2086 # one image ref per word
-  apply $remove "${snapshots[@]}"
+  apply $remove "${snapshots[@]}" || status=1
+  return "$status"
 }
 
 case "${1:-}" in

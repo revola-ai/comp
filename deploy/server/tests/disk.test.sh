@@ -56,6 +56,29 @@ check "a post-release prune that times out: the laptop says so" \
 check "a post-release prune that times out: never a recording failure" bash -c "! grep -qF 'recording it failed' '$TMP/auto-slow.out'"
 check "the finish step reports the recording before it prunes" bash -c "
   log=\$(ls '$SERVER'/logs/*-finish-$TAG_B.log) && grep -n '' \"\$log\" | grep -E 'comp-result: recorded=ok|post-release prune' | head -n 1 | grep -qF recorded=ok"
+# The pins cannot be listed (git for-each-ref in /opt/comp/src fails, as on a full disk): the
+# images still go, and only the snapshots and pins stay, with a warning.
+UNLISTED="WARNING: could not list the pinned releases in $SERVER/src (git for-each-ref failed); no snapshot or pin is pruned this time"
+reset_server
+released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A"
+FAKE_GIT_FAIL_PINS=1 FAKE_DF_USE=90 release_sh "$TMP/auto-nopins.out" release "$SHA_B"
+check "pins unlisted after a release: the release stands" test "$?:$(last_record)" = "0:release $TAG_B ok"
+check "pins unlisted after a release: removes the images all the same" \
+  test "$(sed -n 's/^docker image rm //p' "$FAKE_DOCKER_LOG" | sort)" = "$(sort <<<"$AUTO_REMOVED")"
+check "pins unlisted after a release: trims the build cache" has_line "$FAKE_DOCKER_LOG" "docker builder prune --keep-storage 20GB -f"
+check "pins unlisted after a release: keeps every snapshot, says why" bash -c "grep -qxF '$UNLISTED' '$TMP/auto-nopins.out' &&
+  test \"\$(ls '$SERVER/releases' | tr '\n' ' ')\" = '$TAG_A $TAG_B $TAG_C $TAG_D $TAG_E $TAG_F '"
+check "pins unlisted after a release: the laptop says the prune failed" \
+  grep -qF "Released $TAG_B, but the post-release prune failed" "$TMP/auto-nopins.out"
+reset_server
+released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A" "$TAG_B"
+FAKE_GIT_FAIL_PINS=1 release_typed "prune" "$TMP/prune-nopins.out" prune
+check "pins unlisted: prune lists the images, asks and removes them" bash -c "test $? -eq 0 &&
+  grep -qxF '  comp-api:$TAG_E' '$TMP/prune-nopins.out' && grep -qxF 'removed comp-api:$TAG_E' '$TMP/prune-nopins.out'"
+check "pins unlisted: prune says it removes no snapshot, and why" bash -c "grep -qxF '$UNLISTED' '$TMP/prune-nopins.out' &&
+  grep -qxF 'Removing no snapshot or pin: the pinned releases could not be listed (above).' '$TMP/prune-nopins.out'"
+check "pins unlisted: prune keeps every snapshot" test "$(files_in "$SERVER/releases")" = "$TAG_A $TAG_B $TAG_C $TAG_D $TAG_E $TAG_F"
+
 reset_server
 released "$TAG_F" "$TAG_E" "$TAG_D" "$TAG_C" "$TAG_A" "$TAG_B"
 FAKE_DF_USE=90 release_sh "$TMP/auto-rollback.out" rollback
