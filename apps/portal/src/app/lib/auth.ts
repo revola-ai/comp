@@ -9,7 +9,8 @@
  */
 
 import type { ReadonlyHeaders } from 'next/dist/server/web/spec-extension/adapters/headers';
-import { getServerApiBaseUrl, getServerApiHeaders } from './server-api-base-url';
+import { buildAuthForwardHeaders } from './auth-forward-headers';
+import { getServerApiBaseUrl } from './server-api-base-url';
 
 const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
 
@@ -76,28 +77,16 @@ export interface Invitation {
 }
 
 /**
- * Headers forwarded to the API for the incoming request: the session cookie
- * plus the server headers (internal token and the sanitized client IP).
- * Arbitrary `x-*` headers are not copied: they would carry edge secrets such
- * as `X-Comp-Origin-Auth` into the API's logs and let a client choose the
- * forwarded IP.
- */
-function headersToObject(headers: ReadonlyHeaders | Headers): Record<string, string> {
-  const obj: Record<string, string> = getServerApiHeaders({ incoming: headers });
-  const cookie = headers.get('cookie');
-  if (cookie) obj.cookie = cookie;
-  return obj;
-}
-
-/**
  * Get the current session from the API.
  */
-async function getSession(options: { headers: ReadonlyHeaders | Headers }): Promise<Session | null> {
+async function getSession(options: {
+  headers: ReadonlyHeaders | Headers;
+}): Promise<Session | null> {
   try {
     const response = await fetch(`${getServerApiBaseUrl()}/api/auth/get-session`, {
       method: 'GET',
       headers: {
-        ...headersToObject(options.headers),
+        ...buildAuthForwardHeaders({ incoming: options.headers }),
         'Content-Type': 'application/json',
       },
       cache: 'no-store',
@@ -128,7 +117,7 @@ async function setActiveOrganization(options: {
     const response = await fetch(`${getServerApiBaseUrl()}/api/auth/organization/set-active`, {
       method: 'POST',
       headers: {
-        ...headersToObject(options.headers),
+        ...buildAuthForwardHeaders({ incoming: options.headers }),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ organizationId: options.body.organizationId }),
