@@ -51,6 +51,14 @@ check "api gets no per-laptop unsubscribe secret" lacks_key "$API" UNSUBSCRIBE_S
 check "app gets no per-laptop unsubscribe secret" lacks_key "$APP" UNSUBSCRIBE_SECRET
 check "api asks for the shared unsubscribe secret" has_line "$API" '# UNSUBSCRIBE_SECRET=FILL_ME_SHARED'
 check "app asks for the shared unsubscribe secret" has_line "$APP" '# UNSUBSCRIBE_SECRET=FILL_ME_SHARED'
+# Laptops may point DATABASE_URL at the shared production database, whose TLS check needs
+# the committed Supabase CA; it is ignored for a local database, so it is always set.
+CA_VALUE="\"$TMP/deploy/aws/certs/supabase-ca.crt\""
+for env_file in "$TMP/packages/db/.env" "$TMP/apps/framework-editor/.env" "$API" "$APP" "$PORTAL"; do
+  check "${env_file#"$TMP"/} points DATABASE_SSL_CA at the committed CA" \
+    test "$(value_of "$env_file" DATABASE_SSL_CA)" = "$CA_VALUE"
+done
+check "the committed CA exists" test -s "$ROOT/deploy/aws/certs/supabase-ca.crt"
 
 if [[ "$failures" -gt 0 ]]; then
   echo "$failures failure(s)"

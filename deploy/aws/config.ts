@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import productionTargetFile from '../../packages/db/production-target.json' with { type: 'json' };
+import productionTargetFile from '../../packages/db/src/production-target.json' with { type: 'json' };
 import { productionTargetSchema } from '../../packages/db/scripts/production-target.ts';
 
 // Single source of the fixed AWS, host and release identifiers. Shell scripts get the same

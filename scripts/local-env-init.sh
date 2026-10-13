@@ -15,6 +15,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 gen() { openssl rand -base64 32 | tr -d '\n'; }
 
 DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/comp"
+SUPABASE_CA="$ROOT/deploy/aws/certs/supabase-ca.crt"
 SECRET_KEY="$(gen)"           # better-auth secret (api) and encryption secret (app)
 ENCRYPTION_KEY="$(gen)"       # credential vault / integration secrets
 REVALIDATION_SECRET="$(gen)"
@@ -49,14 +50,16 @@ write() {
 
 write "$ROOT/packages/db/.env" <<EOF
 DATABASE_URL="$DATABASE_URL"
-# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
-# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL. The committed Supabase CA
+# below verifies it (required for the production database, ignored for a local one).
+DATABASE_SSL_CA="$SUPABASE_CA"
 EOF
 
 write "$ROOT/apps/framework-editor/.env" <<EOF
 DATABASE_URL="$DATABASE_URL"
-# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
-# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL. The committed Supabase CA
+# below verifies it (required for the production database, ignored for a local one).
+DATABASE_SSL_CA="$SUPABASE_CA"
 NEXT_PUBLIC_API_URL=$API_URL
 BACKEND_API_URL=$API_URL
 EOF
@@ -71,8 +74,9 @@ NEXT_PUBLIC_APP_URL=$APP_URL
 APP_URL=$APP_URL
 PORTAL_URL=$PORTAL_URL
 DATABASE_URL="$DATABASE_URL"
-# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
-# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL. The committed Supabase CA
+# below verifies it (required for the production database, ignored for a local one).
+DATABASE_SSL_CA="$SUPABASE_CA"
 SELF_HOSTED=true
 NEXT_PUBLIC_SELF_HOSTED=true
 
@@ -126,8 +130,9 @@ write "$ROOT/apps/app/.env" <<EOF
 # --- Core ---
 NODE_ENV=development
 DATABASE_URL="$DATABASE_URL"
-# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
-# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL. The committed Supabase CA
+# below verifies it (required for the production database, ignored for a local one).
+DATABASE_SSL_CA="$SUPABASE_CA"
 BETTER_AUTH_URL=$API_URL
 NEXT_PUBLIC_BETTER_AUTH_URL=$API_URL
 NEXT_PUBLIC_API_URL=$API_URL
@@ -189,8 +194,9 @@ write "$ROOT/apps/portal/.env" <<EOF
 # --- Core ---
 NODE_ENV=development
 DATABASE_URL="$DATABASE_URL"
-# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
-# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL. The committed Supabase CA
+# below verifies it (required for the production database, ignored for a local one).
+DATABASE_SSL_CA="$SUPABASE_CA"
 BETTER_AUTH_URL=$API_URL
 NEXT_PUBLIC_BETTER_AUTH_URL=$API_URL
 NEXT_PUBLIC_API_URL=$API_URL
