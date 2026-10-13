@@ -18,7 +18,6 @@ jest.mock('@trycompai/auth', () => ({ statement: {} }));
 
 import { reportLegacyApiKeys } from './api-key-lookup';
 import { ApiKeyService } from './api-key.service';
-import { LEGACY_CREATOR_CUTOFF } from './api-key-validation';
 
 function legacyRow(index: number, apiKey: string) {
   return {
@@ -31,7 +30,7 @@ function legacyRow(index: number, apiKey: string) {
     scopes: [],
     createdByMemberId: null,
     organizationOwned: false,
-    createdAt: new Date(LEGACY_CREATOR_CUTOFF.getTime() - 86_400_000),
+    legacyCreatorless: true,
     createdBy: null,
   };
 }

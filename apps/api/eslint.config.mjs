@@ -6,7 +6,8 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['eslint.config.mjs'],
+    // Plain-node helpers outside the TypeScript project (see test/pglite-sql-runner.mjs).
+    ignores: ['eslint.config.mjs', 'test/**/*.mjs'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

@@ -15,7 +15,8 @@ export type ProvenanceSource = Pick<
   | 'memberId'
   | 'apiKeyCreatedByMemberId'
   | 'apiKeyOrganizationOwned'
->;
+> &
+  Partial<Pick<AuthContext, 'userRoles'>>;
 
 /**
  * The provenance of a key created by the authenticated caller. A key minted
@@ -45,4 +46,30 @@ export function resolveKeyProvenance(
   throw new ForbiddenException(
     'API keys can only be created by a member of the organization. Create API keys from a signed-in session.',
   );
+}
+
+/**
+ * The provenance of an organization-owned key requested explicitly
+ * (`organizationOwned: true`). Such a key survives its creator's offboarding,
+ * so minting one is an ownership decision: only a signed-in member holding
+ * the built-in `owner` role may, and the key is attributed to that owner. An
+ * admin may not: admins can be removed by owners, and a key an admin minted
+ * that outlived the removal would undo it. A key minted through an
+ * organization-owned key is organization-owned anyway; any other API key or
+ * service token is refused.
+ */
+export function resolveOrganizationOwnedProvenance(
+  source: ProvenanceSource,
+): ApiKeyProvenance {
+  if (source.authType === 'api-key' && source.apiKeyOrganizationOwned) {
+    return resolveKeyProvenance(source);
+  }
+  const roles = (source.userRoles ?? []).map((role) => role.trim());
+  const owner = source.authType === 'session' && roles.includes('owner');
+  if (!owner || !source.memberId) {
+    throw new ForbiddenException(
+      'Only an organization owner, signed in, can create organization-owned API keys.',
+    );
+  }
+  return { createdByMemberId: source.memberId, organizationOwned: true };
 }

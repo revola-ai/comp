@@ -1,19 +1,25 @@
+import { fakeClient, type FakeClient } from './fake-member-db-client';
+
 /**
- * An in-memory stand-in for the Member and ApiKey tables that models what the
- * offboarding race depends on: `SELECT ... FOR UPDATE` row locks held until the
- * transaction ends, the ApiKey -> Member foreign key (an insert needs the
- * member row; deleting a member sets createdByMemberId to NULL), and the user
- * cascade. Tests pause a transaction while it holds a lock to force an
- * interleaving.
+ * An in-memory stand-in for the User, Member and ApiKey tables that models
+ * what the offboarding race depends on: `SELECT ... FOR UPDATE` row locks held
+ * until the transaction ends, the ApiKey -> Member foreign key (an insert
+ * needs the member row; deleting a member sets createdByMemberId to NULL), the
+ * user cascade, and transaction rollback: every write inside `$transaction`
+ * is journaled and undone if the transaction throws. Tests pause or fail an
+ * operation to force an interleaving or a failure mid-transaction.
  */
 
 export type FakeMember = {
   id: string;
   organizationId: string;
   userId: string;
+  role: string;
   isActive: boolean;
   deactivated: boolean;
 };
+
+export type FakeUser = { id: string; banned: boolean | null };
 
 export type FakeApiKey = {
   id: string;
@@ -27,35 +33,51 @@ export type FakeApiKey = {
 
 type Generated = 'id' | 'isActive' | 'createdAt' | 'expiresAt';
 
-type KeyWhere = {
-  createdByMemberId?: { in: string[] };
-  organizationOwned?: boolean;
-  isActive?: boolean;
-};
+export type FakeOperation =
+  | 'apiKey.create'
+  | 'apiKey.updateMany'
+  | 'member.update'
+  | 'member.delete'
+  | 'user.update'
+  | 'user.delete';
 
-/** Runs a synchronous table operation as an async database call. */
-function settled<T>(operation: () => T): Promise<T> {
-  try {
-    return Promise.resolve(operation());
-  } catch (error) {
-    return Promise.reject(
-      error instanceof Error ? error : new Error(String(error)),
-    );
+/** Undo steps of the writes made so far in one transaction; null outside one. */
+export type Journal = Array<() => void> | null;
+
+/** Puts a row back exactly as it was, dropping columns a write added. */
+function restore<Row extends object>({
+  row,
+  previous,
+}: {
+  row: Row;
+  previous: Row;
+}): void {
+  for (const key of Object.keys(row)) {
+    if (!(key in previous)) Reflect.deleteProperty(row, key);
   }
+  Object.assign(row, previous);
 }
 
 export class FakeMemberDb {
   readonly members = new Map<string, FakeMember>();
-  readonly users = new Set<string>();
+  readonly users = new Map<string, FakeUser>();
   readonly keys: FakeApiKey[] = [];
   readonly lockLog: string[] = [];
   private readonly locks = new Map<string, Promise<void>>();
-  private readonly pauses = new Map<string, Promise<void>>();
+  private readonly pauses = new Map<FakeOperation, Promise<void>>();
+  private readonly failures = new Map<FakeOperation, Error>();
   private keySequence = 0;
 
-  addMember(member: Omit<FakeMember, 'isActive' | 'deactivated'>): void {
-    this.users.add(member.userId);
+  addMember(
+    member: Omit<FakeMember, 'isActive' | 'deactivated' | 'role'> & {
+      role?: string;
+    },
+  ): void {
+    if (!this.users.has(member.userId)) {
+      this.users.set(member.userId, { id: member.userId, banned: null });
+    }
     this.members.set(member.id, {
+      role: 'admin',
       ...member,
       isActive: true,
       deactivated: false,
@@ -63,15 +85,7 @@ export class FakeMemberDb {
   }
 
   addKey(key: Omit<FakeApiKey, Generated>): FakeApiKey {
-    const row = {
-      ...key,
-      id: `apk_${++this.keySequence}`,
-      isActive: true,
-      createdAt: new Date(),
-      expiresAt: null,
-    };
-    this.keys.push(row);
-    return row;
+    return this.insertKey({ key, journal: null });
   }
 
   /** Keys that would still authenticate as personal keys of this member. */
@@ -83,48 +97,87 @@ export class FakeMemberDb {
     );
   }
 
-  /** Calls outside a transaction (better-auth's adapter reads). */
+  /** Calls outside a transaction (better-auth's adapter reads and writes). */
+  private get autocommit(): FakeClient {
+    return fakeClient({ db: this, held: [], journal: null });
+  }
+
   get member() {
-    return this.transactionClient([]).member;
+    return this.autocommit.member;
   }
 
   get user() {
-    return this.transactionClient([]).user;
+    return this.autocommit.user;
   }
 
-  /** Holds the next call of `operation` (e.g. 'apiKey.create') until `until` resolves. */
+  /** Prisma also exposes each model under its schema name (db.User, db.Member). */
+  get Member() {
+    return this.member;
+  }
+
+  get User() {
+    return this.user;
+  }
+
+  /** Holds the next call of `operation` until `until` resolves. */
   pauseNext({
     operation,
     until,
   }: {
-    operation: 'apiKey.create' | 'apiKey.updateMany';
+    operation: FakeOperation;
     until: Promise<void>;
   }): void {
     this.pauses.set(operation, until);
   }
 
-  private afterPause<T>({
+  /** Makes the next call of `operation` throw `error` without writing. */
+  failNext({
+    operation,
+    error,
+  }: {
+    operation: FakeOperation;
+    error: Error;
+  }): void {
+    this.failures.set(operation, error);
+  }
+
+  /** Runs a table operation as an async call, honouring pauses and failures. */
+  async step<T>({
     operation,
     run,
   }: {
-    operation: string;
+    operation: FakeOperation | null;
     run: () => T;
   }): Promise<T> {
-    const pause = this.pauses.get(operation);
-    this.pauses.delete(operation);
-    return (pause ?? Promise.resolve()).then(() => settled(run));
+    const pause = operation ? this.pauses.get(operation) : undefined;
+    if (operation) this.pauses.delete(operation);
+    await pause;
+    const failure = operation ? this.failures.get(operation) : undefined;
+    if (operation) this.failures.delete(operation);
+    if (failure) throw failure;
+    return run();
   }
 
-  async $transaction<T>(run: (tx: FakeTx) => Promise<T>): Promise<T> {
+  async $transaction<T>(run: (tx: FakeClient) => Promise<T>): Promise<T> {
     const held: Array<() => void> = [];
+    const journal: Array<() => void> = [];
     try {
-      return await run(this.transactionClient(held));
+      return await run(fakeClient({ db: this, held, journal }));
+    } catch (error) {
+      for (const undo of journal.reverse()) undo();
+      throw error;
     } finally {
       for (const release of held) release();
     }
   }
 
-  private async lock(id: string, held: Array<() => void>): Promise<void> {
+  async lock({
+    id,
+    held,
+  }: {
+    id: string;
+    held: Array<() => void>;
+  }): Promise<void> {
     while (this.locks.has(id)) await this.locks.get(id);
     let release: () => void = () => undefined;
     this.locks.set(
@@ -140,135 +193,102 @@ export class FakeMemberDb {
     });
   }
 
-  private matchingKeys(where: KeyWhere): FakeApiKey[] {
-    return this.keys.filter(
-      (key) =>
-        (!where.createdByMemberId ||
-          (key.createdByMemberId !== null &&
-            where.createdByMemberId.in.includes(key.createdByMemberId))) &&
-        (where.organizationOwned === undefined ||
-          key.organizationOwned === where.organizationOwned) &&
-        (where.isActive === undefined || key.isActive === where.isActive),
-    );
+  insertKey({
+    key,
+    journal,
+  }: {
+    key: Omit<FakeApiKey, Generated>;
+    journal: Journal;
+  }): FakeApiKey {
+    const row = {
+      ...key,
+      id: `apk_${++this.keySequence}`,
+      isActive: true,
+      createdAt: new Date(),
+      expiresAt: null,
+    };
+    this.keys.push(row);
+    journal?.push(() => this.keys.splice(this.keys.indexOf(row), 1));
+    return row;
   }
 
-  private deleteMemberRow(id: string): FakeMember {
+  setKeysActive({
+    rows,
+    isActive,
+    journal,
+  }: {
+    rows: FakeApiKey[];
+    isActive: boolean;
+    journal: Journal;
+  }): void {
+    for (const row of rows) {
+      const previous = row.isActive;
+      row.isActive = isActive;
+      journal?.push(() => {
+        row.isActive = previous;
+      });
+    }
+  }
+
+  updateMemberRow({
+    id,
+    data,
+    journal,
+  }: {
+    id: string;
+    data: Partial<FakeMember>;
+    journal: Journal;
+  }): FakeMember {
     const member = this.members.get(id);
     if (!member) throw new Error(`P2025: member ${id} not found`);
-    this.members.delete(id);
-    for (const key of this.keys) {
-      if (key.createdByMemberId === id) key.createdByMemberId = null;
-    }
+    const previous = { ...member };
+    Object.assign(member, data);
+    journal?.push(() => restore({ row: member, previous }));
     return member;
   }
 
-  private transactionClient(held: Array<() => void>) {
-    const queryRaw = async (
-      strings: TemplateStringsArray,
-      ...values: unknown[]
-    ): Promise<FakeMember[]> => {
-      const sql = strings.join('?');
-      if (!sql.includes('FOR UPDATE')) throw new Error(`unexpected SQL ${sql}`);
-      const [value] = values;
-      const ids = sql.includes('"userId" =')
-        ? [...this.members.values()]
-            .filter((member) => member.userId === value)
-            .map((member) => member.id)
-        : (value as string[]);
-      for (const id of [...ids].sort()) await this.lock(id, held);
-      return ids.flatMap((id) => {
-        const member = this.members.get(id);
-        return member ? [{ ...member }] : [];
-      });
-    };
-    return {
-      $queryRaw: queryRaw,
-      apiKey: {
-        create: ({ data }: { data: Omit<FakeApiKey, Generated> }) =>
-          this.afterPause({
-            operation: 'apiKey.create',
-            run: () => {
-              const creator = data.createdByMemberId;
-              if (creator && !this.members.has(creator)) {
-                throw new Error(
-                  'P2003: foreign key violation on createdByMemberId',
-                );
-              }
-              return this.addKey({
-                organizationId: data.organizationId,
-                createdByMemberId: creator ?? null,
-                organizationOwned: data.organizationOwned ?? false,
-              });
-            },
-          }),
-        updateMany: ({
-          where,
-          data,
-        }: {
-          where: KeyWhere;
-          data: { isActive: boolean };
-        }) =>
-          this.afterPause({
-            operation: 'apiKey.updateMany',
-            run: () => {
-              const rows = this.matchingKeys(where);
-              for (const row of rows) row.isActive = data.isActive;
-              return { count: rows.length };
-            },
-          }),
-      },
-      member: {
-        findUnique: ({ where }: { where: { id: string } }) =>
-          settled(() => this.members.get(where.id) ?? null),
-        findMany: ({ where }: { where: { organizationId?: string } }) =>
-          settled(() =>
-            [...this.members.values()].filter(
-              (member) =>
-                !where.organizationId ||
-                member.organizationId === where.organizationId,
-            ),
-          ),
-        update: ({
-          where,
-          data,
-        }: {
-          where: { id: string };
-          data: Partial<FakeMember>;
-        }) =>
-          settled(() => {
-            const member = this.members.get(where.id);
-            if (!member) throw new Error(`P2025: member ${where.id} not found`);
-            Object.assign(member, data);
-            return member;
-          }),
-        delete: ({ where }: { where: { id: string } }) =>
-          settled(() => this.deleteMemberRow(where.id)),
-        deleteMany: ({ where }: { where: { organizationId?: string } }) =>
-          settled(() => {
-            const rows = [...this.members.values()].filter(
-              (member) => member.organizationId === where.organizationId,
-            );
-            for (const row of rows) this.deleteMemberRow(row.id);
-            return { count: rows.length };
-          }),
-      },
-      user: {
-        findUnique: ({ where }: { where: { id: string } }) =>
-          settled(() => (this.users.has(where.id) ? { id: where.id } : null)),
-        delete: ({ where }: { where: { id: string } }) =>
-          settled(() => {
-            for (const member of [...this.members.values()]) {
-              if (member.userId === where.id) this.deleteMemberRow(member.id);
-            }
-            this.users.delete(where.id);
-            return { id: where.id };
-          }),
-      },
-    };
+  updateUserRow({
+    id,
+    data,
+    journal,
+  }: {
+    id: string;
+    data: Partial<FakeUser>;
+    journal: Journal;
+  }): FakeUser {
+    const user = this.users.get(id);
+    if (!user) throw new Error(`P2025: user ${id} not found`);
+    const previous = { ...user };
+    Object.assign(user, data);
+    journal?.push(() => restore({ row: user, previous }));
+    return user;
+  }
+
+  deleteMemberRow({ id, journal }: { id: string; journal: Journal }) {
+    const member = this.members.get(id);
+    if (!member) throw new Error(`P2025: member ${id} not found`);
+    this.members.delete(id);
+    const orphaned = this.keys.filter((key) => key.createdByMemberId === id);
+    for (const key of orphaned) key.createdByMemberId = null;
+    journal?.push(() => {
+      this.members.set(id, member);
+      for (const key of orphaned) key.createdByMemberId = id;
+    });
+    return member;
+  }
+
+  /** Deletes a user and, as the Member.userId cascade does, its memberships. */
+  deleteUserRow({ id, journal }: { id: string; journal: Journal }): void {
+    const user = this.users.get(id);
+    if (!user) throw new Error(`P2025: user ${id} not found`);
+    for (const member of [...this.members.values()]) {
+      if (member.userId === id)
+        this.deleteMemberRow({ id: member.id, journal });
+    }
+    this.users.delete(id);
+    journal?.push(() => this.users.set(id, user));
   }
 }
-
-export type FakeTx = ReturnType<FakeMemberDb['transactionClient']>;
 
 /** A promise the test resolves to let a paused transaction continue. */
 export function gate(): { wait: Promise<void>; open: () => void } {

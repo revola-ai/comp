@@ -1,5 +1,38 @@
 import type { ApiBodyOptions } from '@nestjs/swagger';
 
+export const UPDATE_ROLE_NOTIFICATIONS_BODY: ApiBodyOptions = {
+  schema: {
+    type: 'object',
+    required: ['settings'],
+    properties: {
+      settings: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: [
+            'role',
+            'policyNotifications',
+            'taskReminders',
+            'taskAssignments',
+            'taskMentions',
+            'weeklyTaskDigest',
+            'findingNotifications',
+          ],
+          properties: {
+            role: { type: 'string' },
+            policyNotifications: { type: 'boolean' },
+            taskReminders: { type: 'boolean' },
+            taskAssignments: { type: 'boolean' },
+            taskMentions: { type: 'boolean' },
+            weeklyTaskDigest: { type: 'boolean' },
+            findingNotifications: { type: 'boolean' },
+          },
+        },
+      },
+    },
+  },
+};
+
 export const UPDATE_ORGANIZATION_BODY: ApiBodyOptions = {
   description: 'Organization update data',
   schema: {
@@ -63,17 +96,20 @@ export const UPDATE_ORGANIZATION_BODY: ApiBodyOptions = {
       },
       evidenceApprovalEnabled: {
         type: 'boolean',
-        description: 'Whether evidence requires approval before it is accepted.',
+        description:
+          'Whether evidence requires approval before it is accepted.',
         example: false,
       },
       deviceAgentStepEnabled: {
         type: 'boolean',
-        description: 'Whether the device-agent step is enabled during member onboarding.',
+        description:
+          'Whether the device-agent step is enabled during member onboarding.',
         example: true,
       },
       securityTrainingStepEnabled: {
         type: 'boolean',
-        description: 'Whether the security-training step is enabled during member onboarding.',
+        description:
+          'Whether the security-training step is enabled during member onboarding.',
         example: true,
       },
       whistleblowerReportEnabled: {

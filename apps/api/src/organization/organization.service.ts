@@ -320,6 +320,7 @@ export class OrganizationService {
         lastUsedAt: true,
         isActive: true,
         scopes: true,
+        organizationOwned: true,
       },
       orderBy: { createdAt: 'desc' },
     });

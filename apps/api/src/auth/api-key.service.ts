@@ -197,7 +197,7 @@ export class ApiKeyService implements OnApplicationBootstrap {
 
       // Offboarding: a personal key stops working once its creator is no
       // longer an active member, even before revocation has run, and a
-      // creatorless personal key newer than the legacy cutoff is an orphan.
+      // creatorless personal key not flagged legacyCreatorless is an orphan.
       const rejection = apiKeyRejection(matchingRecord);
       if (rejection) {
         this.logger.warn(
