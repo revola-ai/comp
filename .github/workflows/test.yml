@@ -28,16 +28,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # api, app and portal write a JSON report that is checked against a committed list of
+          # known failures (scripts/ci/known-failures/*.txt) instead of trusting the exit code.
           # The whole jest suite, src/auth, src/throttle and src/health included.
           - suite: api (jest)
             directory: apps/api
-            command: npx jest --ci
+            command: npx jest --ci --json --outputFile="$RUNNER_TEMP/test-report.json"
+            known_failures: scripts/ci/known-failures/api.txt
           - suite: app (vitest)
             directory: apps/app
-            command: npx vitest run
+            command: >-
+              npx vitest run --reporter=default --reporter=json
+              --outputFile.json="$RUNNER_TEMP/test-report.json"
+            known_failures: scripts/ci/known-failures/app.txt
           - suite: portal (vitest)
             directory: apps/portal
-            command: npx vitest run
+            command: >-
+              npx vitest run --reporter=default --reporter=json
+              --outputFile.json="$RUNNER_TEMP/test-report.json"
+            known_failures: scripts/ci/known-failures/portal.txt
+          # The known-failures checker the three suites above depend on.
+          - suite: ci scripts (bun test)
+            directory: .
+            command: bunx tsc -p scripts/ci/tsconfig.json && bun test ./scripts/ci
           - suite: db (bun test)
             directory: packages/db
             command: bun test src scripts
@@ -56,5 +69,25 @@ jobs:
       - uses: ./.github/actions/setup-workspace
 
       - name: Run ${{ matrix.suite }}
+        if: ${{ !matrix.known_failures }}
         working-directory: ${{ matrix.directory }}
         run: ${{ matrix.command }}
+
+      # These suites still carry upstream failures, so the runner always exits non-zero.
+      # Its JSON report is judged by the next step instead.
+      - name: Run ${{ matrix.suite }} (with report)
+        if: ${{ matrix.known_failures }}
+        working-directory: ${{ matrix.directory }}
+        run: >-
+          ${{ matrix.command }}
+          || echo "::notice::${{ matrix.suite }} exited with $?; judged by the known-failures check"
+
+      # Fails on a new failure, on a listed test that now passes (delete its line), and on a
+      # listed test that no longer runs. A missing report (the runner crashed) fails too.
+      - name: Check ${{ matrix.suite }} against known failures
+        if: ${{ matrix.known_failures }}
+        working-directory: ${{ matrix.directory }}
+        run: >-
+          bun "$GITHUB_WORKSPACE/scripts/ci/known-failures.ts"
+          --report "$RUNNER_TEMP/test-report.json"
+          --list "$GITHUB_WORKSPACE/${{ matrix.known_failures }}"
