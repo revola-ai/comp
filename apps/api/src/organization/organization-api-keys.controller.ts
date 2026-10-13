@@ -18,7 +18,10 @@ import {
   resolveKeyProvenance,
   resolveOrganizationOwnedProvenance,
 } from '../auth/api-key-provenance';
-import { assertScopesGrantable } from '../auth/api-key-scope-grant';
+import {
+  assertScopesGrantable,
+  grantableScopes,
+} from '../auth/api-key-scope-grant';
 import { ApiKeyService } from '../auth/api-key.service';
 import { HybridAuthGuard } from '../auth/hybrid-auth.guard';
 import { PermissionGuard } from '../auth/permission.guard';
@@ -59,11 +62,18 @@ export class OrganizationApiKeysController {
   @Get('api-keys/available-scopes')
   @RequirePermission('apiKey', 'read')
   @ApiOperation({
-    summary: 'Get available API key scopes',
+    summary: 'Get the API key scopes the caller can grant',
+    description:
+      'The resource:action scopes a new key created by this caller may carry: those its roles (or, for an API key, its own scopes) hold.',
     operationId: 'OrganizationController_getAvailableScopes_v1',
   })
-  getAvailableScopes() {
-    return { data: this.apiKeyService.getAvailableScopes() };
+  async getAvailableScopes(@AuthContext() authContext: AuthContextType) {
+    return {
+      data: await grantableScopes({
+        caller: authContext,
+        availableScopes: this.apiKeyService.getAvailableScopes(),
+      }),
+    };
   }
 
   @Post('api-keys')

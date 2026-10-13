@@ -33,9 +33,9 @@ const CORE_OPERATION_METADATA: Record<string, PublicOperationMetadata> = {
       'Create a scoped API key for server-side compliance automation such as evidence sync, policy workflows, or security questionnaire tooling.',
   },
   OrganizationController_getAvailableScopes_v1: {
-    summary: 'List API key scopes',
+    summary: 'List API key scopes you can grant',
     description:
-      'Retrieve available API key scopes and permissions before creating credentials for a specific compliance automation workflow.',
+      'Retrieve the API key scopes the caller can grant (those its roles, or for an API key its own scopes, hold) before creating credentials for a specific compliance automation workflow.',
   },
   OrganizationController_getPrimaryColor_v1: {
     summary: 'Get organization brand color',

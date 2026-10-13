@@ -54,6 +54,23 @@ async function heldScopes({
 }
 
 /**
+ * The available scopes the caller may put on a new key, in the order of
+ * `availableScopes`: what GET api-keys/available-scopes returns, so the web
+ * app's "Full Access" preset asks for exactly what creation accepts.
+ */
+export async function grantableScopes({
+  caller,
+  availableScopes,
+}: {
+  caller: ScopeGrantCaller;
+  availableScopes: string[];
+}): Promise<string[]> {
+  const held = await heldScopes({ caller, availableScopes });
+  if (held === ANY_SCOPE) return [...availableScopes];
+  return availableScopes.filter((scope) => held.has(scope));
+}
+
+/**
  * A new key may only carry scopes its creator holds, so `apiKey:create` alone
  * cannot mint a key with more access than the caller has: an API key with
  * only `apiKey:create` cannot mint a broader key, and a member whose (custom)
