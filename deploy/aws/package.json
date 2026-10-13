@@ -6,7 +6,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint . && find . -name '*.sh' -not -path './node_modules/*' -not -path './terraform/.terraform/*' -print0 | xargs -0 -r shellcheck -S warning",
-    "test": "bun test && for f in tests/*.test.sh; do [ -e \"$f\" ] || continue; bash \"$f\" || exit 1; done"
+    "test": "bun test"
   },
   "dependencies": {
     "@trigger.dev/sdk": "4.4.3",

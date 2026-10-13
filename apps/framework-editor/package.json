@@ -52,7 +52,8 @@
         "prebuild": "bun run db:generate",
         "start": "next start",
         "test": "vitest run",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+    "typecheck:prisma": "tsc --noEmit -p tsconfig.prisma.json"
     },
     "type": "module"
 }

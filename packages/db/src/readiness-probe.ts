@@ -56,7 +56,7 @@ function asProbeError(error: unknown): unknown {
 }
 
 // After a successful probe, a server that does not close on Terminate gets this long.
-const CLOSE_GRACE_MS = 1000;
+export const CLOSE_GRACE_MS = 1000;
 
 /**
  * Sends Terminate and resolves once the connection's socket has closed; a server

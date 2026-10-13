@@ -169,8 +169,13 @@ describe('credential attempt limit (HybridAuthGuard, by verified client IP)', ()
   });
 
   it('refuses the blocked IP before any key lookup, even for a valid key', async () => {
-    expect(await withKey('192.0.2.10', 'junk-again')).toBe(429);
-    expect(await withKey('192.0.2.10', VALID_KEY)).toBe(429);
+    // Fill this test's own bucket, so it holds when run alone or reordered.
+    for (let i = 0; i < N; i += 1) {
+      expect(await withKey('192.0.2.14', `junk-${i}`)).toBe(401);
+    }
+    validateApiKey.mockClear();
+    expect(await withKey('192.0.2.14', 'junk-again')).toBe(429);
+    expect(await withKey('192.0.2.14', VALID_KEY)).toBe(429);
     expect(validateApiKey).not.toHaveBeenCalled();
   });
 

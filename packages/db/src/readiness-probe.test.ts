@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, setSystemTime } from 'bun:test';
 import type { AddressInfo } from 'node:net';
 import { createServer, type Socket } from 'node:net';
-import { createDatabaseReadinessCheck, probeDatabase } from './readiness-probe';
+import { CLOSE_GRACE_MS, createDatabaseReadinessCheck, probeDatabase } from './readiness-probe';
 
 // Throwaway local servers stand in for the database: one that accepts TCP and
 // never answers (a stalled pooler), and one that speaks just enough of the
@@ -33,6 +33,8 @@ type FakeDatabase = {
   url: string;
   connections: () => number;
   open: () => number;
+  /** performance.now() when the server last saw a connection close. */
+  lastClosedAt: () => number;
   received: () => string;
   poke: () => void;
   close: () => Promise<void>;
@@ -50,13 +52,17 @@ async function fakeDatabase({
   const sockets = new Set<Socket>();
   let connections = 0;
   let received = '';
+  let lastClosedAt = Number.NaN;
   // Ignoring Terminate includes the client's half-close that follows it.
   const allowHalfOpen = behaviour === 'answer-ignore-terminate';
   const server = createServer({ allowHalfOpen }, (socket) => {
     connections += 1;
     sockets.add(socket);
     let started = false;
-    socket.on('close', () => sockets.delete(socket));
+    socket.on('close', () => {
+      sockets.delete(socket);
+      lastClosedAt = performance.now();
+    });
     socket.on('error', () => undefined);
     socket.on('data', (chunk) => {
       received += chunk.toString('latin1');
@@ -81,6 +87,7 @@ async function fakeDatabase({
     url: `postgresql://probe:probe@127.0.0.1:${port}/probe`,
     connections: () => connections,
     open: () => sockets.size,
+    lastClosedAt: () => lastClosedAt,
     received: () => received,
     // A write to a connection the client has closed draws a reset, which closes
     // the server's side too.
@@ -99,6 +106,24 @@ async function fakeDatabase({
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Waits for a condition the code under test brings about (a socket closing, a
+// connection arriving) instead of sleeping a fixed time and hoping it happened.
+// The cap only turns a hang into a readable failure.
+async function until(condition: () => boolean, what: string): Promise<void> {
+  const giveUpAt = performance.now() + 5000;
+  while (!condition()) {
+    if (performance.now() > giveUpAt) throw new Error(`timed out waiting until ${what}`);
+    await wait(5);
+  }
+}
+
+// Times one call by the clock it settles on, excluding any waiting done after it.
+async function timed<T>(run: () => Promise<T>): Promise<{ result: T; elapsedMs: number }> {
+  const started = performance.now();
+  const result = await run();
+  return { result, elapsedMs: performance.now() - started };
+}
+
 function checkFor(url: string) {
   return createDatabaseReadinessCheck({
     env: { DATABASE_URL: url },
@@ -114,8 +139,7 @@ describe('createDatabaseReadinessCheck (dedicated short-lived client)', () => {
   it('answers ok from a database that answers SELECT 1, and closes its connection', async () => {
     const db = await fakeDatabase({ behaviour: 'answer' });
     expect(await checkFor(db.url)({ timeoutMs: TIMEOUT_MS })).toEqual({ status: 'ok' });
-    await wait(50);
-    expect(db.open()).toBe(0);
+    await until(() => db.open() === 0, 'the server sees the connection closed');
   });
 
   it('settles only after the server has closed the connection on Terminate', async () => {
@@ -128,12 +152,15 @@ describe('createDatabaseReadinessCheck (dedicated short-lived client)', () => {
 
   it('settles only once the connection is closed when the server ignores Terminate (one-second fallback)', async () => {
     const db = await fakeDatabase({ behaviour: 'answer-ignore-terminate' });
-    const started = Date.now();
-    await probeDatabase({ connectionString: db.url, ssl: false, timeoutMs: TIMEOUT_MS });
-    expect(Date.now() - started).toBeGreaterThanOrEqual(950);
+    const { elapsedMs } = await timed(() =>
+      probeDatabase({ connectionString: db.url, ssl: false, timeoutMs: TIMEOUT_MS }),
+    );
+    // Only the forced close at CLOSE_GRACE_MS can end this connection, so settling any
+    // earlier would mean the probe returned with it open. A lower bound set by a timer
+    // holds however slow the machine is (timers may fire up to a millisecond early).
+    expect(elapsedMs).toBeGreaterThanOrEqual(CLOSE_GRACE_MS - 5);
     db.poke();
-    await wait(50);
-    expect(db.open()).toBe(0);
+    await until(() => db.open() === 0, 'the server sees the connection closed');
   });
 
   it('bounds the query on the server side too (statement_timeout for this transaction)', async () => {
@@ -147,26 +174,35 @@ describe('createDatabaseReadinessCheck (dedicated short-lived client)', () => {
   it('leaves one probe outstanding for five concurrent checks against a stalled server, and closes it at the deadline', async () => {
     const db = await fakeDatabase({ behaviour: 'stall' });
     const check = checkFor(db.url);
+    const started = performance.now();
     const results = await Promise.all(
       Array.from({ length: 5 }, () => check({ timeoutMs: TIMEOUT_MS })),
     );
     expect(results).toEqual(Array(5).fill({ status: 'unavailable', reason: 'timeout' }));
     expect(db.connections()).toBe(1);
-    await wait(50);
-    expect(db.open()).toBe(0);
+    await until(() => db.open() === 0, 'the server sees the connection closed');
+    // Closed at the deadline, not left open: the bound is the deadline plus as much
+    // again of slack, far below a connection left to pg's or the server's devices.
+    expect(db.lastClosedAt() - started).toBeLessThan(TIMEOUT_MS * 2);
   });
 
   it('joins a check that arrives while a probe is outstanding instead of starting another', async () => {
     const db = await fakeDatabase({ behaviour: 'stall' });
     const check = checkFor(db.url);
-    const first = check({ timeoutMs: TIMEOUT_MS });
-    await wait(TIMEOUT_MS / 2);
+    let firstSettled = false;
+    const first = check({ timeoutMs: TIMEOUT_MS }).finally(() => {
+      firstSettled = true;
+    });
+    await until(() => db.connections() === 1, 'the first probe has connected');
+    // Joining is only shown while the first probe is still out: once it settles, a
+    // check would be served from the result cache instead.
+    expect(firstSettled).toBe(false);
     const late = check({ timeoutMs: TIMEOUT_MS });
     expect(await Promise.all([first, late])).toEqual(
       Array(2).fill({ status: 'unavailable', reason: 'timeout' }),
     );
     expect(db.connections()).toBe(1);
-    await wait(50);
+    await until(() => db.open() === 0, 'the server sees the connection closed');
     // Past the two-second result cache, the next check starts a new probe.
     setSystemTime(new Date(Date.now() + 2000));
     try {
@@ -196,19 +232,23 @@ describe('createDatabaseReadinessCheck (dedicated short-lived client)', () => {
   });
 
   it('closes a connection whose server stalls after startup, within one deadline for connect and query together', async () => {
+    // A longer deadline than the other cases, so the margins below are hundreds of
+    // milliseconds of scheduling slack rather than tens.
+    const timeoutMs = 1000;
     const db = await fakeDatabase({
       behaviour: 'stall-after-startup',
-      startupDelayMs: TIMEOUT_MS * 0.75,
+      startupDelayMs: timeoutMs * 0.75,
     });
-    const started = Date.now();
-    expect(await checkFor(db.url)({ timeoutMs: TIMEOUT_MS })).toEqual({
-      status: 'unavailable',
-      reason: 'timeout',
-    });
-    await wait(50);
-    expect(Date.now() - started).toBeLessThan(TIMEOUT_MS * 1.75);
+    const started = performance.now();
+    const { result, elapsedMs } = await timed(() => checkFor(db.url)({ timeoutMs }));
+    expect(result).toEqual({ status: 'unavailable', reason: 'timeout' });
+    expect(elapsedMs).toBeGreaterThanOrEqual(timeoutMs - 5);
     expect(db.received()).toContain('SELECT 1');
-    expect(db.open()).toBe(0);
+    await until(() => db.open() === 0, 'the server sees the connection closed');
+    // Startup took 0.75 of the deadline and the query then stalled. With one deadline
+    // for both the connection closes at 1.0; a fresh deadline for the query would
+    // close it at 1.75. The check's answer alone cannot tell: it has its own timeout.
+    expect(db.lastClosedAt() - started).toBeLessThan(timeoutMs * 1.5);
   });
 
   it('answers the Prisma code an authentication failure has always produced (P1000)', async () => {
