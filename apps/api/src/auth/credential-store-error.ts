@@ -1,4 +1,5 @@
 import { ServiceUnavailableException } from '@nestjs/common';
+import { z } from 'zod';
 
 /** The reason a credential check answers 503: the store behind it is down. */
 export const CREDENTIAL_STORE_UNAVAILABLE = 'credential_store_unavailable';
@@ -52,7 +53,18 @@ const NETWORK_CODES = new Set([
 ]);
 const MAX_CHAIN = 16;
 
+// better-auth's getSession turns any failure of its session lookup (an
+// unreachable database included) into this APIError and drops the cause
+// (better-auth 1.6.23, api/routes/session.mjs). Read structurally: the class
+// comes from an ESM-only package.
+const betterAuthSessionLookupFailure = z.object({
+  name: z.literal('APIError'),
+  status: z.literal('INTERNAL_SERVER_ERROR'),
+  body: z.object({ code: z.literal('FAILED_TO_GET_SESSION') }),
+});
+
 function isInfrastructureNode(node: Record<string, unknown>): boolean {
+  if (betterAuthSessionLookupFailure.safeParse(node).success) return true;
   if (typeof node.name === 'string' && PRISMA_INFRA_ERRORS.has(node.name)) {
     return true;
   }
@@ -65,7 +77,9 @@ function isInfrastructureNode(node: Record<string, unknown>): boolean {
 
 /**
  * Whether an error (or anything in its `cause` chain) is a database or network
- * failure rather than a verdict about the credential.
+ * failure rather than a verdict about the credential. better-auth's
+ * FAILED_TO_GET_SESSION counts as one: it carries no cause to inspect, and
+ * answering it with 401 would sign every user out during an outage.
  */
 export function isCredentialStoreFailure(error: unknown): boolean {
   let current: unknown = error;

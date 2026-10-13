@@ -2,6 +2,10 @@ import { ForbiddenException, Logger } from '@nestjs/common';
 import { db } from '@db';
 import { hasAppAccess } from './app-access';
 import { auth } from './auth.server';
+import {
+  credentialStoreUnavailable,
+  isCredentialStoreFailure,
+} from './credential-store-error';
 import { readGramMcpClient } from './gram-mcp-client';
 import type { AuthenticatedRequest } from './types';
 
@@ -44,7 +48,14 @@ export async function authenticateMcpOAuth({
   if (!gram) {
     return false;
   }
-  const token = await auth.api.getMcpSession({ headers }).catch(() => null);
+  // A store outage is not an invalid token (503, not 401); any other lookup
+  // failure leaves the token unaccepted.
+  const token = await auth.api
+    .getMcpSession({ headers })
+    .catch((error: unknown) => {
+      if (isCredentialStoreFailure(error)) throw credentialStoreUnavailable();
+      return null;
+    });
   if (!token?.userId || token.clientId !== gram.clientId) {
     return false;
   }

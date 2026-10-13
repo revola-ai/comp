@@ -14,6 +14,7 @@ import { ApiKeyService } from './api-key.service';
 import { auth } from './auth.server';
 import { API_KEY_HEADER, SERVICE_TOKEN_HEADER } from './credential-headers';
 import {
+  CredentialStoreUnavailableException,
   credentialStoreUnavailable,
   isCredentialStoreFailure,
 } from './credential-store-error';
@@ -84,6 +85,8 @@ export class HybridAuthGuard implements CanActivate {
     skipOrgCheck: boolean;
     takeAttempt: () => () => void;
   }): Promise<boolean> {
+    // Gives a bearer token's attempt back (see below).
+    let release: () => void = () => undefined;
     try {
       // Build headers for better-auth SDK
       // Forwards both Authorization (bearer session token) and Cookie headers
@@ -105,9 +108,11 @@ export class HybridAuthGuard implements CanActivate {
 
       // A bearer token is looked up in the database as it is (session token,
       // then MCP OAuth token), so it takes an attempt first, given back once a
-      // lookup accepts it. Cookies are signed, so a forged one is refused
-      // before any lookup, and stale browser tabs must not lock an office out.
-      const release = authHeader ? takeAttempt() : () => undefined;
+      // lookup accepts it or the credential store turns out to be down (an
+      // outage says nothing about the token). Cookies are signed, so a forged
+      // one is refused before any lookup, and stale browser tabs must not lock
+      // an office out.
+      if (authHeader) release = takeAttempt();
 
       // Use better-auth SDK to resolve session
       // Works with both bearer session tokens and httpOnly cookies
@@ -193,6 +198,16 @@ export class HybridAuthGuard implements CanActivate {
 
       return true;
     } catch (error) {
+      // A database outage is not an invalid session: answer 503 so clients
+      // retry instead of signing the user out, and give the attempt back.
+      if (
+        error instanceof CredentialStoreUnavailableException ||
+        isCredentialStoreFailure(error)
+      ) {
+        console.error('[HybridAuthGuard] Credential store unavailable:', error);
+        release();
+        throw credentialStoreUnavailable();
+      }
       // Re-throw deliberate auth/permission errors as-is (e.g. the 403 from the
       // MCP org-resolution path). Only unexpected failures collapse to a 401.
       if (error instanceof HttpException) {
@@ -200,9 +215,6 @@ export class HybridAuthGuard implements CanActivate {
       }
 
       console.error('[HybridAuthGuard] Session verification failed:', error);
-      // A database outage is not an invalid session: answer 503 so clients
-      // retry instead of signing the user out.
-      if (isCredentialStoreFailure(error)) throw credentialStoreUnavailable();
       throw new UnauthorizedException('Invalid or expired session');
     }
   }

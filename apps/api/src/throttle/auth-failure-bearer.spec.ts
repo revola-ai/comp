@@ -1,10 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
 import { Controller, Get, UseGuards } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { Agent } from 'node:http';
 import request from 'supertest';
 import type { App } from 'supertest/types';
+import { failedToGetSessionError } from '../../test/better-auth-errors';
 import { ApiKeyService } from '../auth/api-key.service';
+import { CredentialStoreUnavailableFilter } from '../auth/credential-store-unavailable.filter';
 import { HybridAuthGuard } from '../auth/hybrid-auth.guard';
 
 // Bearer tokens reach better-auth's session lookup and the MCP OAuth token
@@ -98,6 +101,8 @@ describe('credential attempt limit for bearer tokens (HybridAuthGuard)', () => {
       providers: [
         HybridAuthGuard,
         AuthFailureLimiter,
+        // AuthModule's global filter: credential-store outages get Retry-After.
+        { provide: APP_FILTER, useClass: CredentialStoreUnavailableFilter },
         {
           provide: ApiKeyService,
           useValue: { extractApiKey: () => null, validateApiKey: jest.fn() },
@@ -252,21 +257,19 @@ describe('credential attempt limit for bearer tokens (HybridAuthGuard)', () => {
     expect(statuses).toEqual(Array(N + 5).fill(200));
   });
 
-  it('keeps the attempt of a bearer lookup that hits a credential-store outage', async () => {
-    mockGetSession.mockRejectedValue(
-      Object.assign(new Error('cannot reach database'), {
-        code: 'ECONNREFUSED',
-      }),
-    );
+  it('gives the attempt of a bearer lookup that hits a credential-store outage back', async () => {
+    // better-auth's getSession reports an unreachable store as this APIError.
+    mockGetSession.mockRejectedValue(failedToGetSessionError());
+    for (let i = 0; i < N + 5; i += 1) {
+      const response = await withBearer('198.51.100.60', VALID_SESSION_TOKEN);
+      expect(response.status).toBe(503);
+      expect(response.headers['retry-after']).toMatch(/^\d+$/);
+    }
+    mockGetSession.mockResolvedValue(null);
     const statuses: number[] = [];
     for (let i = 0; i < N; i += 1) {
-      statuses.push(
-        (await withBearer('198.51.100.60', VALID_SESSION_TOKEN)).status,
-      );
+      statuses.push((await withBearer('198.51.100.60', `junk-${i}`)).status);
     }
-    expect(statuses).toEqual(Array(N).fill(503));
-    expect(
-      (await withBearer('198.51.100.60', VALID_SESSION_TOKEN)).status,
-    ).toBe(429);
+    expect(statuses).toEqual(Array(N).fill(401));
   });
 });
