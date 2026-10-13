@@ -27,8 +27,8 @@ import {
  * through any spelling revokes. Interactive transactions opened through this
  * client hand out a transaction client with the same behaviour.
  *
- * The database triggers of migration 20261013120100 enforce the same rule for
- * writes that bypass this client.
+ * The database triggers of migrations 20261013120100 and 20261013130000
+ * enforce the same rule for writes that bypass this client.
  */
 
 type Tx = Prisma.TransactionClient;

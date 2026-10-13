@@ -1,24 +1,25 @@
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import {
+  API_KEY_MIGRATIONS,
+  API_KEY_TABLES,
+  migrationSql,
+  runSqlScenarios,
+  type ScenarioResult,
+} from '../../test/api-key-migrations';
 
 // The API-key migrations run against a real (in-memory, PGlite) Postgres: the
 // legacyCreatorless backfill, and the triggers that revoke personal keys in
-// the database itself, so a delete, deactivation, role removal or ban made by
-// any code (an older API build on a laptop sharing the database, a script,
-// psql) revokes them. Writes here are raw SQL, i.e. code that knows nothing
-// about API keys.
+// the database itself, so a delete, deactivation or ban made by any code (an
+// older API build on a laptop sharing the database, a script, psql) revokes
+// them. A role change does not (migration 20261013130000): a personal key is
+// bounded by its creator's current roles at every use. Writes here are raw
+// SQL, i.e. code that knows nothing about API keys.
 
-const repo = resolve(__dirname, '../../../..');
-const migrationSql = (name: string) =>
-  readFileSync(
-    resolve(repo, 'packages/db/prisma/migrations', name, 'migration.sql'),
-    'utf8',
-  );
 const reviewSql = readFileSync(
   resolve(
-    repo,
-    'packages/db/prisma/review/api-keys-with-missing-or-inactive-creator.sql',
+    __dirname,
+    '../../../../packages/db/prisma/review/api-keys-with-missing-or-inactive-creator.sql',
   ),
   'utf8',
 );
@@ -100,27 +101,14 @@ const SCENARIOS: Record<string, string[]> = {
   ],
 };
 
-type ScenarioResult = { rows?: Array<Record<string, unknown>>; error?: string };
-
 function runScenarios(): Record<string, ScenarioResult> {
-  const job = {
-    setup: [
-      readFileSync(resolve(__dirname, '../../test/api-key-tables.sql'), 'utf8'),
-      SEED,
-      migrationSql('20261013120000_api_key_legacy_creatorless'),
-      migrationSql('20261013120100_api_key_revocation_triggers'),
-    ],
+  return runSqlScenarios({
+    setup: [API_KEY_TABLES, SEED, ...API_KEY_MIGRATIONS.map(migrationSql)],
     scenarios: {
       ...SCENARIOS,
       review: [readOnlyStatement(reviewSql)],
     },
-  };
-  const output = execFileSync(
-    process.execPath,
-    [resolve(__dirname, '../../test/pglite-sql-runner.mjs')],
-    { input: JSON.stringify(job), encoding: 'utf8', timeout: 60_000 },
-  );
-  return JSON.parse(output) as Record<string, ScenarioResult>;
+  });
 }
 
 /** The review script's single statement, without its read-only wrapper. */
@@ -182,9 +170,9 @@ describe('API-key migrations in Postgres', () => {
     expect(ids('reactivate')).toEqual(without('k_a'));
   });
 
-  it('removing any role revokes; only adding or reordering roles does not', () => {
-    expect(ids('roleRemoved')).toEqual(without('k_b'));
-    expect(ids('roleReplaced')).toEqual(without('k_c'));
+  it('no role change revokes: removing, replacing, adding or reordering', () => {
+    expect(ids('roleRemoved')).toEqual(ALL_ACTIVE);
+    expect(ids('roleReplaced')).toEqual(ALL_ACTIVE);
     expect(ids('roleAdded')).toEqual(ALL_ACTIVE);
     expect(ids('roleReordered')).toEqual(ALL_ACTIVE);
   });
