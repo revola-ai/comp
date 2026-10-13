@@ -39,6 +39,12 @@ jest.mock('@trycompai/auth', () => ({
   statement: {},
   BUILT_IN_ROLE_PERMISSIONS: {},
 }));
+// The database probe that confirms a FAILED_TO_GET_SESSION outage
+// (session-store-outage.ts) fails here, as it would during an outage.
+jest.mock('../health/readiness', () => ({
+  checkApiReadiness: () =>
+    Promise.resolve({ status: 'unavailable', reason: 'P1001' }),
+}));
 jest.mock('./service-token.config', () => ({
   resolveServiceByToken: () => ({ definition: { name: 'portal' } }),
 }));
@@ -51,6 +57,7 @@ import { ApiKeyService } from './api-key.service';
 import {
   CREDENTIAL_STORE_UNAVAILABLE,
   isCredentialStoreFailure,
+  isSessionLookupFailure,
 } from './credential-store-error';
 import { AuthFailureLimiter } from '../throttle/auth-failure-limiter';
 import { HybridAuthGuard } from './hybrid-auth.guard';
@@ -233,8 +240,11 @@ describe('credential validation during a database outage', () => {
 });
 
 describe('isCredentialStoreFailure and better-auth errors', () => {
-  it('matches the error getSession throws when its store lookup fails', () => {
-    expect(isCredentialStoreFailure(failedToGetSessionError())).toBe(true);
+  // A malformed cookie produces it too, so it is confirmed by a database
+  // probe before it counts (session-store-outage.spec.ts).
+  it('treats the error getSession throws on any lookup failure as ambiguous', () => {
+    expect(isCredentialStoreFailure(failedToGetSessionError())).toBe(false);
+    expect(isSessionLookupFailure(failedToGetSessionError())).toBe(true);
   });
 
   it('does not match other better-auth API errors', () => {

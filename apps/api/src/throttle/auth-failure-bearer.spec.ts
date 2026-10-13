@@ -45,6 +45,12 @@ jest.mock('@db', () => ({
     },
   },
 }));
+// The database probe that confirms a FAILED_TO_GET_SESSION outage
+// (session-store-outage.ts) fails, as it would during an outage.
+jest.mock('../health/readiness', () => ({
+  checkApiReadiness: () =>
+    Promise.resolve({ status: 'unavailable', reason: 'P1001' }),
+}));
 jest.mock('@trycompai/auth', () => ({
   BUILT_IN_ROLE_PERMISSIONS: { admin: { app: ['read'] } },
 }));

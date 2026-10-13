@@ -24,6 +24,12 @@ jest.mock('../auth/auth.server', () => ({
     api: { getSession: (...args: unknown[]) => mockGetSession(...args) },
   },
 }));
+// The database probe that confirms a FAILED_TO_GET_SESSION outage
+// (session-store-outage.ts) fails, as it would during an outage.
+jest.mock('../health/readiness', () => ({
+  checkApiReadiness: () =>
+    Promise.resolve({ status: 'unavailable', reason: 'P1001' }),
+}));
 jest.mock('@db', () => ({
   db: { user: { findUnique: (...args: unknown[]) => mockFindUser(...args) } },
 }));

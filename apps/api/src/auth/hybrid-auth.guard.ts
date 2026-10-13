@@ -16,12 +16,12 @@ import { API_KEY_HEADER, SERVICE_TOKEN_HEADER } from './credential-headers';
 import {
   CredentialStoreUnavailableException,
   credentialStoreUnavailable,
-  isCredentialStoreFailure,
 } from './credential-store-error';
 import { authenticateMcpOAuth } from './mcp-oauth-auth';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { SKIP_ORG_CHECK_KEY } from './skip-org-check.decorator';
 import { authenticateServiceToken } from './service-token-auth';
+import { isSessionStoreOutage } from './session-store-outage';
 import { AuthenticatedRequest } from './types';
 
 @Injectable()
@@ -203,9 +203,11 @@ export class HybridAuthGuard implements CanActivate {
     } catch (error) {
       // A database outage is not an invalid session: answer 503 so clients
       // retry instead of signing the user out, and give the attempt back.
+      // better-auth's causeless FAILED_TO_GET_SESSION counts only once a
+      // database probe confirms it (session-store-outage.ts); else it is 401.
       if (
         error instanceof CredentialStoreUnavailableException ||
-        isCredentialStoreFailure(error)
+        (await isSessionStoreOutage({ error }))
       ) {
         console.error('[HybridAuthGuard] Credential store unavailable:', error);
         release();

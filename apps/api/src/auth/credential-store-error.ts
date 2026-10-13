@@ -53,18 +53,24 @@ const NETWORK_CODES = new Set([
 ]);
 const MAX_CHAIN = 16;
 
-// better-auth's getSession turns any failure of its session lookup (an
-// unreachable database included) into this APIError and drops the cause
-// (better-auth 1.6.23, api/routes/session.mjs). Read structurally: the class
-// comes from an ESM-only package.
+// better-auth's getSession turns any failure inside it into this APIError and
+// drops the cause (better-auth 1.6.23, api/routes/session.mjs): an unreachable
+// database, but also a malformed session_data cookie next to any bearer token
+// (the bearer plugin signs whatever token it is given). It is therefore not
+// evidence of an outage by itself; see session-store-outage.ts. Read
+// structurally: the class comes from an ESM-only package.
 const betterAuthSessionLookupFailure = z.object({
   name: z.literal('APIError'),
   status: z.literal('INTERNAL_SERVER_ERROR'),
   body: z.object({ code: z.literal('FAILED_TO_GET_SESSION') }),
 });
 
+/** Whether `error` is better-auth's causeless FAILED_TO_GET_SESSION (500). */
+export function isSessionLookupFailure(error: unknown): boolean {
+  return betterAuthSessionLookupFailure.safeParse(error).success;
+}
+
 function isInfrastructureNode(node: Record<string, unknown>): boolean {
-  if (betterAuthSessionLookupFailure.safeParse(node).success) return true;
   if (typeof node.name === 'string' && PRISMA_INFRA_ERRORS.has(node.name)) {
     return true;
   }
@@ -78,8 +84,9 @@ function isInfrastructureNode(node: Record<string, unknown>): boolean {
 /**
  * Whether an error (or anything in its `cause` chain) is a database or network
  * failure rather than a verdict about the credential. better-auth's
- * FAILED_TO_GET_SESSION counts as one: it carries no cause to inspect, and
- * answering it with 401 would sign every user out during an outage.
+ * FAILED_TO_GET_SESSION is not one by itself (isSessionLookupFailure): a
+ * client can produce it at will, so session guards confirm it with a database
+ * probe first (session-store-outage.ts).
  */
 export function isCredentialStoreFailure(error: unknown): boolean {
   let current: unknown = error;
