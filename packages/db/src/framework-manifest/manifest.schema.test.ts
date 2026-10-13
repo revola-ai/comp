@@ -29,7 +29,9 @@ describe('manifestSchema', () => {
 
   it('rejects a manifest whose control carries an unknown document type', () => {
     const manifest = {
-      controls: [{ id: 'frk_ct_a', policyIds: [], taskIds: [], documentTypes: ['not-a-real-type'] }],
+      controls: [
+        { id: 'frk_ct_a', policyIds: [], taskIds: [], documentTypes: ['not-a-real-type'] },
+      ],
     };
     expect(() => manifestSchema.parse(manifest)).toThrow();
   });

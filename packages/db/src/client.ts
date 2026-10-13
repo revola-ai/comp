@@ -1,9 +1,9 @@
-import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '@prisma/client';
 import { resolveSslConfig, stripSslMode } from './ssl-config';
 
-export type { SslConfig } from './ssl-config';
 export { resolveSslConfig, stripSslMode } from './ssl-config';
+export type { SslConfig } from './ssl-config';
 
 const globalForPrisma = global as unknown as { prisma?: PrismaClient };
 

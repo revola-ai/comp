@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { frameworkEditorModelSchemas } from './frameworkEditorSchemas';
 import { syncCsfCrosswalk, syncFrameworkScopedEditorLinks } from './sync-framework-scoped-links';
+import { syncSoc2TscRetirements } from './sync-soc2-tsc';
 import { backfillInstanceLinksFromManifests } from './instance-links-from-manifests';
 import { resolveSslConfig, stripSslMode } from '../../src/ssl-config';
 
@@ -371,6 +372,7 @@ async function main() {
 
     console.log('Scoped editor links:', await syncFrameworkScopedEditorLinks({ prisma }));
     console.log('CSF crosswalk sync:', await syncCsfCrosswalk({ prisma }));
+    console.log('SOC 2 1.0.0 retired requirements:', await syncSoc2TscRetirements({ prisma }));
 
     // Build v1.0.0 FrameworkVersion snapshots for any framework without one.
     // On a fresh `migrate reset`, the backfill data migration runs against empty
