@@ -4,21 +4,17 @@ import { lockMembersById, lockMembersOfUsers } from './api-key-member-lock';
 /**
  * When a membership change ends a member's personal API keys.
  *
- * A personal key acts with scopes its creator held when minting it, so it
- * must not outlive a cut to the creator's access. The rule, mirrored by the
- * database triggers of migration 20261013120100:
- *   - deactivating (`deactivated: true`) or marking inactive
- *     (`isActive: false`) always revokes;
- *   - a role change revokes when it removes any of the member's roles.
- *     Permissions are the union of the member's roles, so a change that only
- *     adds or reorders roles cannot shrink them and keeps the keys.
- * Edits to a custom role's permission set are not membership changes and are
- * not covered here.
- * Revocation is final: reactivating or restoring a role brings no key back.
+ * A personal key stops working for good once its creator's membership ends:
+ * deactivating (`deactivated: true`) or marking inactive (`isActive: false`)
+ * revokes, as do removing the member and banning the user (elsewhere). The
+ * rule is mirrored by the database triggers of migrations 20261013120100 and
+ * 20261013130000. A role change does not revoke: at every use a personal key
+ * is bounded by its creator's current roles (api-key-effective-scopes.ts), so
+ * a promotion keeps it working and a demotion or a custom-role edit narrows
+ * it at once. Revocation is final: reactivating brings no key back.
  */
 
 export type MemberAccessChange = {
-  role?: string;
   isActive?: boolean;
   deactivated?: boolean;
 };
@@ -48,11 +44,9 @@ function scalarUpdate(value: unknown): unknown {
 /** The access-relevant part of a Member update's `data`. */
 export function memberAccessChange(data: unknown): MemberAccessChange {
   if (!data || typeof data !== 'object') return {};
-  const role = scalarUpdate(Reflect.get(data, 'role'));
   const isActive = scalarUpdate(Reflect.get(data, 'isActive'));
   const deactivated = scalarUpdate(Reflect.get(data, 'deactivated'));
   return {
-    ...(typeof role === 'string' ? { role } : {}),
     ...(typeof isActive === 'boolean' ? { isActive } : {}),
     ...(typeof deactivated === 'boolean' ? { deactivated } : {}),
   };
@@ -64,47 +58,9 @@ export function bansUser(data: unknown): boolean {
   return scalarUpdate(Reflect.get(data, 'banned')) === true;
 }
 
-function roleSet(roles: string): Set<string> {
-  return new Set(
-    roles
-      .split(',')
-      .map((role) => role.trim())
-      .filter(Boolean),
-  );
-}
-
-/** Whether `next` drops any role present in `current`. */
-export function removesRole({
-  current,
-  next,
-}: {
-  current: string;
-  next: string;
-}): boolean {
-  const kept = roleSet(next);
-  return [...roleSet(current)].some((role) => !kept.has(role));
-}
-
-/** Whether the change could cut access, before looking at the member. */
-export function mayCutAccess(change: MemberAccessChange): boolean {
-  return (
-    change.isActive === false ||
-    change.deactivated === true ||
-    change.role !== undefined
-  );
-}
-
-/** Whether applying `change` to a member with roles `currentRole` cuts access. */
-export function cutsAccess({
-  currentRole,
-  change,
-}: {
-  currentRole: string;
-  change: MemberAccessChange;
-}): boolean {
-  if (change.isActive === false || change.deactivated === true) return true;
-  if (change.role === undefined) return false;
-  return removesRole({ current: currentRole, next: change.role });
+/** Whether `change` ends the member's access. */
+export function cutsAccess(change: MemberAccessChange): boolean {
+  return change.isActive === false || change.deactivated === true;
 }
 
 /** Runs `work` atomically: in a new transaction, or in the one already open. */
@@ -127,9 +83,10 @@ export async function revokeKeysOfUsers({
 }
 
 /**
- * Locks the given members and revokes the personal keys of those `change`
- * cuts off, inside the caller's transaction (before it applies the change).
- * With `organizationId`, members of other organizations are left alone.
+ * Locks the given members and, when `change` ends their access, revokes their
+ * personal keys, inside the caller's transaction (before it applies the
+ * change). With `organizationId`, members of other organizations are left
+ * alone.
  */
 export async function revokeKeysCutOffBy({
   tx,
@@ -142,13 +99,11 @@ export async function revokeKeysCutOffBy({
   organizationId?: string;
   change: MemberAccessChange;
 }): Promise<void> {
-  if (memberIds.length === 0 || !mayCutAccess(change)) return;
+  if (memberIds.length === 0 || !cutsAccess(change)) return;
   const members = await lockMembersById({ tx, memberIds });
   const cutOff = members
     .filter(
-      (member) =>
-        (!organizationId || member.organizationId === organizationId) &&
-        cutsAccess({ currentRole: member.role, change }),
+      (member) => !organizationId || member.organizationId === organizationId,
     )
     .map((member) => member.id);
   if (cutOff.length > 0) await revokeCreatedApiKeys({ tx, memberIds: cutOff });

@@ -43,7 +43,7 @@ export class CreateApiKeyDto {
 
   @ApiPropertyOptional({
     description:
-      'Create an organization-owned key that keeps working when its creator leaves. Owners only. Default false: a personal key, revoked when its creator is removed, deactivated, banned or loses a role.',
+      'Create an organization-owned key that keeps working when its creator leaves. Owners only. Default false: a personal key, revoked when its creator is removed, deactivated or banned, and limited at every use to the scopes the current roles of its creator grant.',
     default: false,
     example: false,
   })

@@ -3,18 +3,19 @@ import {
   bansUser,
   type InTransaction,
   memberAccessChange,
-  mayCutAccess,
+  cutsAccess,
   revokeKeysCutOffBy,
   revokeKeysOfUsers,
 } from './api-key-access-loss';
 
 /**
- * Member and User updates on the client better-auth writes through. A role
- * change (/organization/update-member-role), a deactivation, or a ban
- * (/admin/ban-user, /admin/update-user) runs in one transaction that locks the
- * affected members, revokes the personal keys the change cuts off, then
- * writes; a failed write rolls the revocation back. Updates that cannot cut
- * access pass straight through to `delegate`.
+ * Member and User updates on the client better-auth writes through. A
+ * deactivation or a ban (/admin/ban-user, /admin/update-user) runs in one
+ * transaction that locks the affected members, revokes their personal keys,
+ * then writes; a failed write rolls the revocation back. Updates that cannot
+ * end access, role changes (/organization/update-member-role) included, pass
+ * straight through to `delegate`: a personal key is bounded by its creator's
+ * current roles at every use (api-key-effective-scopes.ts).
  */
 
 type MemberDelegate = Prisma.TransactionClient['member'];
@@ -30,7 +31,7 @@ export function memberUpdateOverrides({
   return {
     update: (args: Prisma.MemberUpdateArgs) => {
       const change = memberAccessChange(args.data);
-      if (!mayCutAccess(change)) return delegate.update(args);
+      if (!cutsAccess(change)) return delegate.update(args);
       return inTransaction(async (tx) => {
         const member = await tx.member.findUnique({
           where: args.where,
@@ -43,7 +44,7 @@ export function memberUpdateOverrides({
     },
     updateMany: (args: Prisma.MemberUpdateManyArgs) => {
       const change = memberAccessChange(args.data);
-      if (!mayCutAccess(change)) return delegate.updateMany(args);
+      if (!cutsAccess(change)) return delegate.updateMany(args);
       return inTransaction(async (tx) => {
         const members = await tx.member.findMany({
           where: args.where,

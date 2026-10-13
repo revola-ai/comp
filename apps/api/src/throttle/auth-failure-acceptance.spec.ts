@@ -73,6 +73,7 @@ const resolveByKey = (key: string) =>
           scopes: ['risk:read'],
           createdByMemberId: 'mem_1',
           organizationOwned: false,
+          creatorRoles: null,
         }
       : null,
   );

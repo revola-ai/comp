@@ -2,10 +2,7 @@ import { db } from '@db';
 import type { PeopleResponseDto } from '../dto/people-responses.dto';
 import type { CreatePeopleDto } from '../dto/create-people.dto';
 import type { UpdatePeopleDto } from '../dto/update-people.dto';
-import {
-  memberAccessChange,
-  mayCutAccess,
-} from '../../auth/api-key-access-loss';
+import { memberAccessChange, cutsAccess } from '../../auth/api-key-access-loss';
 import {
   changeMemberRevokingApiKeys,
   deleteMemberAndRevokeApiKeys,
@@ -144,10 +141,11 @@ export class MemberQueries {
   }
 
   /**
-   * Update a member by ID within an organization. A change that cuts the
-   * member's access (isActive: false, or a role removed) revokes the member's
-   * personal API keys in the same transaction (api-key-access-loss.ts);
-   * reactivating brings none back.
+   * Update a member by ID within an organization. A change that ends the
+   * member's access (isActive: false) revokes the member's personal API keys
+   * in the same transaction (api-key-access-loss.ts); reactivating brings
+   * none back. A role change does not revoke: personal keys are bounded by
+   * their creator's current roles at every use.
    */
   static async updateMember(
     memberId: string,
@@ -162,7 +160,7 @@ export class MemberQueries {
     const where = { id: memberId, organizationId };
 
     // Only member-level updates that cannot cut access
-    if (!hasUserUpdates && !mayCutAccess(change)) {
+    if (!hasUserUpdates && !cutsAccess(change)) {
       return db.member.update({
         where,
         data: memberData,

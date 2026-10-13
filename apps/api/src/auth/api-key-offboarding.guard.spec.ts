@@ -40,7 +40,7 @@ function keyRecord(overrides: Record<string, unknown>) {
     scopes: ['risk:read', 'risk:update'],
     createdByMemberId: 'mem_departed',
     organizationOwned: false,
-    createdBy: { isActive: false, deactivated: true },
+    createdBy: { isActive: false, deactivated: true, role: 'admin' },
     legacyCreatorless: false,
     ...overrides,
   };

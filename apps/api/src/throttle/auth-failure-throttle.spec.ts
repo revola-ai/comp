@@ -61,6 +61,7 @@ const VALID_RESULT = {
   scopes: [],
   createdByMemberId: 'mem_1',
   organizationOwned: false,
+  creatorRoles: null,
 };
 const validateApiKey = jest.fn();
 const resolveByKey = (key: string) =>

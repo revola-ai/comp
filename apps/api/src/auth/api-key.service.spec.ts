@@ -120,7 +120,7 @@ describe('ApiKeyService.validateApiKey offboarding', () => {
       scopes: ['risk:read'],
       createdByMemberId: 'mem_creator',
       organizationOwned: false,
-      createdBy: { isActive: true, deactivated: false },
+      createdBy: { isActive: true, deactivated: false, role: 'admin' },
       legacyCreatorless: false,
       ...overrides,
     };
@@ -142,16 +142,17 @@ describe('ApiKeyService.validateApiKey offboarding', () => {
       scopes: ['risk:read'],
       createdByMemberId: 'mem_creator',
       organizationOwned: false,
+      creatorRoles: ['admin'],
     });
   });
 
-  it('selects the creator status and the organization-owned flag', async () => {
+  it('selects the creator status and roles and the organization-owned flag', async () => {
     mockApiKeyFindMany.mockResolvedValueOnce([keyRecord()]);
     await service.validateApiKey(RAW_KEY);
     const { select } = mockApiKeyFindMany.mock.calls[0][0];
     expect(select.organizationOwned).toBe(true);
     expect(select.createdBy).toEqual({
-      select: { isActive: true, deactivated: true },
+      select: { isActive: true, deactivated: true, role: true },
     });
   });
 
@@ -165,7 +166,9 @@ describe('ApiKeyService.validateApiKey offboarding', () => {
 
   it('rejects a key whose creator is inactive but not yet deactivated', async () => {
     mockApiKeyFindMany.mockResolvedValueOnce([
-      keyRecord({ createdBy: { isActive: false, deactivated: false } }),
+      keyRecord({
+        createdBy: { isActive: false, deactivated: false, role: 'admin' },
+      }),
     ]);
     await expect(service.validateApiKey(RAW_KEY)).resolves.toBeNull();
   });
@@ -179,7 +182,7 @@ describe('ApiKeyService.validateApiKey offboarding', () => {
     mockApiKeyFindMany.mockResolvedValueOnce([
       keyRecord({
         organizationOwned: true,
-        createdBy: { isActive: false, deactivated: true },
+        createdBy: { isActive: false, deactivated: true, role: 'admin' },
       }),
     ]);
     const result = await service.validateApiKey(RAW_KEY);
@@ -229,7 +232,7 @@ describe('ApiKeyService.validateApiKey offboarding', () => {
     mockApiKeyFindMany.mockResolvedValueOnce([
       keyRecord({
         legacyCreatorless: true,
-        createdBy: { isActive: false, deactivated: true },
+        createdBy: { isActive: false, deactivated: true, role: 'admin' },
       }),
     ]);
     await expect(service.validateApiKey(RAW_KEY)).resolves.toBeNull();

@@ -11,7 +11,7 @@ jest.mock('@db', () => ({
 import { withApiKeyRevokingDeletes } from './api-key-revoking-deletes';
 
 // better-auth writes role changes (/organization/update-member-role) as
-// db.member.update({ where, data: { role } }) and bans (/admin/ban-user,
+// db.member.update({ where, data: { role } }), which no longer revoke, and bans (/admin/ban-user,
 // /admin/update-user) as db.User.update({ where, data: { banned: true } }),
 // through the client handed to its Prisma adapter.
 type AdapterDelegate = {
@@ -34,7 +34,7 @@ function adapterModel(model: string): AdapterDelegate {
 const activeKeys = () =>
   mockDb.keys.filter((key) => key.isActive).map((key) => key.id);
 
-describe('better-auth updates that cut access revoke personal keys', () => {
+describe('better-auth updates that end access revoke personal keys', () => {
   beforeEach(() => {
     mockDb = new FakeMemberDb();
     mockDb.addMember({
@@ -79,32 +79,27 @@ describe('better-auth updates that cut access revoke personal keys', () => {
     });
   });
 
+  // Role changes never revoke: a personal key is bounded by its creator's
+  // current roles at every use (api-key-effective-scopes.ts).
   it.each(['member', 'Member'])(
-    'db.%s.update removing a role revokes that member personal keys',
+    'db.%s.update removing a role keeps the keys and locks nothing',
     async (model) => {
       await adapterModel(model).update({
         where: { id: 'mem_1' },
         data: { role: 'admin' },
       });
       expect(mockDb.members.get('mem_1')?.role).toBe('admin');
-      expect(activeKeys()).toEqual(['apk_2', 'apk_3', 'apk_4']);
+      expect(activeKeys()).toEqual(['apk_1', 'apk_2', 'apk_3', 'apk_4']);
+      expect(mockDb.lockLog).toEqual([]);
     },
   );
 
-  it('a role change that only adds or reorders roles keeps the keys', async () => {
-    await adapterModel('member').update({
-      where: { id: 'mem_1' },
-      data: { role: 'admin, owner,auditor' },
-    });
-    expect(activeKeys()).toEqual(['apk_1', 'apk_2', 'apk_3', 'apk_4']);
-  });
-
-  it('a role given as a Prisma { set } update is checked too', async () => {
+  it('a role given as a Prisma { set } update keeps the keys too', async () => {
     await adapterModel('member').update({
       where: { id: 'mem_3' },
       data: { role: { set: 'auditor' } },
     });
-    expect(activeKeys()).toEqual(['apk_1', 'apk_2', 'apk_3']);
+    expect(activeKeys()).toEqual(['apk_1', 'apk_2', 'apk_3', 'apk_4']);
   });
 
   it('marking a member inactive or deactivated revokes its keys', async () => {
@@ -119,12 +114,17 @@ describe('better-auth updates that cut access revoke personal keys', () => {
     expect(activeKeys()).toEqual(['apk_2', 'apk_3']);
   });
 
-  it('member.updateMany revokes only the members that lose a role', async () => {
+  it('member.updateMany revokes only when it deactivates', async () => {
     await adapterModel('member').updateMany({
       where: { organizationId: 'org_1' },
       data: { role: 'employee' },
     });
-    expect(activeKeys()).toEqual(['apk_2', 'apk_3', 'apk_4']);
+    expect(activeKeys()).toEqual(['apk_1', 'apk_2', 'apk_3', 'apk_4']);
+    await adapterModel('member').updateMany({
+      where: { organizationId: 'org_1' },
+      data: { isActive: false },
+    });
+    expect(activeKeys()).toEqual(['apk_2', 'apk_3']);
   });
 
   it('an update that changes no access revokes nothing and locks nothing', async () => {
@@ -136,7 +136,7 @@ describe('better-auth updates that cut access revoke personal keys', () => {
     expect(mockDb.members.get('mem_1')?.isActive).toBe(true);
   });
 
-  it('a role change the database refuses after revoking keeps the keys', async () => {
+  it('a deactivation the database refuses after revoking keeps the keys', async () => {
     mockDb.failNext({
       operation: 'member.update',
       error: new Error('P2025: record to update not found'),
@@ -144,11 +144,11 @@ describe('better-auth updates that cut access revoke personal keys', () => {
     await expect(
       adapterModel('member').update({
         where: { id: 'mem_1' },
-        data: { role: 'admin' },
+        data: { deactivated: true },
       }),
     ).rejects.toThrow(/P2025/);
     expect(mockDb.lockLog).toEqual(['mem_1']);
-    expect(mockDb.members.get('mem_1')?.role).toBe('owner,admin');
+    expect(mockDb.members.get('mem_1')?.deactivated).toBe(false);
     expect(activeKeys()).toEqual(['apk_1', 'apk_2', 'apk_3', 'apk_4']);
   });
 

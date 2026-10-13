@@ -64,6 +64,7 @@ const validateApiKey = jest.fn((key: string) =>
           scopes: [],
           createdByMemberId: 'mem_1',
           organizationOwned: false,
+          creatorRoles: null,
         }
       : null,
   ),

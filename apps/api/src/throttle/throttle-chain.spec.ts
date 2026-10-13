@@ -91,6 +91,7 @@ const apiKeyService = {
       scopes: [],
       createdByMemberId: null,
       organizationOwned: false,
+      creatorRoles: null,
     }),
 };
 

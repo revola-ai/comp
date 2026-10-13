@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import { resolveRolePermissions } from './app-access';
+import { permissionScopes, resolveRolePermissions } from './app-access';
 import { resolveServiceByName } from './service-token.config';
 import type { AuthContext } from './types';
 
@@ -14,8 +14,10 @@ const ANY_SCOPE = 'any';
 
 /**
  * The scopes the caller itself holds, as `resource:action` strings:
- *   - an API key: its own scopes (a key holding every available scope may
- *     grant any; a key with no recorded scopes holds none);
+ *   - an API key: the scopes it may use on this request, i.e. a personal
+ *     key's own scopes cut to its creator's current permissions
+ *     (api-key-effective-scopes.ts); a key holding every available scope
+ *     may grant any, a key with none holds none;
  *   - a session: what its roles grant in the organization, built-in and
  *     custom (the union over comma-separated roles), the same resolution
  *     PermissionGuard applies to MCP sessions; platform admins hold all;
@@ -42,14 +44,8 @@ async function heldScopes({
     .map((role) => role.trim())
     .filter(Boolean);
   if (roles.length === 0) return new Set();
-  const permissions = await resolveRolePermissions(
-    caller.organizationId,
-    roles,
-  );
-  return new Set(
-    Object.entries(permissions).flatMap(([resource, actions]) =>
-      actions.map((action) => `${resource}:${action}`),
-    ),
+  return permissionScopes(
+    await resolveRolePermissions(caller.organizationId, roles),
   );
 }
 

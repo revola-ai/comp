@@ -17,8 +17,8 @@ import {
  * delete here runs in one transaction that locks the affected member rows,
  * revokes their personal API keys, then deletes. Revocation therefore happens
  * only when better-auth actually deletes, after its own checks, and rolls back
- * with the delete if the delete fails. Role changes, deactivations and bans
- * revoke the same way (api-key-revoking-updates.ts).
+ * with the delete if the delete fails. Deactivations and bans revoke the same
+ * way (api-key-revoking-updates.ts); role changes do not revoke.
  *
  * better-auth's Prisma adapter reaches a model as `db[modelName]`, where the
  * name comes from its config: `user.modelName: 'User'` gives `db.User`, the

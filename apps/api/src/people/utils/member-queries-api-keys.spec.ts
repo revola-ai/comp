@@ -1,8 +1,10 @@
 import { FakeMemberDb } from '../../../test/fake-member-db';
 
 // PATCH /v1/people/:id goes through MemberQueries.updateMember. A change that
-// cuts the member's access (isActive: false, or a role removed) revokes the
-// member's personal API keys in the same transaction as the update.
+// ends the member's access (isActive: false) revokes the member's personal API
+// keys in the same transaction as the update. A role change does not: a
+// personal key is bounded by its creator's current roles at every use
+// (api-key-effective-scopes.ts).
 let mockDb = new FakeMemberDb();
 jest.mock('@db', () => ({
   get db() {
@@ -54,10 +56,11 @@ describe('MemberQueries.updateMember revokes personal API keys on access loss', 
     expect(activeKeys()).toEqual(['apk_2']);
   });
 
-  it('removing a role revokes personal keys', async () => {
+  it('removing a role keeps the keys and locks nothing', async () => {
     await MemberQueries.updateMember('mem_1', 'org_1', { role: 'employee' });
     expect(mockDb.members.get('mem_1')?.role).toBe('employee');
-    expect(activeKeys()).toEqual(['apk_2']);
+    expect(activeKeys()).toEqual(['apk_1', 'apk_2']);
+    expect(mockDb.lockLog).toEqual([]);
   });
 
   it('adding a role keeps the keys', async () => {

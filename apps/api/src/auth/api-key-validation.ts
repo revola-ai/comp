@@ -1,3 +1,5 @@
+import { memberRoles } from './api-key-effective-scopes';
+
 /** Result from validating an API key */
 export interface ApiKeyValidationResult {
   /** API key row primary key - exposed on the request so downstream
@@ -16,6 +18,10 @@ export interface ApiKeyValidationResult {
   /** Organization-owned keys outlive their creator's membership; personal
    *  keys stop working once the creator is removed or deactivated. */
   organizationOwned: boolean;
+  /** The creator's current roles, which bound a personal key's scopes at
+   *  every use (api-key-effective-scopes.ts); null for keys no member bounds:
+   *  organization-owned and legacy creatorless keys. */
+  creatorRoles: string[] | null;
 }
 
 /** Columns read when matching a presented key against stored candidates. */
@@ -30,7 +36,7 @@ export const API_KEY_VALIDATION_SELECT = {
   createdByMemberId: true,
   organizationOwned: true,
   legacyCreatorless: true,
-  createdBy: { select: { isActive: true, deactivated: true } },
+  createdBy: { select: { isActive: true, deactivated: true, role: true } },
 } as const;
 
 export interface ApiKeyCandidate {
@@ -43,7 +49,7 @@ export interface ApiKeyCandidate {
   createdByMemberId: string | null;
   organizationOwned: boolean;
   legacyCreatorless: boolean;
-  createdBy: { isActive: boolean; deactivated: boolean } | null;
+  createdBy: { isActive: boolean; deactivated: boolean; role: string } | null;
 }
 
 export type ApiKeyRejection = 'inactive_creator' | 'orphaned';
@@ -79,5 +85,9 @@ export function toValidationResult(
     scopes: candidate.scopes,
     createdByMemberId: candidate.createdByMemberId ?? null,
     organizationOwned: candidate.organizationOwned,
+    creatorRoles:
+      candidate.organizationOwned || !candidate.createdBy
+        ? null
+        : memberRoles(candidate.createdBy.role),
   };
 }

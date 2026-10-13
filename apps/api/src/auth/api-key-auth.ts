@@ -1,4 +1,5 @@
 import { UnauthorizedException } from '@nestjs/common';
+import { effectiveApiKeyScopes } from './api-key-effective-scopes';
 import type { ApiKeyService } from './api-key.service';
 import type { AuthenticatedRequest } from './types';
 
@@ -31,6 +32,12 @@ export async function authenticateApiKey({
   if (!result) {
     throw new UnauthorizedException('Invalid or expired API key');
   }
+  // A personal key's scopes are cut to its creator's current permissions.
+  const scopes = await effectiveApiKeyScopes({
+    organizationId: result.organizationId,
+    scopes: result.scopes,
+    creatorRoles: result.creatorRoles,
+  });
   release();
 
   request.organizationId = result.organizationId;
@@ -38,7 +45,8 @@ export async function authenticateApiKey({
   request.isApiKey = true;
   request.isServiceToken = false;
   request.isPlatformAdmin = false;
-  request.apiKeyScopes = result.scopes;
+  request.apiKeyScopes = scopes;
+  request.apiKeyGrantedScopes = result.scopes;
   // Surface the key's id + name on the request so downstream attribution
   // (ActingUserResolver, audit logs) can record "via API key '<name>'"
   // without an extra DB lookup.
