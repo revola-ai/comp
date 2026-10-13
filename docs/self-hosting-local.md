@@ -111,7 +111,7 @@ Under those rules it refuses to start without `DATABASE_SSL_CA` (error code `ca_
 
 ### Schema changes against the shared database
 
-Laptops and production share this database, so `prisma migrate dev`, `migrate reset`, `migrate deploy`, `migrate resolve`, `db push`, `db seed` and `db execute` refuse to run when `DATABASE_URL` points at the production project recorded in `packages/db/src/production-target.json`.
+Laptops and production share this database, so `prisma migrate dev`, `migrate reset`, `migrate deploy`, `migrate resolve`, `db push`, `db seed`, `db execute` and `studio` refuse to run when `DATABASE_URL`, or a `--url <value>` / `--url=<value>` flag overriding it, points at the production project recorded in `packages/db/src/production-target.json`.
 That file holds the SHA-256 of the project ref, never the ref itself (the fork is public); the guard hashes the ref a URL carries (the pooler user `postgres.<ref>` or the host `db.<ref>.supabase.co`) and compares, so another project on the same regional pooler is not refused.
 The check runs inside every `prisma.config.ts` (`packages/db`, `apps/app`, `apps/portal`, `apps/framework-editor`), so it applies to the package scripts and to `bunx prisma ...` alike; `bun run db:seed`, a direct `bun prisma/seed/seed.ts` and `bun run backfill:framework-versions` check too.
 `COMP_I_AM_TOUCHING_PROD=1` runs them anyway; use it only when you mean to change production by hand.
