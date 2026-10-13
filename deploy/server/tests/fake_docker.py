@@ -16,6 +16,7 @@ Knobs (environment):
                             containers, then fails
   FAKE_DOCKER_UNHEALTHY_ENV `compose up` with an api.env holding this text replaces the
                             containers, then fails (a configuration that no longer works)
+  FAKE_DOCKER_FAIL_STOP     `compose stop` fails and leaves the containers running
   FAKE_DOCKER_FAIL_BUILD   `buildx bake` of this target fails
   FAKE_DOCKER_FAIL_TRIGGER  `trigger.dev deploy` in this apps/<project> fails
   FAKE_DOCKER_TRIGGER_CLI   the trigger.dev version the tools image holds ("missing": none;
@@ -116,6 +117,8 @@ def compose(args: list[str]) -> NoReturn:
                     fail('container comp-api-1 is unhealthy')
         done('Container comp-api-1 Healthy\nContainer comp-app-1 Healthy\nContainer comp-portal-1 Healthy')
     if command == 'stop':
+        if os.environ.get('FAKE_DOCKER_FAIL_STOP'):
+            fail('Error response from daemon: cannot stop container comp-api-1: permission denied')
         state['containers'] = {}
         done('Container comp-api-1 Stopped')
     if command == 'run':

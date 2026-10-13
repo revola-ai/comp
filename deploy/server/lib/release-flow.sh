@@ -69,8 +69,8 @@ smoke() { # smoke <tag>: the public checks, stopping at the first that fails
 }
 
 # after_restore [what]: reports a server step that ended with the previous tag back (4),
-# nothing serving (5), a revert the server refused (its lease ran out: nothing changed) or an
-# unknown state; smoke-checks the restored tag. <what> says what happened to $TAG (default: it
+# nothing serving (5), restoring (or, after a first release, stopping) that failed too (6), a
+# revert the server refused (its lease ran out: nothing changed) or an unknown state; smoke-checks the restored tag. <what> says what happened to $TAG (default: it
 # failed). Always fails the command.
 after_restore() {
   local what="${1:-$TAG failed}" serving
@@ -100,7 +100,9 @@ after_restore() {
       ;;
     5:*) echo "THE SITE IS DOWN: $what and there was no earlier release to bring back." ;;
     6:*)
-      if [[ "$(result_of restore)" == fresh-failed ]]; then
+      if [[ "$(result_of restore)" == stop-failed ]]; then
+        echo "COULD NOT STOP $TAG: $what, there was no earlier release to bring back, and stopping its containers failed too (above); it may still be up, failing."
+      elif [[ "$(result_of restore)" == fresh-failed ]]; then
         echo "COULD NOT BRING THE PREVIOUS RELEASE BACK: $what, and restoring the release before it failed too (above), with its snapshot and with its configuration rendered again from the current secret; the site may be down."
       else
         echo "COULD NOT BRING THE PREVIOUS RELEASE BACK: $what, and restoring the release before it failed too (above); the site may be down."

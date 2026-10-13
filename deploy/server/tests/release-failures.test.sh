@@ -200,5 +200,44 @@ check "a step that never ends: polled exactly that often" test "$(polls_of fake-
 check "a step that never ends: points at status and unlock" grep -qF \
   "Check the server with deploy/server/release.sh status; free a lease left behind with deploy/server/release.sh unlock." "$TMP/gave-up.out"
 
+# ---------------------------------------------------------------- the lease runs out between entry.sh's check and its cleanup
+# An own step passed the ownership check, then its lease expired (FAKE_CLOCK_TICK: each reading of
+# the clock is a second later) before entry.sh cleared the stage: the run's own staged
+# configuration and checkout are still spared, so finish keeps its snapshot and a first
+# release's revert stops the stack with its compose.yaml.
+entry() { COMP_ROOT="$SERVER" bash "$SERVER_DIR/on-server/entry.sh" "$@" >"$TMP/entry.out" 2>&1; }
+RUN="20261007T120000Z-release-$TAG_B-0123abcd"
+up_then_expiring() { # the run's up step, then its lease live for one more reading of the clock only
+  docker_state "s['images'] += ['comp-api:$TAG_B', 'comp-app:$TAG_B', 'comp-portal:$TAG_B', 'comp-migrate:$TAG_B']"
+  date +%s >"$TMP/clock"
+  FAKE_CLOCK="$TMP/clock" entry "20261007T120000Z-release-$TAG_B.log" "$RUN" "$OPERATOR" new "$SHA_B" release up release "$TAG_B"
+  printf '%s %s release %s\n' "$RUN" "$(($(cat "$TMP/clock") + 1))" "$TAG_B" >"$SERVER/release.lease"
+}
+reset_server
+released "$TAG_A"
+up_then_expiring
+FAKE_CLOCK="$TMP/clock" FAKE_CLOCK_TICK=1 entry "20261007T120100Z-finish-$TAG_B.log" "$RUN" "$OPERATOR" own "$SHA_B" release finish release "$TAG_B"
+check "lease expiring after the check: finish records, keeping its snapshot" \
+  test "$?:$(last_record):$(test -f "$SERVER/releases/$TAG_B/compose.yaml" && echo kept)" = "0:release $TAG_B ok:kept"
+check "lease expiring after the check: finish reuses the run's checkout" grep -qF "== reusing this run's checkout of $SHA_B" "$SERVER/logs/20261007T120100Z-finish-$TAG_B.log"
+reset_server
+up_then_expiring
+FAKE_CLOCK="$TMP/clock" FAKE_CLOCK_TICK=1 entry "20261007T120100Z-revert-$TAG_B.log" "$RUN" "$OPERATOR" own "$SHA_B" release revert release "$TAG_B"
+check "lease expiring after the check: a first release's revert stops the stack (exit 5)" \
+  test "$?:$(serving):$(up_configs | tail -n 1)" = "5:none:$TAG_B stop stage"
+check "lease expiring after the check: the revert says the site is down" grep -qF "THE SITE IS DOWN" "$TMP/entry.out"
+
+# A first release's revert whose `compose stop` fails never claims the containers stopped.
+reset_server
+FAKE_CURL_BAD_TAG="$TAG_B" FAKE_DOCKER_FAIL_STOP=1 release_sh "$TMP/nostop.out" release "$SHA_B"
+check "first release, stop fails: exits non-zero, recorded failed, still up" \
+  test "$?:$(last_record):$(serving)" = "1:release $TAG_B failed:comp-api:$TAG_B"
+check "first release, stop fails: the server says it could not stop it" \
+  grep -qF "COULD NOT STOP the containers of $TAG_B (above)" "$TMP/nostop.out"
+check "first release, stop fails: the laptop says it may still be up" grep -qF \
+  "COULD NOT STOP $TAG_B: $TAG_B failed, there was no earlier release to bring back, and stopping its containers failed too (above); it may still be up, failing." "$TMP/nostop.out"
+check "first release, stop fails: never claims it stopped or that nothing serves" \
+  bash -c "! grep -qE 'containers are stopped|THE SITE IS DOWN' '$TMP/nostop.out'"
+
 check "shellcheck -x: this suite" bash -c "cd '$ROOT' && shellcheck -x deploy/server/tests/release-failures.test.sh"
 finish

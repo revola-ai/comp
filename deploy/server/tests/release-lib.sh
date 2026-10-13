@@ -9,6 +9,8 @@
 # internet. With FAKE_CLOCK naming a file that holds epoch seconds, time is fake on both sides:
 # `date +%s` and `date -u +<format>` answer it, and sleep (and a slow curl, FAKE_CURL_SLOW or
 # FAKE_CURL_JUMP) advance it instead of waiting, so no check depends on how fast the machine is.
+# With FAKE_CLOCK_TICK=<n>, each `date +%s` also advances it by n seconds after answering, so a
+# lease can run out between two readings of it.
 
 SHA_A=aaaaaaaaaaaa1111111111111111111111111111 # pushed to the fork; released before the tests start
 SHA_B=bbbbbbbbbbbb2222222222222222222222222222 # pushed to the fork; the release under test
@@ -74,7 +76,7 @@ SH
   # date: with FAKE_CLOCK, `date +%s` and `date -u +<format>` (log names, records) tell its time
   # shellcheck disable=SC2016 # expanded by the fakes when they run
   printf '%s\n' '#!/usr/bin/env bash' '[[ -n "${FAKE_CLOCK:-}" ]] || exec /bin/date "$@"' 'now="$(cat "$FAKE_CLOCK")"' \
-    'case "$*" in' '  +%s) echo "$now" ;;' \
+    'case "$*" in' '  +%s) echo "$now"; [[ -z "${FAKE_CLOCK_TICK:-}" ]] || echo $((now + FAKE_CLOCK_TICK)) >"$FAKE_CLOCK" ;;' \
     '  "-u +"*) /bin/date -u -r "$now" "$2" 2>/dev/null || /bin/date -u -d "@$now" "$2" ;;' \
     '  *) exec /bin/date "$@" ;;' 'esac' >"$bin/date"
   chmod 755 "$bin/docker" "$bin/curl" "$bin/flock" "$bin/git" "$bin/df" "$bin/awk" "$bin/timeout" "$bin/sleep" "$bin/date"
@@ -113,7 +115,8 @@ reset_server() {
     FAKE_AWS_INTERRUPT FAKE_SSM_CANCEL FAKE_CURL_INTERRUPT FAKE_DF_USE FAKE_DOCKER_FAIL_PRUNE \
     FAKE_AWK_INTERRUPT FAKE_TIMEOUT_EXPIRE FAKE_CURL_BAD_ENV FAKE_CLOCK FAKE_CURL_SLOW \
     FAKE_DOCKER_FAIL_MIGRATE FAKE_CURL_JUMP FAKE_SSM_NOT_YET FAKE_GIT_GONE FAKE_GIT_FAIL_CHECKOUT \
-    FAKE_GIT_FAIL_UPDATE_REF FAKE_GIT_WORKTREE_ADDS FAKE_DOCKER_UNHEALTHY_ENV FAKE_AWS_ARN
+    FAKE_GIT_FAIL_UPDATE_REF FAKE_GIT_WORKTREE_ADDS FAKE_DOCKER_UNHEALTHY_ENV FAKE_AWS_ARN \
+    FAKE_CLOCK_TICK FAKE_DOCKER_FAIL_STOP
 }
 
 overlay() { # overlay <full sha> <path in the repository>: stdin is that file at <sha> (fake git)

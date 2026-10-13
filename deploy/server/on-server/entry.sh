@@ -85,6 +85,14 @@ elif [[ "$lease_mode" == own ]]; then
   refuse 75 "run $run_id no longer holds the server (its lease expired); this step did nothing; check deploy/server/release.sh status"
 fi
 [[ ! -e "$log" ]] || refuse 1 "$log exists already; rerun the command"
+# An own step passed the check above: its run's staged configuration and checkout are spared by
+# the cleanups before the step, even if the lease expires meanwhile (reading it again there could
+# delete what finish and revert need). Neither holds anything for a new step.
+own_stage="" own_tree=""
+if [[ "$lease_mode" == own ]]; then
+  own_stage="$COMP_STAGE/$run_id"
+  [[ "$sha" == - ]] || own_tree="$COMP_WORK/${sha:0:12}"
+fi
 
 fetch_checked() { # fetch_checked <sha>: a new step's fetch and checks, or a refusal
   local changes
@@ -105,14 +113,14 @@ fetch_checked() { # fetch_checked <sha>: a new step's fetch and checks, or a ref
 
 remove_tree() { git -C "$COMP_SRC" worktree remove --force "$1" >/dev/null 2>&1 || rm -rf "$1"; }
 
-# remove_worktrees: the step checkouts in /opt/comp/work (this step's, or those of steps cut
-# short), except the one a release run keeps between its steps while it holds a live lease (its
-# up step's, for its finish, revert or unlock).
+# remove_worktrees [spare]: the step checkouts in /opt/comp/work (this step's, or those of steps
+# cut short), except the one a release run keeps between its steps while it holds a live lease
+# (its up step's, for its finish, revert or unlock) and <spare> (an own step's run's, before it).
 remove_worktrees() {
-  local tree keep=""
+  local tree keep="" spare="${1:-}"
   if lease_live && [[ "$LEASE_WHAT" =~ ^release\ ([0-9a-f]{12})$ ]]; then keep="$COMP_WORK/${BASH_REMATCH[1]}"; fi
   for tree in "$COMP_WORK"/*; do
-    [[ -e "$tree" && "$tree" != "$keep" ]] || continue
+    [[ -e "$tree" && "$tree" != "$keep" && "$tree" != "$spare" ]] || continue
     remove_tree "$tree"
   done
   git -C "$COMP_SRC" worktree prune
@@ -127,7 +135,7 @@ step_checkout() { # step_checkout <sha> <dir>: the step's checkout of <sha>, or 
     return 0
   fi
   [[ "$lease_mode" == own ]] || fetch_checked "$1" || return 1
-  remove_worktrees
+  remove_worktrees "$own_tree"
   [[ ! -e "$2" ]] || remove_tree "$2" # the run's, at another commit
   if ! mkdir -p "$COMP_WORK" || ! git -C "$COMP_SRC" worktree add --quiet --detach "$2" "$1"; then
     echo "could not check $1 out in $2"
@@ -141,12 +149,13 @@ step_checkout() { # step_checkout <sha> <dir>: the step's checkout of <sha>, or 
 
 # clear_stale_stage: the staged configurations (rendered env files) of steps that stopped without
 # removing theirs (SSM kills a migrate or trigger without running its EXIT trap), except the run's
-# that holds a live lease (a release between its up step and its finish or revert).
+# that holds a live lease (a release between its up step and its finish or revert) and, for an
+# own step, its run's (own_stage), whatever the lease says by now.
 clear_stale_stage() {
   local dir keep=""
   if lease_live; then keep="$COMP_STAGE/$LEASE_HOLDER"; fi
   for dir in "$COMP_STAGE"/*; do
-    [[ -e "$dir" && "$dir" != "$keep" ]] || continue
+    [[ -e "$dir" && "$dir" != "$keep" && "$dir" != "$own_stage" ]] || continue
     if rm -rf "$dir"; then echo "== removed $dir, a configuration a stopped step left"; else echo "could not remove $dir"; fi
   done
 }

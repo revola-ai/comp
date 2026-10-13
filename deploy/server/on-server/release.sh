@@ -43,7 +43,8 @@
 # "comp-result: serving=<tag>" (none: the site is down; unknown: see the log).
 # Exit: 0 done; 1 failed before any container changed (or finish could not pin the commit or
 # keep the configuration); 3 migrations pending or failed; 4 the previous tag serves again; 5
-# nothing serves (no earlier release); 6 restoring failed too.
+# nothing serves (no earlier release); 6 restoring failed too (or, with no earlier release,
+# stopping the failed tag did: comp-result: restore=stop-failed).
 # shellcheck source=deploy/server/lib/server-common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/server-common.sh"
 # shellcheck source=deploy/server/lib/server-stack.sh
@@ -61,13 +62,19 @@ step="$1" action="$2" tag="$3"
 stage="$COMP_STAGE/${COMP_RUN_ID:-none}" # the configuration a release run renders, until kept
 
 # restore <previous>: after $tag failed, brings <previous> back up with its snapshot, or stops
-# everything (with the configuration compose runs now, $tag's) when there is none. Returns the
-# exit status of the step (4, 5 or 6).
+# everything (with the configuration compose runs now, $tag's) when there is none, never
+# claiming so when the stop fails. Returns the exit status of the step (4, 5 or 6).
 restore() {
   local previous="$1" missing snapshot
   if [[ -z "$previous" ]]; then
     echo "== no earlier release to bring back: stopping the containers of $tag"
-    compose "$tag" stop || true
+    if ! compose "$tag" stop; then
+      record "$action" "$tag" failed
+      result "serving=unknown"
+      result "restore=stop-failed"
+      echo "COULD NOT STOP the containers of $tag (above): there is no earlier release to bring back, so $tag may still be up, failing; check deploy/server/release.sh status."
+      return 6
+    fi
     record "$action" "$tag" failed
     result "serving=none"
     echo "THE SITE IS DOWN: $tag failed and there is no earlier release; its containers are stopped."
