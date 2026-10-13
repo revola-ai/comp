@@ -15,6 +15,10 @@ permissions:
 
 jobs:
   security-review:
+    # Upstream only: the Revola fork (revola-ai/comp) has no ANTHROPIC_API_KEY secret, so here
+    # the job is skipped instead of failing every PR. Remove this line to run it in the fork
+    # once that secret exists.
+    if: github.repository == 'trycompai/comp'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
