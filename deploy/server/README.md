@@ -40,7 +40,7 @@ t=<sha12>; sudo env TAG=$t COMP_ENV_DIR=/opt/comp/releases/$t/env docker compose
 ```
 
 The three Comp images are built on the server from the repository root, one at a time, and never pulled (`pull_policy: never`), so `docker compose up -d --no-build` with a tag that was never built fails instead of building whatever is checked out.
-`release.sh` builds them with `deploy/aws/docker-bake.hcl` (`REGISTRY` empty, so they are tagged `comp-<name>:<TAG>`); the `build` sections of `compose.yaml` build the same images by hand (`docker compose build <service>`).
+`release.sh` builds them with `deploy/aws/docker-bake.hcl` (`REGISTRY` empty, so they are tagged `comp-<name>:<TAG>`); the `build` sections of `compose.yaml` build the same images by hand (`docker compose build <service>`, in the form above).
 The `NEXT_PUBLIC_*` build arguments of `app` and `portal` equal `deploy/aws/public-env.ts` (`tests/compose.test.sh` checks).
 
 Healthchecks are liveness probes that never touch the database, so a database outage does not mark a container unhealthy.
@@ -88,7 +88,7 @@ It reads the Secrets Manager secret `comp/production/config` (one JSON object) i
 It checks every service before writing any file, and refuses by name a listed key that is missing from the secret, empty, not a string, containing a line break or a NUL character, or with leading or trailing whitespace (one explicit set, `EDGE_WHITESPACE`, written identically in `render-env.sh` and `secrets/values.ts`, so `push-secrets` refuses exactly the same values); on a refusal the previous files stay as they were.
 It never prints a value, never passes one as a command-line argument and writes each file through a temporary file in the same directory.
 Writes are atomic per file, not per run: an IO failure partway through can leave some files from the new secret and some from the old, so a release that fails to render drops the whole staged configuration.
-compose reads the env files from `COMP_ENV_DIR`, which `release.sh` always sets to the configuration it runs (`compose.yaml`'s default is never used).
+compose reads the env files from `COMP_ENV_DIR`, which `release.sh` always sets to the configuration it runs; `compose.yaml` has no default for it, so a compose command without it fails at once with "set COMP_ENV_DIR to a release snapshot's env directory".
 
 A `.keys` line is a key name, or `NAME from KEY` when the container variable differs from the key in the secret (the app's `AUTH_SECRET from SECRET_KEY`, and each project's `TRIGGER_SECRET_KEY`).
 Names start with a letter and the line has single spaces and nothing around it; besides those, a line is empty or a comment starting with `#` in the first column.

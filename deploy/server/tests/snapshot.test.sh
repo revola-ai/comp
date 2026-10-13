@@ -159,8 +159,8 @@ check "serving tag without a snapshot: /opt/comp/src stays" src_at "$SHA_A"
 release_sh "$TMP/nosnap-out.out" rollback
 check "serving tag without a snapshot: a rollback to a tag with one is the way out" \
   test "$?:$(up_configs)" = "0:$TAG_D up releases/$TAG_D"
-check "/opt/comp/env is used nowhere (compose.yaml's default aside, which release.sh always overrides)" bash -c \
-  "! grep -rnF --exclude-dir=node_modules --exclude-dir=plans --exclude=compose.yaml --exclude=snapshot.test.sh /opt/comp/env '$SERVER_DIR' '$ROOT/docs'"
+check "/opt/comp/env is used nowhere (compose.yaml has no default env directory)" bash -c \
+  "! grep -rnF --exclude-dir=node_modules --exclude-dir=plans --exclude=snapshot.test.sh /opt/comp/env '$SERVER_DIR' '$ROOT/docs'"
 
 # ---------------------------------------------------------------- migrate, trigger and steps without a SHA
 reset_server

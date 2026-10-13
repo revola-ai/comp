@@ -7,14 +7,16 @@
 #     docker compose -f /opt/comp/releases/$t/compose.yaml up -d --no-build
 #
 # deploy/server/release.sh does this (and builds the images with deploy/aws/docker-bake.hcl);
-# the `build` sections below let `docker compose build <service>` build the same images by hand.
+# the `build` sections below let `docker compose build <service>` build the same images by hand,
+# in the same form (TAG, COMP_ENV_DIR and the snapshot's compose file).
 #
 # Run every compose command as root, in that form: the compose CLI reads env_file itself, and
 # the env files are 0600 root in a 0700 directory; `sudo` drops TAG, hence `sudo env TAG=...`.
 # Env files come from deploy/server/render-env.sh, in the directory COMP_ENV_DIR names:
 # release.sh always sets it to the configuration it runs (/opt/comp/releases/<tag>/env or a
-# staged one), so the default below is never used. They hold secrets: inspect this file's
-# resolved form with `docker compose config --no-env-resolution`, never plain `config`.
+# staged one), and there is no default: compose refuses to run without it, so a hand-run
+# command never picks up a stray directory. They hold secrets: inspect this file's resolved
+# form with `docker compose config --no-env-resolution`, never plain `config`.
 
 name: comp
 
@@ -81,7 +83,7 @@ services:
       <<: *image-build
       target: api
     env_file:
-      - path: ${COMP_ENV_DIR:-/opt/comp/env}/api.env
+      - path: ${COMP_ENV_DIR:?set COMP_ENV_DIR to a release snapshot's env directory (release.sh does)}/api.env
         format: raw
     # Liveness only (never touches the database), so a database outage does not restart it.
     healthcheck:
@@ -118,7 +120,7 @@ services:
         NEXT_PUBLIC_SELF_HOSTED: "true"
         NEXT_PUBLIC_APP_ENV: production
     env_file:
-      - path: ${COMP_ENV_DIR:-/opt/comp/env}/app.env
+      - path: ${COMP_ENV_DIR:?set COMP_ENV_DIR to a release snapshot's env directory (release.sh does)}/app.env
         format: raw
     healthcheck:
       <<: *healthcheck
@@ -150,7 +152,7 @@ services:
         NEXT_PUBLIC_PORTAL_URL: https://portal.comp.revola.ai
         NEXT_PUBLIC_BETTER_AUTH_URL: https://portal.comp.revola.ai
     env_file:
-      - path: ${COMP_ENV_DIR:-/opt/comp/env}/portal.env
+      - path: ${COMP_ENV_DIR:?set COMP_ENV_DIR to a release snapshot's env directory (release.sh does)}/portal.env
         format: raw
     healthcheck:
       <<: *healthcheck
@@ -179,7 +181,7 @@ services:
     image: docker.io/cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
     command: [tunnel, run]
     env_file:
-      - path: ${COMP_ENV_DIR:-/opt/comp/env}/cloudflared.env
+      - path: ${COMP_ENV_DIR:?set COMP_ENV_DIR to a release snapshot's env directory (release.sh does)}/cloudflared.env
         format: raw
     mem_limit: 256m
     memswap_limit: 256m
@@ -202,13 +204,13 @@ services:
   migrate:
     <<: *tools
     env_file:
-      - path: ${COMP_ENV_DIR:-/opt/comp/env}/migrate.env
+      - path: ${COMP_ENV_DIR:?set COMP_ENV_DIR to a release snapshot's env directory (release.sh does)}/migrate.env
         format: raw
 
   trigger:
     <<: *tools
     env_file:
-      - path: ${COMP_ENV_DIR:-/opt/comp/env}/trigger.env
+      - path: ${COMP_ENV_DIR:?set COMP_ENV_DIR to a release snapshot's env directory (release.sh does)}/trigger.env
         format: raw
 
 # A private bridge with a fixed subnet (clear of the VPC and Docker's default 172.17/16).

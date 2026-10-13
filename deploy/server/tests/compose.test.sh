@@ -21,6 +21,13 @@ check "config renders as JSON" test -s "$TMP/config.json"
 unset_tag() { ! COMP_ENV_DIR="$TMP/env" env -u TAG docker compose -f "$COMPOSE_FILE" config --quiet 2>"$TMP/notag.err"; }
 check "refuses to run without TAG" unset_tag
 check "the TAG error says what TAG is" grep -qF "12-character git sha" "$TMP/notag.err"
+# A hand-run compose without COMP_ENV_DIR fails at once, never falling back to a directory.
+unset_env_dir() { ! TAG="$TAG_VALUE" env -u COMP_ENV_DIR docker compose -f "$COMPOSE_FILE" "$@" config --quiet 2>"$TMP/noenv.err"; }
+check "refuses to run without COMP_ENV_DIR" unset_env_dir
+check "the COMP_ENV_DIR error says what to set it to" \
+  grep -qF "set COMP_ENV_DIR to a release snapshot's env directory (release.sh does)" "$TMP/noenv.err"
+check "the tools profile refuses without COMP_ENV_DIR too" unset_env_dir --profile tools
+check "compose.yaml has no default env directory" bash -c "! grep -qF 'COMP_ENV_DIR:-' '$COMPOSE_FILE'"
 
 for target in app portal; do
   (cd "$ROOT" && bun deploy/aws/public-env.ts env "$target") >"$TMP/public-$target.txt"

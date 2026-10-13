@@ -63,9 +63,9 @@ def fail(message: str, code: int = 1) -> NoReturn:
 
 
 def env_dir() -> str:
-    """release.sh always names the configuration's env files (COMP_ENV_DIR); never a default."""
+    """compose.yaml interpolates ${COMP_ENV_DIR:?...} for every command: there is no default."""
     if not os.environ.get('COMP_ENV_DIR'):
-        fail('fake docker: COMP_ENV_DIR is not set; compose would fall back to a default directory')
+        fail("error while interpolating services.api.env_file.[0].path: required variable COMP_ENV_DIR is missing a value: set COMP_ENV_DIR to a release snapshot's env directory (release.sh does)")
     return os.environ['COMP_ENV_DIR']
 
 
@@ -89,6 +89,7 @@ def compose(args: list[str]) -> NoReturn:
     compose_file, args = args[1], args[2:]
     if not os.path.isfile(compose_file):
         fail(f'open {compose_file}: no such file or directory')
+    env_dir()
     profiles = []
     while args[:1] == ['--profile']:
         profiles.append(args[1])
