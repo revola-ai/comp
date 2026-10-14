@@ -1,4 +1,5 @@
 import { APIError } from 'better-auth/api';
+import { describeFailure } from './describe-failure';
 
 type Env = Partial<NodeJS.ProcessEnv>;
 
@@ -165,13 +166,38 @@ export interface SignUpLookup extends InvitationLookup {
   };
 }
 
+/** Whether a sign-in email may go to this address (see below). */
+async function mayReceiveSignInEmail({
+  email,
+  allowedDomains,
+  db,
+}: {
+  email: string;
+  allowedDomains: readonly string[];
+  db: SignUpLookup;
+}): Promise<boolean> {
+  if (allowedDomains.length === 0) return true;
+  const existingUser = await db.user.findFirst({
+    where: {
+      email: { equals: email.trim().toLowerCase(), mode: 'insensitive' },
+    },
+    select: { id: true },
+  });
+  if (existingUser !== null) return true;
+  return maySignUp({ email, allowedDomains, db });
+}
+
 /**
  * Wraps a sign-in email sender (magic link, email OTP) so nothing is mailed
  * to a new address that may not create an account; existing users always get
- * theirs. A skipped address gets the same success as a mailed one, so the
- * answer never reveals which outside addresses have an account. The account
- * itself is refused by the user.create hook (createEmailDomainAllowlistHook),
- * which also gives OAuth sign-ins their email_domain_not_allowed error.
+ * theirs. A skipped address gets the same answer as a mailed one, at the same
+ * time: the wrapper resolves at once and decides and sends in the background
+ * (the API is a long-running server), so neither the lookups nor the send
+ * show in the latency and it never reveals which outside addresses have an
+ * account. A failure is logged by error name and code only, never the address
+ * or the link or code, and not thrown. The account itself is refused by the
+ * user.create hook (createEmailDomainAllowlistHook), which also gives OAuth
+ * sign-ins their email_domain_not_allowed error.
  */
 export function createAllowlistedEmailSender<
   Message extends { email: string },
@@ -179,29 +205,25 @@ export function createAllowlistedEmailSender<
   env,
   db,
   send,
+  logError = (line) => console.error(`[Auth] ${line}`),
 }: {
   env: Env;
   db: SignUpLookup;
   send: (message: Message) => Promise<void>;
+  logError?: (line: string) => void;
 }): (message: Message) => Promise<void> {
   const allowedDomains = parseAllowedDomains({ env });
 
-  return async (message) => {
-    if (allowedDomains.length > 0) {
-      const existingUser = await db.user.findFirst({
-        where: {
-          email: {
-            equals: message.email.trim().toLowerCase(),
-            mode: 'insensitive',
-          },
-        },
-        select: { id: true },
-      });
-      const allowed =
-        existingUser !== null ||
-        (await maySignUp({ email: message.email, allowedDomains, db }));
-      if (!allowed) return;
-    }
+  const deliver = async (message: Message): Promise<void> => {
+    const email = message.email;
+    if (!(await mayReceiveSignInEmail({ email, allowedDomains, db }))) return;
     await send(message);
+  };
+
+  return (message) => {
+    void deliver(message).catch((error: unknown) => {
+      logError(`Sign-in email not sent: ${describeFailure(error)}`);
+    });
+    return Promise.resolve();
   };
 }

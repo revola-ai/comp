@@ -83,8 +83,14 @@ beforeEach(() => {
   mockInvitationFindFirst.mockReset().mockResolvedValue(null);
 });
 
-const recipients = () =>
-  mockTriggerEmail.mock.calls.map(([message]: [{ to: string }]) => message.to);
+// Sign-in emails are decided and sent in the background (the endpoint
+// answers first), so read the recipients once that work has settled.
+const recipients = async () => {
+  await new Promise((resolve) => setImmediate(resolve));
+  return mockTriggerEmail.mock.calls.map(
+    ([message]: [{ to: string }]) => message.to,
+  );
+};
 
 describe('auth.server sign-up allowlist wiring', () => {
   it('refuses to create a user outside the allowed domains', async () => {
@@ -107,7 +113,7 @@ describe('auth.server sign-up allowlist wiring', () => {
         headers: new Headers(),
       }),
     ).resolves.toEqual({ status: true });
-    expect(recipients()).toEqual([]);
+    expect(await recipients()).toEqual([]);
   });
 
   it('mails no sign-in code to a new address outside the allowed domains', async () => {
@@ -117,7 +123,7 @@ describe('auth.server sign-up allowlist wiring', () => {
         headers: new Headers(),
       }),
     ).resolves.toEqual({ success: true });
-    expect(recipients()).toEqual([]);
+    expect(await recipients()).toEqual([]);
   });
 
   it('mails the sign-in code to an existing user outside the allowed domains', async () => {
@@ -126,7 +132,7 @@ describe('auth.server sign-up allowlist wiring', () => {
       body: { email: 'auditor@firm.com', type: 'sign-in' },
       headers: new Headers(),
     });
-    expect(recipients()).toEqual(['auditor@firm.com']);
+    expect(await recipients()).toEqual(['auditor@firm.com']);
   });
 
   it('mails the magic link to an address in an allowed domain', async () => {
@@ -134,7 +140,7 @@ describe('auth.server sign-up allowlist wiring', () => {
       body: { email: 'person@revola.ai' },
       headers: new Headers(),
     });
-    expect(recipients()).toEqual(['person@revola.ai']);
+    expect(await recipients()).toEqual(['person@revola.ai']);
   });
 });
 

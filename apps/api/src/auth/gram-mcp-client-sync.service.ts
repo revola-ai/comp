@@ -4,20 +4,13 @@ import {
   type OnApplicationBootstrap,
 } from '@nestjs/common';
 import { auth } from './auth.server';
+import { describeFailure } from './describe-failure';
 import { readGramMcpClient } from './gram-mcp-client';
 import { syncGramOAuthApplication } from './gram-mcp-client-sync';
 import { isProductionDeployment } from './production-deployment';
 
 const SKIPPED =
   'Skipped the Gram MCP OAuth client sync: only the production deployment (NODE_ENV=production, SELF_HOSTED=true, AUTH_COOKIE_DOMAIN set) writes its row';
-
-/** The error's name and code only: never its message, which could echo data. */
-function describeFailure(error: unknown): string {
-  if (typeof error !== 'object' || error === null) return 'unknown error';
-  const name = Reflect.get(error, 'name');
-  const code = Reflect.get(error, 'code');
-  return [name, code].filter((part) => typeof part === 'string').join(' ');
-}
 
 /**
  * Writes the Gram MCP OAuth client's row at boot (syncGramOAuthApplication).
