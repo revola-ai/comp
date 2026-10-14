@@ -4,7 +4,7 @@
 # whole monorepo (.dockerignore keeps env files, installs and build output out).
 
 ARG NODE_IMAGE=node:22-slim
-ARG BUN_IMAGE=oven/bun:1.3.4
+ARG BUN_IMAGE=oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895
 
 FROM ${BUN_IMAGE} AS bun
 
