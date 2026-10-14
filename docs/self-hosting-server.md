@@ -16,7 +16,7 @@ On the laptop that runs the scripts:
 - AWS CLI v2 with the default profile on account `455986776194`: `aws sts get-caller-identity --query Account --output text` prints `455986776194`.
 - No `AWS_REGION` or `AWS_DEFAULT_REGION` naming a region other than `us-east-2` (every script refuses one).
 - bash 4 or newer (macOS ships 3.2: `brew install bash`, then `bash --version`).
-- Bun 1.3.4 (the repository's `packageManager`), `git`, `python3` and `curl`.
+- Bun 1.4.2 (the repository's `packageManager`), `git`, `python3` and `curl`.
 - `bun install` run at the repository root (`deploy/server` is a workspace: `push-secrets` needs its `dotenv` and `zod`).
 - The fork as a remote: `git remote -v` lists `https://github.com/revola-ai/comp` (Kyle's checkout calls it `revola`; `origin` is upstream `trycompai/comp`).
 - A terminal: every script that writes refuses to run without one.

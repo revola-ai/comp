@@ -98,7 +98,11 @@ describe('assertEdgeSecrets', () => {
   describe('Cloudflare Tunnel deployment (TRUSTED_EDGE_PROXY_IPS)', () => {
     const tunnel = {
       NODE_ENV: 'production',
+      SELF_HOSTED: 'true',
       AUTH_COOKIE_DOMAIN: '.comp.revola.ai',
+      BASE_URL: 'https://api.comp.revola.ai',
+      NEXT_PUBLIC_APP_URL: 'https://app.comp.revola.ai',
+      NEXT_PUBLIC_PORTAL_URL: 'https://portal.comp.revola.ai',
       TRUSTED_EDGE_PROXY_IPS: '172.30.0.10',
       COMP_FORWARDED_IP_TOKEN: FORWARDED,
     };

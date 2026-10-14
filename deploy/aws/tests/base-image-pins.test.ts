@@ -16,7 +16,7 @@ function argDefault({ name }: { name: string }): string | undefined {
 describe('base images', () => {
   test.each([
     ['NODE_IMAGE', 'node:22-slim'],
-    ['BUN_IMAGE', 'oven/bun:1.3.4'],
+    ['BUN_IMAGE', 'oven/bun:1.4.2'],
   ])('%s is %s pinned by digest', (name, image) => {
     const escaped = image.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
     expect(argDefault({ name })).toMatch(new RegExp(`^${escaped}@sha256:[0-9a-f]{64}$`));
