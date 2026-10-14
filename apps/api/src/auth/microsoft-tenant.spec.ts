@@ -6,7 +6,11 @@ function mockNativeModule(id: string): unknown {
 }
 jest.mock('better-auth/api', () => mockNativeModule('better-auth/api'));
 
-import { assertMicrosoftTenant, microsoftTenantId } from './microsoft-tenant';
+import {
+  accountLinkingTrustedProviders,
+  assertMicrosoftTenant,
+  microsoftTenantId,
+} from './microsoft-tenant';
 
 const microsoft = {
   AUTH_MICROSOFT_CLIENT_ID: 'client-id',
@@ -74,6 +78,16 @@ describe('assertMicrosoftTenant', () => {
     ).not.toThrow();
   });
 
+  // Not scoped to production like the edge checks (edge-secrets.ts): laptops
+  // write users and accounts into the shared production database (D7).
+  it('refuses outside production too', () => {
+    expect(() =>
+      assertMicrosoftTenant({
+        env: { ...microsoft, NODE_ENV: 'development', SELF_HOSTED: 'true' },
+      }),
+    ).toThrow('AUTH_MICROSOFT_TENANT_ID');
+  });
+
   it('leaves a deployment without the allowlist or without Microsoft alone', () => {
     expect(() =>
       assertMicrosoftTenant({
@@ -86,4 +100,37 @@ describe('assertMicrosoftTenant', () => {
       }),
     ).not.toThrow();
   });
+});
+
+// A trusted provider links to an existing account by email without a
+// verified-email claim. Microsoft is trusted only when bound to one tenant,
+// whose own administrators control the addresses it reports.
+describe('accountLinkingTrustedProviders', () => {
+  it.each([
+    ['a tenant ID', TENANT],
+    ['a primary domain', ' revola.onmicrosoft.com '],
+  ])('trusts Microsoft bound to one tenant (%s)', (_case, tenant) => {
+    expect(
+      accountLinkingTrustedProviders({
+        env: { ...microsoft, AUTH_MICROSOFT_TENANT_ID: tenant },
+      }),
+    ).toEqual(['google', 'microsoft']);
+  });
+
+  it.each([
+    ['unset', undefined],
+    ['blank', '  '],
+    ['common', 'common'],
+    ['ORGANIZATIONS', 'ORGANIZATIONS'],
+    ['consumers', 'consumers'],
+  ])(
+    'trusts only Google with a multi-tenant (%s) authority',
+    (_case, tenant) => {
+      expect(
+        accountLinkingTrustedProviders({
+          env: { ...microsoft, AUTH_MICROSOFT_TENANT_ID: tenant },
+        }),
+      ).toEqual(['google']);
+    },
+  );
 });

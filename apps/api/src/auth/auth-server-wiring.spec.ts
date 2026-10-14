@@ -147,9 +147,9 @@ describe('auth.server sign-up allowlist wiring', () => {
 describe('auth.server account linking', () => {
   // A trusted provider links to an existing account by email even when it
   // does not vouch for the address. Microsoft may hand over a username claim
-  // as the email (microsoft-email.ts); GitHub links anyway whenever GitHub
-  // reports the address verified, so trusting it would only add the
-  // unverified case.
+  // as the email (microsoft-email.ts), so it is trusted only when bound to one
+  // tenant (below); GitHub links anyway whenever GitHub reports the address
+  // verified, so trusting it would only add the unverified case.
   it('trusts only Google to link without a verified-email claim', () => {
     expect(auth.options.account?.accountLinking?.trustedProviders).toEqual([
       'google',
@@ -190,5 +190,19 @@ describe('auth.server Microsoft tenant', () => {
     expect(loaded?.auth.options.socialProviders).toMatchObject({
       microsoft: { tenantId: TENANT },
     });
+  });
+
+  it('trusts Microsoft to link accounts only when bound to one tenant', () => {
+    const single = loadWith({ AUTH_MICROSOFT_TENANT_ID: TENANT });
+    expect(
+      single?.auth.options.account?.accountLinking?.trustedProviders,
+    ).toEqual(['google', 'microsoft']);
+    const multi = loadWith({
+      AUTH_ALLOWED_EMAIL_DOMAINS: '',
+      AUTH_MICROSOFT_TENANT_ID: 'common',
+    });
+    expect(
+      multi?.auth.options.account?.accountLinking?.trustedProviders,
+    ).toEqual(['google']);
   });
 });

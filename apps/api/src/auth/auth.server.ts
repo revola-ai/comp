@@ -33,7 +33,11 @@ import {
 } from './origin-policy';
 import { getCookieDomain } from './cookie-domain';
 import { assertEdgeSecrets } from './edge-secrets';
-import { assertMicrosoftTenant, microsoftTenantId } from './microsoft-tenant';
+import {
+  accountLinkingTrustedProviders,
+  assertMicrosoftTenant,
+  microsoftTenantId,
+} from './microsoft-tenant';
 import {
   createAllowlistedEmailSender,
   createEmailDomainAllowlistHook,
@@ -552,10 +556,9 @@ export const auth = betterAuth({
     accountLinking: {
       enabled: true,
       // Trusted providers link to an existing account by email without a
-      // verified-email claim. Microsoft may supply a username claim as the
-      // email (./microsoft-email.ts); GitHub still links whenever it reports
-      // the address verified, so only Google is trusted.
-      trustedProviders: ['google'],
+      // verified-email claim: Google, and Microsoft only when bound to one
+      // tenant (./microsoft-tenant.ts).
+      trustedProviders: accountLinkingTrustedProviders({ env: process.env }),
     },
     // Skip the state cookie CSRF check for OAuth flows.
     // In our cross-origin setup (app/portal → API), the state cookie may not
