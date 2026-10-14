@@ -134,13 +134,13 @@ describe('assertScopesGrantable', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('who are platform admins may grant any scope', async () => {
+    it('who are platform admins are bounded by their membership roles, as key validation is', async () => {
       await expect(
         grant(
           { authType: 'session', userRoles: null, isPlatformAdmin: true },
-          AVAILABLE,
+          ['risk:read'],
         ),
-      ).resolves.toBeUndefined();
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 

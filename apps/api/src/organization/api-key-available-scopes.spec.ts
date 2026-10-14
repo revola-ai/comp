@@ -130,8 +130,8 @@ describe('available scopes are the scopes the caller can grant', () => {
     expect(await available({ ...scoped, apiKeyScopes: all })).toEqual(all);
   });
 
-  it('a platform admin gets every scope', async () => {
+  it('a platform admin gets only what their membership roles grant, as key validation allows', async () => {
     const caller = { ...member([]), isPlatformAdmin: true };
-    expect(await available(caller)).toEqual(service.getAvailableScopes());
+    expect(await available(caller)).toEqual([]);
   });
 });

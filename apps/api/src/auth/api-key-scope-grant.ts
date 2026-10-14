@@ -39,7 +39,8 @@ async function heldScopes({
   if (caller.authType === 'service') {
     return new Set(resolveServiceByName(caller.serviceName)?.permissions ?? []);
   }
-  if (caller.isPlatformAdmin) return ANY_SCOPE;
+  // Platform admins included: a personal key is validated against its creator's
+  // membership roles (api-key-creator-bound), so it may only be issued with those.
   const roles = (caller.userRoles ?? [])
     .map((role) => role.trim())
     .filter(Boolean);
