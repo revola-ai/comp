@@ -87,6 +87,7 @@
     "apps/browser-extension/*",
     "!apps/mcp-server",
     "deploy/aws",
+    "deploy/server",
     "packages/*"
   ],
   "dependencies": {

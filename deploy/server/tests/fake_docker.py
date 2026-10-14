@@ -1,0 +1,287 @@
+#!/usr/bin/env python3
+"""A stateful stand-in for the docker CLI, used by deploy/server/tests/release*.test.sh.
+
+It answers only the calls the server-side scripts of deploy/server/release.sh make, keeps the
+images, the stack's containers and the database's migration state in the JSON file
+$FAKE_DOCKER_STATE and appends every call to $FAKE_DOCKER_LOG as
+"[TAG=<TAG>] [REGISTRY=<REGISTRY>] docker <argv, shell-quoted>".
+
+State: images (refs, "comp-api:<tag>"), containers ({service: image ref} of the comp
+project), migrations ("up-to-date", "pending", "failed", "ahead" (the database has a migration
+this checkout lacks: Prisma 7.6's historiesDiverge output) or "unreachable"), up (the compose
+file and COMP_ENV_DIR of the last `compose up`: what the containers run with) and
+trigger_env (the names in trigger.env when a Trigger.dev deploy ran).
+Knobs (environment):
+  FAKE_DOCKER_FAIL_UP       `compose up` with one of these TAGs (space-separated) replaces the
+                            containers, then fails
+  FAKE_DOCKER_UNHEALTHY_ENV `compose up` with an api.env holding this text replaces the
+                            containers, then fails (a configuration that no longer works)
+  FAKE_DOCKER_FAIL_STOP     `compose stop` fails and leaves the containers running
+  FAKE_DOCKER_FAIL_BUILD   `buildx bake` of this target fails
+  FAKE_DOCKER_FAIL_TRIGGER  `trigger.dev deploy` in this apps/<project> fails
+  FAKE_DOCKER_TRIGGER_CLI   the trigger.dev version the tools image holds ("missing": none;
+                            default: apps/api/package.json's, as bun.lock installs it)
+  FAKE_DOCKER_FAIL_PRUNE    `builder prune` fails
+  FAKE_DOCKER_FAIL_MIGRATE  `prisma migrate deploy` fails and leaves the migration failed
+                            ("deploy"), or ends well but leaves one still pending ("partial")
+Nothing here runs a container.
+"""
+import json
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+from typing import NoReturn
+
+argv = sys.argv[1:]
+prefix = [f'{name}={os.environ[name]}' for name in ('TAG', 'REGISTRY') if name in os.environ]
+with open(os.environ['FAKE_DOCKER_LOG'], 'a') as log:
+    log.write(' '.join([*prefix, shlex.join(['docker', *argv])]) + '\n')
+
+STATE_PATH = os.environ['FAKE_DOCKER_STATE']
+state = {'images': [], 'containers': {}, 'migrations': 'up-to-date'}
+if os.path.exists(STATE_PATH):
+    with open(STATE_PATH) as handle:
+        state.update(json.load(handle))
+
+STACK = ('api', 'app', 'portal')
+TUNNEL_IMAGE = 'docker.io/cloudflare/cloudflared:2026.10.0@sha256:fake'
+
+
+def done(text: str = '', code: int = 0) -> NoReturn:
+    if text:
+        print(text)
+    with open(STATE_PATH, 'w') as handle:
+        json.dump(state, handle, indent=1)
+    sys.exit(code)
+
+
+def fail(message: str, code: int = 1) -> NoReturn:
+    print(message, file=sys.stderr)
+    done(code=code)
+
+
+def env_dir() -> str:
+    """compose.yaml interpolates ${COMP_ENV_DIR:?...} for every command: there is no default."""
+    if not os.environ.get('COMP_ENV_DIR'):
+        fail("error while interpolating services.api.env_file.[0].path: required variable COMP_ENV_DIR is missing a value: set COMP_ENV_DIR to a release snapshot's env directory (release.sh does)")
+    return os.environ['COMP_ENV_DIR']
+
+
+def env_file(name: str) -> None:
+    """compose reads every env_file of a service it starts; a missing one is an error."""
+    path = os.path.join(env_dir(), f'{name}.env')
+    if not os.path.exists(path):
+        fail(f'env file {path} not found: stat {path}: no such file or directory')
+
+
+def tag() -> str:
+    value = os.environ.get('TAG', '')
+    if not value:
+        fail('error while interpolating services.api.image: required variable TAG is missing a value')
+    return value
+
+
+def compose(args: list[str]) -> NoReturn:
+    if args[:1] != ['-f'] or len(args) < 3:
+        fail('fake docker: compose needs -f <file> first')
+    compose_file, args = args[1], args[2:]
+    if not os.path.isfile(compose_file):
+        fail(f'open {compose_file}: no such file or directory')
+    env_dir()
+    profiles = []
+    while args[:1] == ['--profile']:
+        profiles.append(args[1])
+        args = args[2:]
+    current = tag()
+    command, rest = args[0], args[1:]
+    if command == 'up':
+        if rest != ['-d', '--no-build', '--wait', '--wait-timeout', '600']:
+            fail(f'fake docker: unexpected up flags {rest}')
+        for name in (*STACK, 'cloudflared'):
+            env_file(name)
+        missing = [f'comp-{name}:{current}' for name in STACK if f'comp-{name}:{current}' not in state['images']]
+        if missing:
+            fail(f'Error response from daemon: No such image: {missing[0]}')
+        state['containers'] = {name: f'comp-{name}:{current}' for name in STACK}
+        state['containers']['cloudflared'] = TUNNEL_IMAGE
+        state['up'] = {'file': compose_file, 'env': env_dir()}
+        if current in os.environ.get('FAKE_DOCKER_FAIL_UP', '').split():
+            fail('container comp-api-1 is unhealthy')
+        unhealthy = os.environ.get('FAKE_DOCKER_UNHEALTHY_ENV')
+        if unhealthy:
+            with open(os.path.join(env_dir(), 'api.env')) as handle:
+                if unhealthy in handle.read():
+                    fail('container comp-api-1 is unhealthy')
+        done('Container comp-api-1 Healthy\nContainer comp-app-1 Healthy\nContainer comp-portal-1 Healthy')
+    if command == 'stop':
+        if os.environ.get('FAKE_DOCKER_FAIL_STOP'):
+            fail('Error response from daemon: cannot stop container comp-api-1: permission denied')
+        state['containers'] = {}
+        done('Container comp-api-1 Stopped')
+    if command == 'run':
+        run(profiles, rest)
+    fail(f'fake docker: compose {command} is not known')
+
+
+def run(profiles: list[str], args: list[str]) -> NoReturn:
+    if profiles != ['tools'] or args[:3] != ['--rm', '-T', '--no-deps']:
+        fail(f'fake docker: one-off runs need --profile tools run --rm -T --no-deps, got {profiles} {args}')
+    args = args[3:]
+    env, workdir = {}, ''
+    while args and args[0] in ('-e', '-w'):
+        if args[0] == '-e':
+            key, _, value = args[1].partition('=')
+            env[key] = value
+        else:
+            workdir = args[1]
+        args = args[2:]
+    service, argv_in, command = args[0], args[1:], ' '.join(args[1:])
+    if f'comp-migrate:{tag()}' not in state['images']:
+        fail(f'Error response from daemon: No such image: comp-migrate:{tag()}')
+    env_file(service)
+    if service == 'migrate':
+        verified_url(argv_in)
+        migrate(command, env)
+    if service == 'trigger':
+        project = workdir.rsplit('/', 1)[-1]
+        trigger_cli_check(argv_in, env)
+        with open(os.path.join(env_dir(), 'trigger.env')) as handle:
+            state['trigger_env'] = sorted(line.split('=', 1)[0] for line in handle.read().splitlines() if '=' in line)
+        if os.environ.get('FAKE_DOCKER_FAIL_TRIGGER') == project:
+            fail(f'Error: deploy of {project} failed (fake)')
+        done(f'Successfully deployed version 20261007.1 of {project} (fake)')
+    fail(f'fake docker: unknown tools service {service}')
+
+
+IMAGE_CLI = 'exec "$cli" deploy --env prod'
+
+
+def trigger_cli_check(argv_in: list[str], env: dict[str, str]) -> None:
+    """Refuses a command that could fetch the CLI from npm, then runs the container's own CLI
+    check (everything before `exec "$cli"`) with real sh and node against a stand-in /repo
+    holding the trigger.dev of FAKE_DOCKER_TRIGGER_CLI; its output is what compose would show."""
+    if argv_in[:2] != ['sh', '-c'] or len(argv_in) != 3 or not argv_in[2].endswith(IMAGE_CLI):
+        fail(f'fake docker: trigger runs sh -c "<cli check> ... {IMAGE_CLI}", got {argv_in}')
+    script = argv_in[2]
+    if 'npx' in script or 'trigger.dev@' in script:
+        fail(f'fake docker: the trigger command could fetch the CLI from npm: {script}')
+    version = os.environ.get('FAKE_DOCKER_TRIGGER_CLI') or pinned_trigger_cli()
+    repo = tempfile.mkdtemp(prefix='fake-repo-')
+    try:
+        if version != 'missing':
+            os.makedirs(os.path.join(repo, 'node_modules', '.bin'))
+            os.makedirs(os.path.join(repo, 'node_modules', 'trigger.dev'))
+            cli = os.path.join(repo, 'node_modules', '.bin', 'trigger')
+            with open(cli, 'w') as handle:
+                handle.write('#!/bin/sh\nexit 0\n')
+            os.chmod(cli, 0o755)
+            with open(os.path.join(repo, 'node_modules', 'trigger.dev', 'package.json'), 'w') as handle:
+                json.dump({'name': 'trigger.dev', 'version': version}, handle)
+        check = script.split(IMAGE_CLI)[0].replace('/repo/', f'{repo}/') + 'exit 0'
+        run = subprocess.run(['sh', '-c', check], capture_output=True, text=True,
+                             env={**os.environ, **env})
+    finally:
+        shutil.rmtree(repo)
+    if run.returncode != 0:
+        fail(run.stderr + run.stdout)
+
+
+def pinned_trigger_cli() -> str:
+    """The trigger.dev devDependency of apps/api, the version bun.lock puts in the image."""
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..')
+    with open(os.path.join(root, 'apps', 'api', 'package.json')) as handle:
+        return json.load(handle)['devDependencies']['trigger.dev']
+
+
+def verified_url(argv_in: list[str]) -> None:
+    """Runs the container's own URL rewrite (everything before `exec bunx`) with real node and
+    the rendered migrate.env, as the container would; its stderr is what compose would show."""
+    if argv_in[:2] != ['sh', '-c'] or 'exec bunx prisma' not in argv_in[2]:
+        fail(f'fake docker: migrate runs sh -c "<url rewrite> exec bunx prisma ...", got {argv_in}')
+    path = os.path.join(env_dir(), 'migrate.env')
+    with open(path) as handle:
+        values = dict(line.split('=', 1) for line in handle.read().splitlines() if '=' in line)
+    check = argv_in[2].split('exec bunx prisma')[0] + \
+        'case "$DATABASE_URL" in *sslaccept=strict*) ;; *) exit 3 ;; esac'
+    run = subprocess.run(['sh', '-c', check], capture_output=True, text=True,
+                         env={**os.environ, **values, 'DATABASE_SSL_CA': '/app/certs/supabase-ca.crt'})
+    if run.returncode != 0:
+        fail(run.stderr + run.stdout)
+
+
+def migrate(command: str, env: dict[str, str]) -> NoReturn:
+    if 'sslaccept' not in command:
+        fail('fake docker: prisma runs without the verified-TLS url')
+    status = state['migrations']
+    if status == 'unreachable':
+        fail("Error: P1001: Can't reach database server")
+    if command.endswith('prisma migrate status'):
+        if status == 'pending':
+            done('Following migration have not yet been applied:\n20261001000000_add_widget\n\n'
+                 'To apply migrations in production run prisma migrate deploy.', 1)
+        if status == 'failed':
+            done('Following migration have failed:\n20261001000000_add_widget', 1)
+        if status == 'ahead':
+            done('Your local migration history and the migrations table from your database are different:\n\n'
+                 'The last common migration is: 20260901000000_init\n\n'
+                 'The migration have not yet been applied:\n20261001000000_add_widget\n\n'
+                 'The migration from the database are not found locally in prisma/migrations:\n'
+                 '20261005000000_newer_widget', 1)
+        done('Database schema is up to date!')
+    if command.endswith('prisma migrate deploy'):
+        if env.get('COMP_I_AM_TOUCHING_PROD') != '1':
+            fail('refusing `prisma migrate deploy`: production_target_refused')
+        failure = os.environ.get('FAKE_DOCKER_FAIL_MIGRATE')
+        if failure == 'deploy':
+            state['migrations'] = 'failed'
+            print('Applying migration `20261001000000_add_widget`')
+            fail('Error: P3018: A migration failed to apply. Migration name: 20261001000000_add_widget')
+        state['migrations'] = 'pending' if failure == 'partial' else 'up-to-date'
+        done('Applying migration `20261001000000_add_widget`\nAll migrations have been successfully applied.')
+    fail(f'fake docker: unexpected migrate command {command}')
+
+
+if argv[:2] == ['image', 'inspect']:
+    if argv[2] in state['images']:
+        done('[{}]')
+    fail(f'Error response from daemon: No such image: {argv[2]}')
+if argv[:2] == ['buildx', 'bake']:
+    if argv[2:5] != ['-f', 'deploy/aws/docker-bake.hcl', '--load'] or len(argv) != 6:
+        fail(f'fake docker: unexpected bake {argv}')
+    if os.environ.get('REGISTRY', 'unset') != '':
+        fail('fake docker: bake without REGISTRY= would push')
+    target = argv[5]
+    for folder, dirs, files in os.walk('.'):  # BuildKit copies the context as the images' node user reads it
+        dirs[:] = [d for d in dirs if d != '.git']
+        for name in [*dirs, *files]:
+            path = os.path.join(folder, name)
+            if not os.path.islink(path) and os.stat(path).st_mode & 0o004 == 0:
+                fail(f'fake docker: {path} is not world-readable; the images\' node user could not read it')
+    if os.environ.get('FAKE_DOCKER_FAIL_BUILD') == target:
+        fail(f'ERROR: target {target}: failed to solve (fake)')
+    state['images'].append(f'comp-{target}:{tag()}')
+    done(f'#1 [{target}] built (fake)')
+if argv[:1] == ['compose']:
+    compose(argv[1:])
+if argv[:1] == ['ps']:
+    if argv[-1] == '{{.Image}}':
+        done('\n'.join(state['containers'].values()))
+    done('\n'.join(f'comp-{name}-1\t{image}\tUp 3 minutes (healthy)' for name, image in state['containers'].items()))
+if argv[:3] == ['image', 'ls', '--format']:
+    done('\n'.join(state['images']))
+if argv[:2] == ['image', 'rm']:
+    ref = argv[2]
+    if ref not in state['images']:
+        fail(f'Error response from daemon: No such image: {ref}')
+    if ref in state['containers'].values():
+        fail(f'Error response from daemon: conflict: unable to remove repository reference "{ref}"')
+    state['images'].remove(ref)
+    done(f'Untagged: {ref}')
+if argv[:2] == ['builder', 'prune']:
+    if os.environ.get('FAKE_DOCKER_FAIL_PRUNE'):
+        fail('ERROR: failed to prune build cache (fake)')
+    done('Total:\t1.5GB')
+fail(f'fake docker: {shlex.join(argv)} is not known')

@@ -1,9 +1,14 @@
 # syntax=docker/dockerfile:1.7
-# Fork-owned images for the AWS install: targets api, app and portal (linux/arm64).
+# Fork-owned images for the AWS install: targets api, app and portal (linux/arm64), and the
+# tools image migrate (deploy/server only).
 # Build with deploy/aws/docker-bake.hcl from the repository root; the build context is the
 # whole monorepo (.dockerignore keeps env files, installs and build output out).
 
-ARG NODE_IMAGE=node:22-slim
+# Base images pinned by the digest of their multi-architecture index, so every build (each
+# release builds on the production server) pulls the same content whatever the tag points at
+# later. Bump the tag and the digest together; the digest is the "Digest:" line of
+# `docker buildx imagetools inspect node:22-slim` (or oven/bun:<tag>), never a per-platform one.
+ARG NODE_IMAGE=node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
 ARG BUN_IMAGE=oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895
 
 FROM ${BUN_IMAGE} AS bun
@@ -102,6 +107,29 @@ RUN cd apps/portal \
      NODE_OPTIONS=--max-old-space-size=6144 bun run build:docker \
   && cp -R .next/static .next/standalone/apps/portal/.next/static \
   && cp -R public .next/standalone/apps/portal/public
+
+# ---------------------------------------------------------------- tools image
+# comp-migrate, the one-off tools image of deploy/server (never serves traffic): the workspace
+# with its node_modules and built libraries, packages/db (prisma.config.ts, the migrations) for
+# `prisma migrate status|deploy`, and apps/api and apps/app with their schema files for
+# `trigger.dev deploy` (whose CA extension reads deploy/aws/certs). Prisma verifies the
+# database against the Supabase CA (DATABASE_SSL_CA). Runs as node, with HOME on the tmpfs
+# compose mounts at /tmp. trigger.dev deploy writes in the project only under .trigger (its
+# build output) and prisma/schema (the Prisma extension's copy), so only those are node's.
+FROM libs AS migrate
+COPY deploy/aws/certs/supabase-ca.crt /app/certs/supabase-ca.crt
+COPY deploy/aws/certs/supabase-ca.crt ./deploy/aws/certs/supabase-ca.crt
+COPY apps/api ./apps/api
+COPY apps/app ./apps/app
+RUN cd apps/api && bun run db:getschema \
+  && cd ../app && bun run db:getschema && bunx prisma generate --schema=prisma/schema \
+  && mkdir -p /repo/apps/api/.trigger /repo/apps/app/.trigger \
+  && chown -R node:node /repo/apps/api/.trigger /repo/apps/app/.trigger \
+       /repo/apps/api/prisma /repo/apps/app/prisma
+ENV DATABASE_SSL_CA=/app/certs/supabase-ca.crt \
+    HOME=/tmp
+WORKDIR /repo/packages/db
+USER node
 
 # ---------------------------------------------------------------- runtime images
 # Every image carries the public Supabase root CA and verifies the database against it.

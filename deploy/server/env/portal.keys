@@ -1,0 +1,15 @@
+# Secret keys of the portal container, read from comp/production/config by render-env.sh.
+# One per line: NAME, or "NAME from KEY" when the container variable is named differently
+# from the key in the secret. Names only; values never go in this repository.
+DATABASE_URL
+APP_AWS_ENDPOINT
+APP_AWS_REGION
+APP_AWS_ACCESS_KEY_ID
+APP_AWS_SECRET_ACCESS_KEY
+APP_AWS_BUCKET_NAME
+APP_AWS_ORG_ASSETS_BUCKET
+UPSTASH_REDIS_REST_URL
+UPSTASH_REDIS_REST_TOKEN
+RESEND_API_KEY
+COMP_FORWARDED_IP_TOKEN
+SERVICE_TOKEN_PORTAL

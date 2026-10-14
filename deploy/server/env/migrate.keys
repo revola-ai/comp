@@ -1,0 +1,5 @@
+# Secret keys of the one-off migrate container (profile tools), read from comp/production/config
+# by render-env.sh. One per line: NAME, or "NAME from KEY" when the container variable is named
+# differently from the key in the secret. Names only; values never go in this repository.
+# Prisma reads DATABASE_URL; migrations use the session-pooler (or direct) migration URL.
+DATABASE_URL from DATABASE_MIGRATION_URL

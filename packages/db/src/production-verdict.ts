@@ -60,7 +60,7 @@ function splitHosts(value: string | null | undefined): string[] {
   return (value ?? '').split(',').map(normalizeHost).filter(Boolean);
 }
 
-type ConnectionCandidates = { users: string[]; hosts: string[] };
+export type ConnectionCandidates = { users: string[]; hosts: string[] };
 
 /**
  * Every user and host the connection could use, read the way pg reads the URL
@@ -69,7 +69,7 @@ type ConnectionCandidates = { users: string[]; hosts: string[] };
  * PGUSER and PGHOST fallbacks for what the URL leaves out. Throws when pg could not
  * parse it either.
  */
-function connectionCandidates({
+export function connectionCandidates({
   databaseUrl,
   env,
 }: {
@@ -93,7 +93,7 @@ function connectionCandidates({
 }
 
 /** The project refs the connection names: a pooler user's suffix or a direct host's label. */
-function projectRefsIn({ users, hosts }: ConnectionCandidates): string[] {
+export function projectRefsIn({ users, hosts }: ConnectionCandidates): string[] {
   const refs: string[] = [];
   for (const user of users) {
     const dot = user.lastIndexOf('.');

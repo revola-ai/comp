@@ -1,0 +1,8 @@
+# Secret keys of the one-off trigger container (profile tools), read from comp/production/config
+# by render-env.sh. One per line: NAME, or "NAME from KEY" when the container variable is named
+# differently from the key in the secret. Names only; values never go in this repository.
+# The Trigger.dev personal access token the CLI deploys with (cloud.trigger.dev, Account,
+# Personal Access Tokens); on-server/trigger.sh sets TRIGGER_PROJECT_REF from the project's ref.
+TRIGGER_ACCESS_TOKEN
+TRIGGER_PROJECT_REF_API
+TRIGGER_PROJECT_REF_APP

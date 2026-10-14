@@ -1,0 +1,265 @@
+#!/usr/bin/env bash
+# Tests for the configuration each release runs with: its snapshot (/opt/comp/releases/<tag>:
+# the SHA, compose.yaml and the rendered env files), what a refused or failed release leaves
+# live, what a revert or rollback comes back with, and that migrate, trigger and the steps
+# without a SHA leave /opt/comp/src at the serving release.
+# Run: bash deploy/server/tests/snapshot.test.sh
+# Laptop and server share one sandbox (tests/release-lib.sh); nothing reaches AWS or the server.
+set -uo pipefail
+# shellcheck source=deploy/server/tests/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=deploy/server/tests/release-lib.sh
+source "$SERVER_DIR/tests/release-lib.sh"
+install_release_fakes
+said() { grep -qF -- "$2" "$1"; } # said <output> <text>
+# fingerprint <dir>: every file under it with its checksum (empty when it does not exist)
+fingerprint() { [[ ! -d "$1" ]] || (cd "$1" && find . -type f -exec cksum {} + | sort); }
+up_state() { python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["up"][sys.argv[2]])' "$FAKE_DOCKER_STATE" "$1"; }
+src_at() { test "$(cat "$FAKE_GIT_HEAD")" = "$1"; } # src_at <sha>: where /opt/comp/src is
+empty_dir() { test -z "$(ls -A "$1" 2>/dev/null)"; }
+lines() { printf '%s\n' "$@"; }
+
+# ---------------------------------------------------------------- a bad secret, then the smoke checks fail
+reset_server
+released "$TAG_D" "$TAG_A"
+before="$(fingerprint "$SERVER/releases/$TAG_A")"
+write_fixture "$TMP/secret.json" --set RESEND_API_KEY fakesecret-broken
+FAKE_CURL_BAD_ENV=fakesecret-broken release_sh "$TMP/secret.out" release "$SHA_B"
+check "bad secret: exits non-zero" test "$?" -ne 0
+check "bad secret: $TAG_B came up with its staged configuration, then $TAG_A with its own snapshot" \
+  test "$(up_configs)" = "$(lines "$TAG_B up stage" "$TAG_A up releases/$TAG_A")"
+check "bad secret: the containers run $TAG_A's env files and compose.yaml again" \
+  test "$(up_state env):$(up_state file)" = "$SERVER/releases/$TAG_A/env:$SERVER/releases/$TAG_A/compose.yaml"
+check "bad secret: $TAG_A's snapshot is unchanged" test "$(fingerprint "$SERVER/releases/$TAG_A")" = "$before"
+check "bad secret: $TAG_A serves and passes the smoke checks" said "$TMP/secret.out" "Now serving $TAG_A (it passes the smoke checks)"
+check "bad secret: recorded as rolled back" test "$(last_record)" = "release $TAG_B rolled-back"
+check "bad secret: no snapshot of $TAG_B" test ! -e "$SERVER/releases/$TAG_B"
+check "bad secret: no staged configuration or checkout left" bash -c "$(declare -f empty_dir); empty_dir '$SERVER/stage' && empty_dir '$SERVER/work'"
+check "bad secret: /opt/comp/src stays at $TAG_A" src_at "$SHA_A"
+check "bad secret: no lease left" test ! -e "$SERVER/release.lease"
+no_secret "bad secret" "$TMP/secret.out"
+
+reset_server
+released "$TAG_A"
+before="$(fingerprint "$SERVER/releases/$TAG_A")"
+write_fixture "$TMP/secret.json" --set RESEND_API_KEY fakesecret-broken
+FAKE_CURL_BAD_ENV=fakesecret-broken release_sh "$TMP/same.out" release "$SHA_A"
+check "bad secret, serving tag released again: back to its snapshot" \
+  test "$(up_configs)" = "$(lines "$TAG_A up stage" "$TAG_A up releases/$TAG_A")"
+check "bad secret, serving tag released again: its snapshot is unchanged" test "$(fingerprint "$SERVER/releases/$TAG_A")" = "$before"
+check "bad secret, serving tag released again: says it serves with its env files from before" \
+  said "$TMP/same.out" "It serves again with the env files and compose.yaml of its snapshot, as before this release"
+check "bad secret, serving tag released again: passes the smoke checks again" bash -c "! grep -qF 'still fail' '$TMP/same.out'"
+
+# ---------------------------------------------------------------- a compose.yaml change in the new commit
+COMPOSE_B="# compose.yaml as $TAG_B has it"
+compose_of_b() { { cat "$TMP/tree/deploy/server/compose.yaml"; echo "$COMPOSE_B"; } | overlay "$SHA_B" deploy/server/compose.yaml; }
+reset_server
+released "$TAG_A"
+compose_of_b
+FAKE_CURL_BAD_TAG="$TAG_B" release_sh "$TMP/compose.out" release "$SHA_B"
+check "compose change: $TAG_B up with it, then $TAG_A with its own" \
+  test "$(up_configs)" = "$(lines "$TAG_B up stage" "$TAG_A up releases/$TAG_A")"
+check "compose change: $TAG_A came back without $TAG_B's change" bash -c "! grep -qxF '$COMPOSE_B' '$(up_state file)'"
+check "compose change: /opt/comp/src keeps $TAG_A's compose.yaml" \
+  cmp -s "$SERVER/src/deploy/server/compose.yaml" "$TMP/tree/deploy/server/compose.yaml"
+
+reset_server
+released "$TAG_A"
+compose_of_b
+release_sh "$TMP/compose-ok.out" release "$SHA_B"
+check "compose change released: exits zero" test "$?" -eq 0
+check "compose change released: kept in $TAG_B's snapshot" grep -qxF "$COMPOSE_B" "$SERVER/releases/$TAG_B/compose.yaml"
+check "compose change released: /opt/comp/src is at $TAG_B, with it" \
+  bash -c "test '$(cat "$FAKE_GIT_HEAD")' = '$SHA_B' && grep -qxF '$COMPOSE_B' '$SERVER/src/deploy/server/compose.yaml'"
+check "compose change released: $TAG_A's snapshot stays for a rollback" test -f "$SERVER/releases/$TAG_A/sha"
+: >"$FAKE_DOCKER_LOG"
+release_sh "$TMP/compose-back.out" rollback
+check "rollback after it: $TAG_A with its own compose.yaml and env files" test "$(up_configs)" = "$TAG_A up releases/$TAG_A"
+check "rollback after it: /opt/comp/src is back at $TAG_A" src_at "$SHA_A"
+
+# ---------------------------------------------------------------- refused before any change: nothing live changes
+reset_server
+released "$TAG_A"
+before="$(fingerprint "$SERVER/releases")"
+docker_state "s['migrations'] = 'pending'"
+release_sh "$TMP/gate.out" release "$SHA_B"
+check "refused at the gate: says no container changed" said "$TMP/gate.out" "before any container changed"
+check "refused at the gate: the snapshots are unchanged, none for $TAG_B" test "$(fingerprint "$SERVER/releases")" = "$before"
+check "refused at the gate: the containers still run $TAG_A's configuration" test "$(up_state env)" = "$SERVER/releases/$TAG_A/env"
+check "refused at the gate: no staged configuration or checkout left" bash -c "$(declare -f empty_dir); empty_dir '$SERVER/stage' && empty_dir '$SERVER/work'"
+check "refused at the gate: /opt/comp/src stays at $TAG_A" src_at "$SHA_A"
+check "refused at the gate: no env file outside the snapshots" test ! -e "$SERVER/env"
+
+# ---------------------------------------------------------------- a key missing from the secret: render-env refuses
+reset_server
+released "$TAG_D" "$TAG_A"
+before="$(fingerprint "$SERVER/releases")"
+write_fixture "$TMP/secret.json" --drop RESEND_API_KEY
+for sha in "$SHA_B" "$SHA_A"; do # a new tag, and the serving one released again (a changed secret)
+  : >"$FAKE_DOCKER_LOG"
+  release_sh "$TMP/nokey.out" release "$sha"
+  check "key missing (${sha:0:12}): exits non-zero" test "$?" -ne 0
+  check "key missing (${sha:0:12}): names the key" said "$TMP/nokey.out" "RESEND_API_KEY is missing from comp/production/config"
+  check "key missing (${sha:0:12}): says no container changed" said "$TMP/nokey.out" "before any container changed"
+  check "key missing (${sha:0:12}): no container changed" test -z "$(container_changes)"
+  check "key missing (${sha:0:12}): recorded failed" test "$(last_record)" = "release ${sha:0:12} failed"
+  check "key missing (${sha:0:12}): the containers still run $TAG_A's snapshot" test "$(up_state env)" = "$SERVER/releases/$TAG_A/env"
+  check "key missing (${sha:0:12}): the snapshots are unchanged" test "$(fingerprint "$SERVER/releases")" = "$before"
+  check "key missing (${sha:0:12}): no staged configuration left" empty_dir "$SERVER/stage"
+done
+# A rollback renders nothing: it comes back with the target's snapshot whatever the secret holds.
+: >"$FAKE_DOCKER_LOG"
+release_sh "$TMP/nokey-back.out" rollback
+check "key missing, rollback: exits zero with $TAG_D's snapshot" test "$?:$(up_configs)" = "0:$TAG_D up releases/$TAG_D"
+check "key missing, rollback: never renders" bash -c "! grep -qF 'render-env' '$TMP/nokey-back.out' '$SERVER'/logs/*-rollback-$TAG_D.log"
+no_secret "key missing" "$TMP/nokey.out" "$TMP/nokey-back.out"
+
+# ---------------------------------------------------------------- rollback needs the target's snapshot
+reset_server
+released "$TAG_D" "$TAG_A"
+rm -rf "${SERVER:?}/releases/$TAG_D"
+release_sh "$TMP/nosnap.out" rollback
+check "rollback without a snapshot: refused" test "$?" -ne 0
+check "rollback without a snapshot: says why" said "$TMP/nosnap.out" "there is no snapshot of $TAG_D"
+check "rollback without a snapshot: before any change" said "$TMP/nosnap.out" "before any container changed"
+check "rollback without a snapshot: no container changed" test -z "$(container_changes)"
+check "rollback without a snapshot: /opt/comp/src stays" src_at "$SHA_A"
+
+reset_server
+released "$TAG_D" "$TAG_A"
+echo "# compose.yaml as $TAG_D has it" >>"$SERVER/releases/$TAG_D/compose.yaml"
+release_sh "$TMP/back.out" rollback
+check "rollback: exits zero" test "$?" -eq 0
+check "rollback: $TAG_D with its own snapshot" test "$(up_configs)" = "$TAG_D up releases/$TAG_D"
+check "rollback: /opt/comp/src at $TAG_D" src_at "$SHA_D"
+check "rollback: says it uses the tag's snapshot" said "$TMP/back.out" "the env files and compose.yaml it was released with (its snapshot"
+
+# ---------------------------------------------------------------- the serving tag has no snapshot
+# Every release keeps one, and prune keeps the serving tag's, so it is gone only by hand: a
+# release is refused before any change, because a failure could not bring that tag back.
+reset_server
+released "$TAG_D" "$TAG_A"
+rm -rf "${SERVER:?}/releases/$TAG_A"
+before="$(fingerprint "$SERVER/releases")"
+release_sh "$TMP/nosnap-current.out" release "$SHA_B"
+check "serving tag without a snapshot: release refused" test "$?" -ne 0
+check "serving tag without a snapshot: says why" said "$TMP/nosnap-current.out" \
+  "Refusing: the serving tag $TAG_A has no snapshot ($SERVER/releases/$TAG_A), so a failed release could not bring it back"
+check "serving tag without a snapshot: points at a rollback" said "$TMP/nosnap-current.out" \
+  "roll back to a tag that has one (deploy/server/release.sh status lists them); releases work again once it serves"
+check "serving tag without a snapshot: says nothing changed" said "$TMP/nosnap-current.out" \
+  "No container, snapshot or checkout was changed; still serving $TAG_A."
+check "serving tag without a snapshot: before any container changed" said "$TMP/nosnap-current.out" "before any container changed"
+check "serving tag without a snapshot: no container changed, nothing rendered" \
+  bash -c "test -z \"\$(grep -E ' (up|stop)( |\$)' '$FAKE_DOCKER_LOG')\" && ! grep -qF render-env '$SERVER'/logs/*-release-$TAG_B.log"
+check "serving tag without a snapshot: the snapshots are unchanged" test "$(fingerprint "$SERVER/releases")" = "$before"
+check "serving tag without a snapshot: recorded failed" test "$(last_record)" = "release $TAG_B failed"
+check "serving tag without a snapshot: /opt/comp/src stays" src_at "$SHA_A"
+release_sh "$TMP/nosnap-out.out" rollback
+check "serving tag without a snapshot: a rollback to a tag with one is the way out" \
+  test "$?:$(up_configs)" = "0:$TAG_D up releases/$TAG_D"
+check "/opt/comp/env is used nowhere (compose.yaml has no default env directory)" bash -c \
+  "! grep -rnF --exclude-dir=node_modules --exclude-dir=plans --exclude=snapshot.test.sh /opt/comp/env '$SERVER_DIR' '$ROOT/docs'"
+
+# ---------------------------------------------------------------- migrate, trigger and steps without a SHA
+reset_server
+released "$TAG_A"
+{ head -n 1 "$TMP/tree/deploy/server/on-server/prune.sh"; echo 'echo "prune.sh as of B"'; tail -n +2 "$TMP/tree/deploy/server/on-server/prune.sh"; } |
+  overlay "$SHA_B" deploy/server/on-server/prune.sh
+before="$(fingerprint "$SERVER/releases")"
+docker_state "s['migrations'] = 'pending'"
+release_typed "migrate" "$TMP/migrate.out" migrate "$SHA_B"
+check "migrate: applied" test "$(last_record)" = "migrate $TAG_B ok"
+release_typed "trigger" "$TMP/trigger.out" trigger "$SHA_B"
+check "trigger: deployed" test "$(last_record)" = "trigger $TAG_B ok"
+check "migrate and trigger: /opt/comp/src stays at the serving $TAG_A" src_at "$SHA_A"
+check "migrate and trigger: never move /opt/comp/src" bash -c "! grep -qF 'git -C $SERVER/src checkout' '$FAKE_GIT_LOG'"
+check "migrate and trigger: the snapshots are unchanged" test "$(fingerprint "$SERVER/releases")" = "$before"
+check "migrate and trigger: no staged env files or checkout left" bash -c "$(declare -f empty_dir); empty_dir '$SERVER/stage' && empty_dir '$SERVER/work'"
+release_typed "no" "$TMP/prune-a.out" prune
+check "a step without a SHA runs the serving release's script" bash -c "! grep -qF 'prune.sh as of B' '$TMP/prune-a.out'"
+release_sh "$TMP/release-b.out" release "$SHA_B"
+release_typed "no" "$TMP/prune-b.out" prune
+check "once $TAG_B is released, steps without a SHA run its scripts" said "$TMP/prune-b.out" "prune.sh as of B"
+no_secret "snapshots" "$TMP"/*.out
+
+# ---------------------------------------------------------------- a snapshot that no longer comes up: once more, rendered fresh
+# The previous tag's snapshot fails its health checks (a credential in it revoked since): the
+# revert renders that tag's configuration again, from its own pinned commit and the current secret.
+COMPOSE_A="# compose.yaml as $TAG_A has it"
+{ cat "$TMP/tree/deploy/server/compose.yaml"; echo "$COMPOSE_A"; } >"$TMP/compose-a.yaml"
+reset_server
+released "$TAG_D" "$TAG_A"
+overlay "$SHA_A" deploy/server/compose.yaml <"$TMP/compose-a.yaml"
+before="$(fingerprint "$SERVER/releases/$TAG_A")"
+FAKE_DOCKER_UNHEALTHY_ENV="SNAPSHOT_OF=$TAG_A" FAKE_CURL_BAD_TAG="$TAG_B" release_sh "$TMP/fresh.out" release "$SHA_B"
+check "snapshot fails, fresh render works: exits non-zero" test "$?" -ne 0
+check "snapshot fails, fresh render works: $TAG_A up with its snapshot, then with a fresh configuration" \
+  test "$(up_configs)" = "$(lines "$TAG_B up stage" "$TAG_A up releases/$TAG_A" "$TAG_A up stage")"
+check "snapshot fails, fresh render works: from $TAG_A's pinned commit" grep -qxF \
+  "git -C $SERVER/src worktree add --quiet --detach $SERVER/work/fresh-$TAG_A refs/comp/releases/$TAG_A" "$FAKE_GIT_LOG"
+check "snapshot fails, fresh render works: with $TAG_A's own compose.yaml" grep -qxF "$COMPOSE_A" "$(up_state file)"
+check "snapshot fails, fresh render works: with the current secret" \
+  test "$(value_of "$(up_state env)/api.env" RESEND_API_KEY)" = "$(fake_value RESEND_API_KEY)"
+check "snapshot fails, fresh render works: serving $TAG_A, recorded as rolled back fresh" \
+  test "$(serving):$(last_record)" = "comp-api:$TAG_A:release $TAG_B rolled-back-fresh"
+check "snapshot fails, fresh render works: the server reports it" grep -qxF "comp-result: restore=fresh" "$SERVER"/logs/*-revert-"$TAG_B".log
+check "snapshot fails, fresh render works: the laptop says it uses the current secret" said "$TMP/fresh.out" \
+  "$TAG_A came back with its configuration rendered again from its own commit and the current comp/production/config, not with its snapshot, which failed its health checks (above)."
+check "snapshot fails, fresh render works: and passes the smoke checks" said "$TMP/fresh.out" "Now serving $TAG_A (it passes the smoke checks)"
+check "snapshot fails, fresh render works: $TAG_A's snapshot is unchanged" test "$(fingerprint "$SERVER/releases/$TAG_A")" = "$before"
+check "snapshot fails, fresh render works: no checkout left" empty_dir "$SERVER/work"
+
+reset_server
+released "$TAG_D" "$TAG_A"
+FAKE_DOCKER_FAIL_UP="$TAG_B $TAG_A" release_sh "$TMP/fresh-fails.out" release "$SHA_B"
+check "both fail: exits non-zero, recorded failed" test "$?:$(last_record)" = "1:release $TAG_B failed"
+check "both fail: tried the snapshot, then a fresh configuration" \
+  test "$(up_configs)" = "$(lines "$TAG_B up stage" "$TAG_A up releases/$TAG_A" "$TAG_A up stage")"
+check "both fail: the laptop says the site may be down, and what was tried" said "$TMP/fresh-fails.out" \
+  "COULD NOT BRING THE PREVIOUS RELEASE BACK: $TAG_B failed, and restoring the release before it failed too (above), with its snapshot and with its configuration rendered again from the current secret; the site may be down."
+reset_server
+released "$TAG_D" "$TAG_A"
+printf 'KEY_ONLY_A_READS\n' | cat "$TMP/tree/deploy/server/env/api.keys" - | overlay "$SHA_A" deploy/server/env/api.keys
+FAKE_DOCKER_UNHEALTHY_ENV="SNAPSHOT_OF=$TAG_A" FAKE_CURL_BAD_TAG="$TAG_B" release_sh "$TMP/fresh-refused.out" release "$SHA_B"
+check "the fresh render refused: never brought up" test "$(grep -cE ' up -d ' "$FAKE_DOCKER_LOG")" -eq 2
+check "the fresh render refused: the server says both failed" said "$TMP/fresh-refused.out" \
+  "BRINGING $TAG_A BACK FAILED TOO (with its snapshot, and with its configuration rendered again): the site may be down"
+check "the fresh render refused: names the key" said "$TMP/fresh-refused.out" "KEY_ONLY_A_READS is missing from comp/production/config"
+check "the fresh render refused: the laptop says the site may be down" said "$TMP/fresh-refused.out" "COULD NOT BRING THE PREVIOUS RELEASE BACK"
+reset_server
+released "$TAG_A"
+FAKE_DOCKER_UNHEALTHY_ENV="SNAPSHOT_OF=$TAG_A" FAKE_CURL_BAD_TAG="$TAG_A" release_sh "$TMP/same-fresh.out" release "$SHA_A"
+check "the serving tag released again: no fresh render (that is the configuration that failed)" \
+  test "$(up_configs)" = "$(lines "$TAG_A up stage" "$TAG_A up releases/$TAG_A")"
+
+# ---------------------------------------------------------------- staged configurations a stopped step left
+# A migrate or trigger that SSM killed never ran its EXIT trap: its rendered env files stay in
+# /opt/comp/stage until the next step that may change something clears them, under the lock.
+left_behind() { # left_behind <run>: a staged configuration with a (fake) secret in it
+  mkdir -p "$SERVER/stage/$1/env" && echo "DATABASE_URL=fakesecret-left-behind" >"$SERVER/stage/$1/env/migrate.env"
+}
+reset_server
+released "$TAG_A"
+left_behind "20261007T110000Z-migrate-$TAG_B-0123abcd"
+release_typed "no" "$TMP/left-prune.out" prune
+check "a configuration a killed step left: the next step clears it (here prune's plan)" empty_dir "$SERVER/stage"
+check "a configuration a killed step left: says so" said "$TMP/left-prune.out" \
+  "== removed $SERVER/stage/20261007T110000Z-migrate-$TAG_B-0123abcd, a configuration a stopped step left"
+# Between a release's up step and its finish, the run's own staged configuration stays.
+entry() { COMP_ROOT="$SERVER" bash "$SERVER_DIR/on-server/entry.sh" "$@" >>"$TMP/entry.out" 2>&1; }
+RUN="20261007T120000Z-release-$TAG_B-0123abcd"
+reset_server
+released "$TAG_A"
+docker_state "s['images'] += ['comp-api:$TAG_B', 'comp-app:$TAG_B', 'comp-portal:$TAG_B', 'comp-migrate:$TAG_B']"
+entry "20261007T120000Z-release-$TAG_B.log" "$RUN" "$OPERATOR" new "$SHA_B" release up release "$TAG_B"
+left_behind "20261007T110000Z-trigger-$TAG_B-0123abcd"
+entry "20261007T120100Z-finish-$TAG_B.log" "$RUN" "$OPERATOR" own "$SHA_B" release finish release "$TAG_B"
+check "the lease holder's staged configuration is spared: finish keeps it as the snapshot" \
+  test "$?:$(last_record):$(cat "$SERVER/releases/$TAG_B/sha" 2>/dev/null)" = "0:release $TAG_B ok:$SHA_B"
+check "the lease holder's run spared, the other cleared" empty_dir "$SERVER/stage"
+
+check "shellcheck -x: the server scripts and this suite" \
+  bash -c "cd '$ROOT' && shellcheck -x deploy/server/on-server/*.sh deploy/server/tests/snapshot.test.sh"
+finish

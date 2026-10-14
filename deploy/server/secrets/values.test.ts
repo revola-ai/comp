@@ -1,0 +1,274 @@
+import { describe, expect, test } from 'bun:test';
+import {
+  DEV_URL,
+  expectNoValues,
+  MIGRATION_URL,
+  POOLER,
+  PROD_REF,
+  RUNTIME_URL,
+  TARGET,
+  token,
+} from './testing/fixtures.ts';
+import { valueProblems } from './values.ts';
+
+const OTHER_REF = 'fakesecretotherrefab';
+const DATABASE_KEYS = ['DATABASE_URL', 'DATABASE_MIGRATION_URL'];
+const ALLOWED: Readonly<Record<string, string>> = {
+  DATABASE_URL: 'sslmode, connect_timeout',
+  DATABASE_MIGRATION_URL: 'sslmode, sslaccept, connect_timeout',
+};
+
+const ENCODE_HINT = 'percent-encode the user and password';
+
+/** The refusal of query parameter `name` in the URL under `key`. */
+function refusedParameter({ key, name }: { key: string; name: string }): string {
+  return `${key} carries the query parameter ${name}, which can change where or how it connects (allowed: ${ALLOWED[key]})`;
+}
+
+function problems(key: string, value: string): string[] {
+  const found = valueProblems({ key, value, target: TARGET });
+  expectNoValues(found.join('\n'));
+  return found;
+}
+
+describe('every key', () => {
+  test('a plain value passes', () => {
+    expect(problems('OPENAI_API_KEY', 'fakesecret-openai')).toEqual([]);
+  });
+
+  test('an empty value is refused', () => {
+    expect(problems('OPENAI_API_KEY', '')).toEqual(['OPENAI_API_KEY is empty']);
+  });
+
+  test('a line break or a NUL character is refused', () => {
+    expect(problems('OPENAI_API_KEY', 'fakesecret\nmore')).toEqual([
+      'OPENAI_API_KEY contains a line break',
+    ]);
+    expect(problems('OPENAI_API_KEY', 'fakesecret\rmore')).toEqual([
+      'OPENAI_API_KEY contains a line break',
+    ]);
+    expect(problems('OPENAI_API_KEY', 'fakesecret\0more')).toEqual([
+      'OPENAI_API_KEY contains a NUL character',
+    ]);
+  });
+
+  test.each([' fakesecret', 'fakesecret ', '\tfakesecret', 'fakesecret\t', ' '])(
+    'a value with leading or trailing whitespace (%j) is refused',
+    (value) => {
+      for (const key of ['OPENAI_API_KEY', 'COMP_FORWARDED_IP_TOKEN', 'DATABASE_URL']) {
+        expect(problems(key, value)).toEqual([`${key} has leading or trailing whitespace`]);
+      }
+    },
+  );
+
+  test.each(['localhost', 'LocalHost', '127.0.0.1', 'host.docker.internal'])(
+    'a value naming %s is refused as a laptop value',
+    (host) => {
+      expect(problems('UPSTASH_REDIS_REST_URL', `http://${host}:8079/fakesecret`)).toEqual([
+        `UPSTASH_REDIS_REST_URL names ${host.toLowerCase()}, a laptop-only address; production needs the hosted service`,
+      ]);
+    },
+  );
+});
+
+describe('tokens', () => {
+  test.each([
+    'SERVICE_TOKEN_TRIGGER',
+    'SERVICE_TOKEN_PORTAL',
+    'COMP_FORWARDED_IP_TOKEN',
+    'INTERNAL_API_TOKEN',
+  ])('%s must be at least 32 characters', (key) => {
+    expect(problems(key, token(key))).toEqual([]);
+    expect(problems(key, 'fakesecret'.padEnd(31, 'x'))).toEqual([
+      `${key} must be at least 32 characters`,
+    ]);
+  });
+});
+
+describe('Trigger.dev', () => {
+  test('secret keys must be prod keys', () => {
+    expect(problems('TRIGGER_SECRET_KEY_API', 'tr_prod_fakesecret')).toEqual([]);
+    expect(problems('TRIGGER_SECRET_KEY_APP', 'tr_dev_fakesecret')).toEqual([
+      'TRIGGER_SECRET_KEY_APP is a dev key (tr_dev_); use the prod key (tr_prod_...) of the project',
+    ]);
+    expect(problems('TRIGGER_SECRET_KEY_API', 'fakesecret')).toEqual([
+      'TRIGGER_SECRET_KEY_API must be a Trigger.dev prod key (tr_prod_...)',
+    ]);
+  });
+
+  test('the access token must be a personal access token', () => {
+    expect(problems('TRIGGER_ACCESS_TOKEN', 'tr_pat_fakesecret')).toEqual([]);
+    expect(problems('TRIGGER_ACCESS_TOKEN', 'tr_prod_fakesecret')).toEqual([
+      'TRIGGER_ACCESS_TOKEN must be a Trigger.dev personal access token (tr_pat_...)',
+    ]);
+  });
+
+  test('project refs must be well formed and never the upstream Comp AI projects', () => {
+    expect(problems('TRIGGER_PROJECT_REF_API', 'proj_fakesecretapi0000000')).toEqual([]);
+    expect(problems('TRIGGER_PROJECT_REF_APP', 'proj_short')).toEqual([
+      'TRIGGER_PROJECT_REF_APP must be a Trigger.dev project ref (proj_ and 20 lowercase letters or digits)',
+    ]);
+    for (const upstream of ['proj_zhioyrusqertqgafqgpj', 'proj_lhxjliiqgcdyqbgtucda']) {
+      expect(valueProblems({ key: 'TRIGGER_PROJECT_REF_API', value: upstream, target: TARGET })).toEqual([
+        'TRIGGER_PROJECT_REF_API is an upstream Comp AI project; use the Revola project ref',
+      ]);
+    }
+  });
+});
+
+describe('database URLs', () => {
+  test('the production session pooler and direct host pass', () => {
+    expect(problems('DATABASE_URL', RUNTIME_URL)).toEqual([]);
+    expect(problems('DATABASE_MIGRATION_URL', MIGRATION_URL)).toEqual([]);
+  });
+
+  test('another database is refused', () => {
+    expect(problems('DATABASE_URL', DEV_URL)).toEqual([
+      'DATABASE_URL does not name the production database (packages/db/src/production-target.json)',
+    ]);
+    expect(problems('DATABASE_MIGRATION_URL', DEV_URL)).toEqual([
+      'DATABASE_MIGRATION_URL does not name the production database (packages/db/src/production-target.json)',
+    ]);
+  });
+
+  test('the transaction pooler (port 6543) is refused', () => {
+    const url = RUNTIME_URL.replace(':5432/', ':6543/');
+    expect(problems('DATABASE_MIGRATION_URL', url)).toEqual([
+      'DATABASE_MIGRATION_URL uses port 6543, the transaction pooler; use the session pooler (5432) or the direct host',
+    ]);
+  });
+
+  test('a value that is not a URL is refused', () => {
+    expect(problems('DATABASE_URL', 'fakesecret not a url')).toEqual([
+      'DATABASE_URL is not a valid URL; percent-encode the user and password',
+    ]);
+  });
+
+  test('a URL of another scheme is refused', () => {
+    expect(problems('DATABASE_URL', RUNTIME_URL.replace('postgresql:', 'mysql:'))).toEqual([
+      'DATABASE_URL must be a postgres:// or postgresql:// URL',
+    ]);
+  });
+
+  test.each(['/', '?', '#', '@'])('an unescaped %s in the password is refused', (character) => {
+    const value = `postgresql://postgres.${PROD_REF}:fakesecret${character}12@${POOLER}:5432/postgres`;
+    const found = problems('DATABASE_URL', value);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toStartWith('DATABASE_URL ');
+    expect(found[0]).toContain('percent-encode the user and password');
+  });
+
+  test('an all-digit password before an unescaped / cannot pass as a port', () => {
+    const value = `postgresql://postgres.${PROD_REF}:1234/fakesecret@${POOLER}:5432/postgres`;
+    expect(problems('DATABASE_URL', value)).toEqual([
+      'DATABASE_URL has no user and password before the host; an unescaped /, ?, # or @ in the password ends it early, so percent-encode the user and password',
+    ]);
+  });
+
+  test('a clean session-pooler URL and one with an allowed TLS parameter pass', () => {
+    expect(problems('DATABASE_URL', `${RUNTIME_URL}?sslmode=require`)).toEqual([]);
+    expect(problems('DATABASE_MIGRATION_URL', `${RUNTIME_URL}?sslmode=verify-full`)).toEqual([]);
+    const timeout = `${MIGRATION_URL}?sslmode=require&connect_timeout=10`;
+    expect(problems('DATABASE_MIGRATION_URL', timeout)).toEqual([]);
+  });
+
+  test('a ?user= and ?port= override of a production URL is refused by name', () => {
+    const value = `${RUNTIME_URL}?user=postgres.${OTHER_REF}&port=6543`;
+    for (const key of DATABASE_KEYS) {
+      expect(problems(key, value)).toEqual([
+        refusedParameter({ key, name: 'user' }),
+        refusedParameter({ key, name: 'port' }),
+      ]);
+    }
+  });
+
+  test.each([
+    'user',
+    'host',
+    'port',
+    'password',
+    'database',
+    'db',
+    'options',
+    'schema',
+    'application_name',
+  ])('the query parameter %s is refused by name', (name) => {
+    for (const key of DATABASE_KEYS) {
+      expect(problems(key, `${RUNTIME_URL}?${name}=fakesecret-override`)).toEqual([
+        refusedParameter({ key, name }),
+      ]);
+    }
+  });
+
+  test('an unknown parameter name is never repeated: it could be a pasted part of the password', () => {
+    for (const key of DATABASE_KEYS) {
+      expect(problems(key, `${RUNTIME_URL}?password=fakesecret-first&fakesecret-second-half`)).toEqual([
+        refusedParameter({ key, name: 'password' }),
+        `${key} carries 1 query parameter that is not a known connection parameter, not named here because it could be part of a credential; ${ENCODE_HINT}`,
+      ]);
+    }
+  });
+
+  test('a percent-encoded parameter name is read as pg reads it', () => {
+    expect(problems('DATABASE_URL', `${RUNTIME_URL}?us%65r=postgres.${OTHER_REF}`)).toEqual([
+      refusedParameter({ key: 'DATABASE_URL', name: 'user' }),
+    ]);
+  });
+
+  test('sslaccept passes only in the migration URL, which Prisma reads', () => {
+    expect(problems('DATABASE_MIGRATION_URL', `${MIGRATION_URL}?sslaccept=strict`)).toEqual([]);
+    expect(problems('DATABASE_URL', `${RUNTIME_URL}?sslaccept=strict`)).toEqual([
+      refusedParameter({ key: 'DATABASE_URL', name: 'sslaccept' }),
+    ]);
+  });
+
+  test.each(['sslrootcert', 'sslcert', 'sslkey'])(
+    '%s, a file pg reads while parsing, is refused',
+    (name) => {
+      for (const key of DATABASE_KEYS) {
+        expect(problems(key, `${MIGRATION_URL}?${name}=/fakesecret.crt`)).toEqual([
+          refusedParameter({ key, name }),
+        ]);
+      }
+    },
+  );
+
+  test.each(['fakesecret_comp_dev', 'compdev_fakesecret', 'postgres_fakesecret', '', '%70ostgreS'])(
+    'another database of the production project (%j) is refused without its name',
+    (database) => {
+      for (const [key, url] of [
+        ['DATABASE_URL', RUNTIME_URL],
+        ['DATABASE_MIGRATION_URL', MIGRATION_URL],
+      ] as const) {
+        expect(problems(key, url.replace(/\/postgres$/, `/${database}`))).toEqual([
+          `${key} names a database other than postgres`,
+        ]);
+      }
+    },
+  );
+
+  test('a URL without a database path is refused', () => {
+    expect(problems('DATABASE_URL', RUNTIME_URL.replace(/\/postgres$/, ''))).toEqual([
+      'DATABASE_URL names a database other than postgres',
+    ]);
+  });
+
+  test('a percent-encoded postgres passes, as pg reads it', () => {
+    expect(problems('DATABASE_URL', RUNTIME_URL.replace(/\/postgres$/, '/%70ostgres'))).toEqual([]);
+  });
+
+  test('a URL naming production next to another project is refused', () => {
+    const host = `db.${OTHER_REF}.supabase.co`;
+    const value = `postgresql://postgres.${PROD_REF}:fakesecretPw@${host}:5432/postgres`;
+    for (const key of DATABASE_KEYS) {
+      expect(problems(key, value)).toEqual([
+        `${key} also names another project (its user and host carry different project refs)`,
+      ]);
+    }
+  });
+
+  test('a percent-encoded password passes', () => {
+    const value = `postgresql://postgres.${PROD_REF}:fakesecret%2F%3F%23%4012@${POOLER}:5432/postgres`;
+    expect(problems('DATABASE_URL', value)).toEqual([]);
+  });
+});
