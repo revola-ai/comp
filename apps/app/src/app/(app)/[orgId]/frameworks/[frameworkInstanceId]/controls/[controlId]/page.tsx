@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import type {
   Control,
@@ -37,9 +38,9 @@ export default async function FrameworkControlPage({ params }: PageProps) {
 
   const [controlRes, frameworkRes] = await Promise.all([
     serverApi.get<ControlDetail>(
-      `/v1/controls/${controlId}?frameworkInstanceId=${frameworkInstanceId}`,
+      `/v1/controls/${encodePathSegment(controlId)}?frameworkInstanceId=${encodeURIComponent(frameworkInstanceId)}`,
     ),
-    serverApi.get<any>(`/v1/frameworks/${frameworkInstanceId}`),
+    serverApi.get<any>(`/v1/frameworks/${encodePathSegment(frameworkInstanceId)}`),
   ]);
 
   if (!controlRes.data || controlRes.error) {

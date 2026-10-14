@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { getFeatureFlags } from '@/app/posthog';
 import { serverApi } from '@/lib/api-server';
 import { auth } from '@/utils/auth';
@@ -27,9 +28,9 @@ export default async function TaskPage({
   const { taskId, orgId } = await params;
 
   const [taskRes, automationsRes, membersRes, optionsRes] = await Promise.all([
-    serverApi.get<TaskWithControls>(`/v1/tasks/${taskId}`),
+    serverApi.get<TaskWithControls>(`/v1/tasks/${encodePathSegment(taskId)}`),
     serverApi.get<{ success: boolean; automations: AutomationWithRuns[] }>(
-      `/v1/tasks/${taskId}/automations`,
+      `/v1/tasks/${encodePathSegment(taskId)}/automations`,
     ),
     serverApi.get<{ data: (Member & { user: User })[] }>('/v1/people'),
     serverApi.get<{

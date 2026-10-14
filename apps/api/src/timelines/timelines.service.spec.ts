@@ -1,32 +1,28 @@
 import { TimelinesService } from './timelines.service';
 import { BadRequestException } from '@nestjs/common';
+import type { TimelinesLifecycleService } from './timelines-lifecycle.service';
+
+const mockFrameworkFindMany = jest.fn();
+const mockTimelineFindMany = jest.fn();
+const mockTimelineFindFirst = jest.fn();
+const mockTemplateFindUnique = jest.fn();
+const mockTransaction = jest.fn();
 
 jest.mock('@db', () => ({
   db: {
     frameworkInstance: {
-      findMany: jest.fn(),
+      findMany: (...a: unknown[]) => mockFrameworkFindMany(...a),
     },
     timelineInstance: {
-      findMany: jest.fn(),
-      findFirst: jest.fn(),
-      findUnique: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
+      findMany: (...a: unknown[]) => mockTimelineFindMany(...a),
+      findFirst: (...a: unknown[]) => mockTimelineFindFirst(...a),
       deleteMany: jest.fn(),
     },
     timelineTemplate: {
-      findUnique: jest.fn(),
+      findUnique: (...a: unknown[]) => mockTemplateFindUnique(...a),
     },
-    timelinePhase: {
-      update: jest.fn(),
-      deleteMany: jest.fn(),
-    },
-    $transaction: jest.fn(),
-  },
-  TimelinePhaseStatus: {
-    PENDING: 'PENDING',
-    IN_PROGRESS: 'IN_PROGRESS',
-    COMPLETED: 'COMPLETED',
+    timelinePhase: { deleteMany: jest.fn() },
+    $transaction: (...a: unknown[]) => mockTransaction(...a),
   },
 }));
 
@@ -43,463 +39,35 @@ jest.mock('./timelines-template-resolver', () => ({
   createInstanceFromTemplate: jest.fn(),
 }));
 
-import { db } from '@db';
-import { getOverviewScores } from '../frameworks/frameworks-scores.helper';
 import { createInstanceFromTemplate } from './timelines-template-resolver';
 import { backfillTimeline } from './timelines-backfill.helper';
 
-const mockDb = db as jest.Mocked<typeof db>;
+type Found = Awaited<ReturnType<TimelinesService['findOne']>>;
+type Created = Awaited<ReturnType<TimelinesService['createFromTemplate']>>;
+// Partial rows: each case sets only the fields the code under test reads.
+const found = (row: object) => row as unknown as Found;
+const created = (row: object) => row as unknown as Created;
 
-function cloneTimeline<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
+// These cases never reach the lifecycle service; it is a bare stand-in.
+const makeService = () =>
+  new TimelinesService({} as unknown as TimelinesLifecycleService);
 
 describe('TimelinesService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('cascades AUTO_* phase completions when live metrics are already 100%', async () => {
-    const orgId = 'org_1';
-    const lifecycle = {
-      activate: jest.fn(),
-      pause: jest.fn(),
-      resume: jest.fn(),
-      completePhase: jest.fn(),
-    };
-
-    const service = new TimelinesService(lifecycle as any);
-
-    const timelineState = {
-      id: 'tli_1',
-      organizationId: orgId,
-      frameworkInstanceId: 'fi_1',
-      templateId: 'tml_1',
-      cycleNumber: 2,
-      status: 'ACTIVE',
-      startDate: '2026-01-01T00:00:00.000Z',
-      pausedAt: null,
-      completedAt: null,
-      phases: [
-        {
-          id: 'p1',
-          name: 'Policies',
-          orderIndex: 0,
-          status: 'IN_PROGRESS',
-          completionType: 'AUTO_POLICIES',
-          completedAt: null,
-        },
-        {
-          id: 'p2',
-          name: 'Evidence',
-          orderIndex: 1,
-          status: 'PENDING',
-          completionType: 'AUTO_TASKS',
-          completedAt: null,
-        },
-        {
-          id: 'p3',
-          name: 'People',
-          orderIndex: 2,
-          status: 'PENDING',
-          completionType: 'AUTO_PEOPLE',
-          completedAt: null,
-        },
-        {
-          id: 'p4',
-          name: 'Auditor Review',
-          orderIndex: 3,
-          status: 'PENDING',
-          completionType: 'MANUAL',
-          completedAt: null,
-        },
-      ],
-      frameworkInstance: { framework: { id: 'frk_1', name: 'SOC 2' } },
-      template: { id: 'tml_1', name: 'SOC 2 Type 2' },
-    };
-
-    (mockDb.frameworkInstance.findMany as jest.Mock).mockResolvedValue([
-      {
-        id: 'fi_1',
-        frameworkId: 'frk_1',
-        framework: { id: 'frk_1', name: 'SOC 2' },
-        timelineInstances: [{ id: 'tli_1' }],
-      },
-    ]);
-
-    (mockDb.timelineInstance.findMany as jest.Mock).mockImplementation(() =>
-      Promise.resolve([cloneTimeline(timelineState)]),
-    );
-
-    (getOverviewScores as jest.Mock).mockResolvedValue({
-      policies: { total: 10, published: 10 },
-      tasks: { total: 20, done: 20 },
-      people: { total: 5, completed: 5 },
-    });
-
-    lifecycle.completePhase.mockImplementation(async (_instanceId: string, phaseId: string) => {
-      const phase = timelineState.phases.find((p) => p.id === phaseId);
-      if (!phase) return cloneTimeline(timelineState);
-
-      phase.status = 'COMPLETED';
-      phase.completedAt = '2026-01-10T00:00:00.000Z';
-
-      const nextPending = timelineState.phases.find((p) => p.status === 'PENDING');
-      if (nextPending) {
-        const allPriorComplete = timelineState.phases
-          .filter((p) => p.orderIndex < nextPending.orderIndex)
-          .every((p) => p.status === 'COMPLETED');
-
-        if (allPriorComplete) {
-          nextPending.status = 'IN_PROGRESS';
-        }
-      }
-
-      return cloneTimeline(timelineState);
-    });
-
-    const result = await service.findAllForOrganization(orgId);
-
-    expect(lifecycle.completePhase).toHaveBeenCalledTimes(3);
-    expect(result[0].phases.map((p) => p.status)).toEqual([
-      'COMPLETED',
-      'COMPLETED',
-      'COMPLETED',
-      'IN_PROGRESS',
-    ]);
-  });
-
-  it('does not auto-complete AUTO phases while a timeline is paused', async () => {
-    const orgId = 'org_1';
-    const lifecycle = {
-      activate: jest.fn(),
-      pause: jest.fn(),
-      resume: jest.fn(),
-      completePhase: jest.fn(),
-    };
-    const service = new TimelinesService(lifecycle as any);
-
-    const timelineState = {
-      id: 'tli_paused',
-      organizationId: orgId,
-      frameworkInstanceId: 'fi_1',
-      templateId: 'tml_1',
-      cycleNumber: 2,
-      status: 'PAUSED',
-      startDate: '2026-01-01T00:00:00.000Z',
-      pausedAt: '2026-01-10T00:00:00.000Z',
-      completedAt: null,
-      phases: [
-        {
-          id: 'p1',
-          name: 'Policies',
-          orderIndex: 0,
-          status: 'IN_PROGRESS',
-          completionType: 'AUTO_POLICIES',
-          completedAt: null,
-        },
-      ],
-      frameworkInstance: { framework: { id: 'frk_1', name: 'SOC 2' } },
-      template: { id: 'tml_1', name: 'SOC 2 Type 2' },
-    };
-
-    (mockDb.frameworkInstance.findMany as jest.Mock).mockResolvedValue([
-      {
-        id: 'fi_1',
-        frameworkId: 'frk_1',
-        framework: { id: 'frk_1', name: 'SOC 2' },
-        timelineInstances: [{ id: 'tli_paused' }],
-      },
-    ]);
-    (mockDb.timelineInstance.findMany as jest.Mock).mockImplementation(() =>
-      Promise.resolve([cloneTimeline(timelineState)]),
-    );
-    (getOverviewScores as jest.Mock).mockResolvedValue({
-      policies: { total: 10, published: 10 },
-      tasks: { total: 1, done: 1 },
-      people: { total: 1, completed: 1 },
-    });
-
-    const result = await service.findAllForOrganization(orgId);
-
-    expect(lifecycle.completePhase).not.toHaveBeenCalled();
-    expect(result[0].phases[0].status).toBe('IN_PROGRESS');
-  });
-
-  it('records regressedAt when a completed AUTO phase drops below 100%', async () => {
-    const orgId = 'org_1';
-    const lifecycle = {
-      activate: jest.fn(),
-      pause: jest.fn(),
-      resume: jest.fn(),
-      completePhase: jest.fn(),
-    };
-    const service = new TimelinesService(lifecycle as any);
-
-    const timelineState = {
-      id: 'tli_reopen',
-      organizationId: orgId,
-      frameworkInstanceId: 'fi_1',
-      templateId: 'tml_1',
-      cycleNumber: 2,
-      status: 'ACTIVE',
-      startDate: '2026-01-01T00:00:00.000Z',
-      pausedAt: null,
-      completedAt: null,
-      phases: [
-        {
-          id: 'p1',
-          name: 'Policies',
-          orderIndex: 0,
-          status: 'COMPLETED',
-          completionType: 'AUTO_POLICIES',
-          completedAt: '2026-01-03T00:00:00.000Z',
-          regressedAt: null,
-        },
-      ],
-      frameworkInstance: { framework: { id: 'frk_1', name: 'SOC 2' } },
-      template: { id: 'tml_1', name: 'SOC 2 Type 2' },
-    };
-
-    (mockDb.frameworkInstance.findMany as jest.Mock).mockResolvedValue([
-      {
-        id: 'fi_1',
-        frameworkId: 'frk_1',
-        framework: { id: 'frk_1', name: 'SOC 2' },
-        timelineInstances: [{ id: 'tli_reopen' }],
-      },
-    ]);
-    (mockDb.timelineInstance.findMany as jest.Mock).mockImplementation(() =>
-      Promise.resolve([cloneTimeline(timelineState)]),
-    );
-    (mockDb.timelinePhase.update as jest.Mock).mockImplementation(async ({ where, data }: any) => {
-      const phase = timelineState.phases.find((p) => p.id === where.id);
-      if (!phase) return null;
-      Object.assign(phase, data);
-      return phase;
-    });
-    (getOverviewScores as jest.Mock).mockResolvedValue({
-      policies: { total: 10, published: 8 },
-      tasks: { total: 1, done: 1 },
-      people: { total: 1, completed: 1 },
-    });
-
-    const result = await service.findAllForOrganization(orgId);
-
-    expect(mockDb.timelinePhase.update).toHaveBeenCalledWith({
-      where: { id: 'p1' },
-      data: { regressedAt: expect.any(Date) },
-    });
-    expect(result[0].phases[0].status).toBe('COMPLETED');
-    expect(result[0].phases[0].regressedAt).toBeTruthy();
-  });
-
-  it('re-opens AUTO_PEOPLE immediately when live people score drops below 100%', async () => {
-    const orgId = 'org_1';
-    const lifecycle = {
-      activate: jest.fn(),
-      pause: jest.fn(),
-      resume: jest.fn(),
-      completePhase: jest.fn(),
-    };
-    const service = new TimelinesService(lifecycle as any);
-
-    const timelineState = {
-      id: 'tli_people_reopen',
-      organizationId: orgId,
-      frameworkInstanceId: 'fi_1',
-      templateId: 'tml_1',
-      cycleNumber: 1,
-      status: 'ACTIVE',
-      lockedAt: null,
-      startDate: '2026-01-01T00:00:00.000Z',
-      pausedAt: null,
-      completedAt: null,
-      phases: [
-        {
-          id: 'p1',
-          name: 'People',
-          orderIndex: 0,
-          status: 'COMPLETED',
-          completionType: 'AUTO_PEOPLE',
-          completedAt: '2026-01-10T00:00:00.000Z',
-          regressedAt: null,
-          completedById: null,
-          readyForReview: false,
-          readyForReviewAt: null,
-        },
-        {
-          id: 'p2',
-          name: 'Auditor Review',
-          orderIndex: 1,
-          status: 'PENDING',
-          completionType: 'MANUAL',
-          completedAt: null,
-          regressedAt: null,
-          completedById: null,
-          readyForReview: false,
-          readyForReviewAt: null,
-        },
-      ],
-      frameworkInstance: { framework: { id: 'frk_1', name: 'SOC 2' } },
-      template: { id: 'tml_1', name: 'SOC 2 Type 1' },
-    };
-
-    (mockDb.frameworkInstance.findMany as jest.Mock).mockResolvedValue([
-      {
-        id: 'fi_1',
-        frameworkId: 'frk_1',
-        framework: { id: 'frk_1', name: 'SOC 2' },
-        timelineInstances: [{ id: 'tli_people_reopen' }],
-      },
-    ]);
-    (mockDb.timelineInstance.findMany as jest.Mock).mockImplementation(() =>
-      Promise.resolve([cloneTimeline(timelineState)]),
-    );
-
-    (mockDb.$transaction as jest.Mock).mockImplementation(async (fn: any) => {
-      const tx = {
-        timelinePhase: {
-          findMany: jest.fn(async () => cloneTimeline(timelineState.phases)),
-          update: jest.fn(async ({ where, data }: any) => {
-            const phase = timelineState.phases.find((p) => p.id === where.id);
-            if (!phase) return null;
-            Object.assign(phase, data);
-            return phase;
-          }),
-        },
-      };
-      return fn(tx);
-    });
-
-    (getOverviewScores as jest.Mock).mockResolvedValue({
-      policies: { total: 10, published: 10 },
-      tasks: { total: 1, done: 1 },
-      people: { total: 2, completed: 1 },
-    });
-
-    const result = await service.findAllForOrganization(orgId);
-
-    expect(mockDb.$transaction).toHaveBeenCalledTimes(1);
-    expect(result[0].phases.map((phase) => phase.status)).toEqual([
-      'IN_PROGRESS',
-      'PENDING',
-    ]);
-    expect(result[0].phases[0].regressedAt).toBeNull();
-  });
-
-  it('re-opens a regressed AUTO phase after the 24-hour grace window', async () => {
-    jest.useFakeTimers().setSystemTime(new Date('2026-02-15T00:00:00.000Z'));
-
-    const orgId = 'org_1';
-    const lifecycle = {
-      activate: jest.fn(),
-      pause: jest.fn(),
-      resume: jest.fn(),
-      completePhase: jest.fn(),
-    };
-    const service = new TimelinesService(lifecycle as any);
-
-    const timelineState = {
-      id: 'tli_reopen_after_grace',
-      organizationId: orgId,
-      frameworkInstanceId: 'fi_1',
-      templateId: 'tml_1',
-      cycleNumber: 2,
-      status: 'ACTIVE',
-      lockedAt: null,
-      startDate: '2026-01-01T00:00:00.000Z',
-      pausedAt: null,
-      completedAt: null,
-      phases: [
-        {
-          id: 'p1',
-          name: 'Policies',
-          orderIndex: 0,
-          status: 'COMPLETED',
-          completionType: 'AUTO_POLICIES',
-          completedAt: '2026-01-03T00:00:00.000Z',
-          regressedAt: '2026-02-10T00:00:00.000Z',
-          completedById: 'usr_1',
-          readyForReview: true,
-          readyForReviewAt: '2026-01-03T01:00:00.000Z',
-        },
-        {
-          id: 'p2',
-          name: 'Auditor Review',
-          orderIndex: 1,
-          status: 'COMPLETED',
-          completionType: 'MANUAL',
-          completedAt: '2026-01-20T00:00:00.000Z',
-          regressedAt: null,
-          completedById: 'usr_2',
-          readyForReview: false,
-          readyForReviewAt: null,
-        },
-      ],
-      frameworkInstance: { framework: { id: 'frk_1', name: 'SOC 2' } },
-      template: { id: 'tml_1', name: 'SOC 2 Type 2' },
-    };
-
-    (mockDb.frameworkInstance.findMany as jest.Mock).mockResolvedValue([
-      {
-        id: 'fi_1',
-        frameworkId: 'frk_1',
-        framework: { id: 'frk_1', name: 'SOC 2' },
-        timelineInstances: [{ id: 'tli_reopen_after_grace' }],
-      },
-    ]);
-    (mockDb.timelineInstance.findMany as jest.Mock).mockImplementation(() =>
-      Promise.resolve([cloneTimeline(timelineState)]),
-    );
-
-    (mockDb.$transaction as jest.Mock).mockImplementation(async (fn: any) => {
-      const tx = {
-        timelinePhase: {
-          findMany: jest.fn(async () => cloneTimeline(timelineState.phases)),
-          update: jest.fn(async ({ where, data }: any) => {
-            const phase = timelineState.phases.find((p) => p.id === where.id);
-            if (!phase) return null;
-            Object.assign(phase, data);
-            return phase;
-          }),
-        },
-      };
-      return fn(tx);
-    });
-
-    (getOverviewScores as jest.Mock).mockResolvedValue({
-      policies: { total: 10, published: 8 },
-      tasks: { total: 1, done: 1 },
-      people: { total: 1, completed: 1 },
-    });
-
-    const result = await service.findAllForOrganization(orgId);
-
-    expect(mockDb.$transaction).toHaveBeenCalledTimes(1);
-    expect(result[0].phases.map((phase) => phase.status)).toEqual([
-      'IN_PROGRESS',
-      'PENDING',
-    ]);
-    expect(result[0].phases[0].regressedAt).toBeNull();
-    jest.useRealTimers();
-  });
-
   it('rejects starting next cycle when current timeline is not completed', async () => {
-    const lifecycle = {
-      activate: jest.fn(),
-      pause: jest.fn(),
-      resume: jest.fn(),
-      completePhase: jest.fn(),
-    };
-    const service = new TimelinesService(lifecycle as any);
+    const service = makeService();
 
-    jest.spyOn(service, 'findOne').mockResolvedValue({
-      id: 'tli_1',
-      frameworkInstanceId: 'fi_1',
-      cycleNumber: 1,
-      status: 'ACTIVE',
-    } as any);
+    jest.spyOn(service, 'findOne').mockResolvedValue(
+      found({
+        id: 'tli_1',
+        frameworkInstanceId: 'fi_1',
+        cycleNumber: 1,
+        status: 'ACTIVE',
+      }),
+    );
 
     await expect(service.startNextCycle('tli_1', 'org_1')).rejects.toThrow(
       BadRequestException,
@@ -507,21 +75,17 @@ describe('TimelinesService', () => {
   });
 
   it('rejects starting next cycle when next cycle already exists', async () => {
-    const lifecycle = {
-      activate: jest.fn(),
-      pause: jest.fn(),
-      resume: jest.fn(),
-      completePhase: jest.fn(),
-    };
-    const service = new TimelinesService(lifecycle as any);
+    const service = makeService();
 
-    jest.spyOn(service, 'findOne').mockResolvedValue({
-      id: 'tli_1',
-      frameworkInstanceId: 'fi_1',
-      cycleNumber: 2,
-      status: 'COMPLETED',
-    } as any);
-    (mockDb.timelineInstance.findFirst as jest.Mock).mockResolvedValue({
+    jest.spyOn(service, 'findOne').mockResolvedValue(
+      found({
+        id: 'tli_1',
+        frameworkInstanceId: 'fi_1',
+        cycleNumber: 2,
+        status: 'COMPLETED',
+      }),
+    );
+    mockTimelineFindFirst.mockResolvedValue({
       id: 'existing_cycle_3',
     });
 
@@ -531,25 +95,21 @@ describe('TimelinesService', () => {
   });
 
   it('creates next cycle from template when eligible', async () => {
-    const lifecycle = {
-      activate: jest.fn(),
-      pause: jest.fn(),
-      resume: jest.fn(),
-      completePhase: jest.fn(),
-    };
-    const service = new TimelinesService(lifecycle as any);
+    const service = makeService();
 
-    jest.spyOn(service, 'findOne').mockResolvedValue({
-      id: 'tli_1',
-      frameworkInstanceId: 'fi_1',
-      cycleNumber: 2,
-      status: 'COMPLETED',
-    } as any);
-    (mockDb.timelineInstance.findFirst as jest.Mock).mockResolvedValue(null);
+    jest.spyOn(service, 'findOne').mockResolvedValue(
+      found({
+        id: 'tli_1',
+        frameworkInstanceId: 'fi_1',
+        cycleNumber: 2,
+        status: 'COMPLETED',
+      }),
+    );
+    mockTimelineFindFirst.mockResolvedValue(null);
 
     const createSpy = jest
       .spyOn(service, 'createFromTemplate')
-      .mockResolvedValue({ id: 'tli_3', cycleNumber: 3 } as any);
+      .mockResolvedValue(created({ id: 'tli_3', cycleNumber: 3 }));
 
     const result = await service.startNextCycle('tli_1', 'org_1');
 
@@ -563,31 +123,27 @@ describe('TimelinesService', () => {
   });
 
   it('uses explicit template progression when current template defines nextTemplateKey', async () => {
-    const lifecycle = {
-      activate: jest.fn(),
-      pause: jest.fn(),
-      resume: jest.fn(),
-      completePhase: jest.fn(),
-    };
-    const service = new TimelinesService(lifecycle as any);
+    const service = makeService();
 
-    jest.spyOn(service, 'findOne').mockResolvedValue({
-      id: 'tli_2',
-      frameworkInstanceId: 'fi_1',
-      cycleNumber: 2,
-      trackKey: 'soc2_type2',
-      status: 'COMPLETED',
-      template: {
-        id: 'tml_soc2_y1',
-        frameworkId: 'frk_soc2',
+    jest.spyOn(service, 'findOne').mockResolvedValue(
+      found({
+        id: 'tli_2',
+        frameworkInstanceId: 'fi_1',
+        cycleNumber: 2,
         trackKey: 'soc2_type2',
-        templateKey: 'soc2_type2_year1',
-        nextTemplateKey: 'soc2_type2_renewal',
-      },
-    } as any);
+        status: 'COMPLETED',
+        template: {
+          id: 'tml_soc2_y1',
+          frameworkId: 'frk_soc2',
+          trackKey: 'soc2_type2',
+          templateKey: 'soc2_type2_year1',
+          nextTemplateKey: 'soc2_type2_renewal',
+        },
+      }),
+    );
 
-    (mockDb.timelineInstance.findFirst as jest.Mock).mockResolvedValue(null);
-    (mockDb.timelineTemplate.findUnique as jest.Mock).mockResolvedValue({
+    mockTimelineFindFirst.mockResolvedValue(null);
+    mockTemplateFindUnique.mockResolvedValue({
       id: 'tml_soc2_renewal',
       phases: [],
     });
@@ -598,11 +154,11 @@ describe('TimelinesService', () => {
 
     const createSpy = jest
       .spyOn(service, 'createFromTemplate')
-      .mockResolvedValue({ id: 'fallback', cycleNumber: 3 } as any);
+      .mockResolvedValue(created({ id: 'fallback', cycleNumber: 3 }));
 
     const result = await service.startNextCycle('tli_2', 'org_1');
 
-    expect(mockDb.timelineTemplate.findUnique).toHaveBeenCalledWith({
+    expect(mockTemplateFindUnique).toHaveBeenCalledWith({
       where: {
         frameworkId_templateKey: {
           frameworkId: 'frk_soc2',
@@ -612,34 +168,32 @@ describe('TimelinesService', () => {
       include: { phases: { orderBy: { orderIndex: 'asc' } } },
     });
     expect(createSpy).not.toHaveBeenCalled();
-    expect(result).toEqual(expect.objectContaining({ id: 'tli_3', cycleNumber: 3 }));
+    expect(result).toEqual(
+      expect.objectContaining({ id: 'tli_3', cycleNumber: 3 }),
+    );
   });
 
   it('checks for existing next cycle within the same track only', async () => {
-    const lifecycle = {
-      activate: jest.fn(),
-      pause: jest.fn(),
-      resume: jest.fn(),
-      completePhase: jest.fn(),
-    };
-    const service = new TimelinesService(lifecycle as any);
+    const service = makeService();
 
-    jest.spyOn(service, 'findOne').mockResolvedValue({
-      id: 'tli_type2_1',
-      frameworkInstanceId: 'fi_1',
-      cycleNumber: 1,
-      trackKey: 'soc2_type2',
-      status: 'COMPLETED',
-      template: {
-        id: 'tml_soc2_type2_y1',
-        frameworkId: 'frk_soc2',
+    jest.spyOn(service, 'findOne').mockResolvedValue(
+      found({
+        id: 'tli_type2_1',
+        frameworkInstanceId: 'fi_1',
+        cycleNumber: 1,
         trackKey: 'soc2_type2',
-        templateKey: 'soc2_type2_year1',
-        nextTemplateKey: 'soc2_type2_renewal',
-      },
-    } as any);
-    (mockDb.timelineInstance.findFirst as jest.Mock).mockResolvedValue(null);
-    (mockDb.timelineTemplate.findUnique as jest.Mock).mockResolvedValue({
+        status: 'COMPLETED',
+        template: {
+          id: 'tml_soc2_type2_y1',
+          frameworkId: 'frk_soc2',
+          trackKey: 'soc2_type2',
+          templateKey: 'soc2_type2_year1',
+          nextTemplateKey: 'soc2_type2_renewal',
+        },
+      }),
+    );
+    mockTimelineFindFirst.mockResolvedValue(null);
+    mockTemplateFindUnique.mockResolvedValue({
       id: 'tml_soc2_renewal',
       trackKey: 'soc2_type2',
       phases: [],
@@ -652,7 +206,7 @@ describe('TimelinesService', () => {
 
     await service.startNextCycle('tli_type2_1', 'org_1');
 
-    expect(mockDb.timelineInstance.findFirst).toHaveBeenCalledWith({
+    expect(mockTimelineFindFirst).toHaveBeenCalledWith({
       where: {
         frameworkInstanceId: 'fi_1',
         trackKey: 'soc2_type2',
@@ -662,33 +216,26 @@ describe('TimelinesService', () => {
   });
 
   it('resets timeline instance and phases back to draft baseline', async () => {
-    const lifecycle = {
-      activate: jest.fn(),
-      pause: jest.fn(),
-      resume: jest.fn(),
-      completePhase: jest.fn(),
-    };
-    const service = new TimelinesService(lifecycle as any);
-
-    jest.spyOn(service, 'findOne').mockResolvedValue({
-      id: 'tli_1',
-      phases: [
-        { id: 'p1' },
-        { id: 'p2' },
-      ],
-    } as any);
+    const service = makeService();
 
     const tx = {
       timelinePhase: { update: jest.fn() },
       timelineInstance: { update: jest.fn() },
     };
-    (mockDb.$transaction as jest.Mock).mockImplementation(async (fn: any) => fn(tx));
+    mockTransaction.mockImplementation((fn: (client: typeof tx) => unknown) =>
+      fn(tx),
+    );
 
     const refreshed = { id: 'tli_1', status: 'DRAFT' };
-    jest.spyOn(service, 'findOne').mockResolvedValueOnce({
-      id: 'tli_1',
-      phases: [{ id: 'p1' }, { id: 'p2' }],
-    } as any).mockResolvedValueOnce(refreshed as any);
+    jest
+      .spyOn(service, 'findOne')
+      .mockResolvedValueOnce(
+        found({
+          id: 'tli_1',
+          phases: [{ id: 'p1' }, { id: 'p2' }],
+        }),
+      )
+      .mockResolvedValueOnce(found(refreshed));
 
     const result = await service.resetInstance('tli_1', 'org_1');
 
@@ -715,18 +262,10 @@ describe('TimelinesService', () => {
   });
 
   it('recreate clears grace periods by bypassing regression grace on refresh', async () => {
-    const lifecycle = {
-      activate: jest.fn(),
-      pause: jest.fn(),
-      resume: jest.fn(),
-      completePhase: jest.fn(),
-    };
-    const service = new TimelinesService(lifecycle as any);
+    const service = makeService();
 
-    (mockDb.timelineInstance.findMany as jest.Mock).mockResolvedValue([
-      { id: 'tli_1' },
-    ]);
-    (mockDb.frameworkInstance.findMany as jest.Mock).mockResolvedValue([
+    mockTimelineFindMany.mockResolvedValue([{ id: 'tli_1' }]);
+    mockFrameworkFindMany.mockResolvedValue([
       {
         id: 'fi_1',
         frameworkId: 'frk_1',
@@ -735,9 +274,12 @@ describe('TimelinesService', () => {
       },
     ]);
 
+    const reconcileSpy = jest
+      .spyOn(service, 'reconcileAutoPhasesForOrganization')
+      .mockResolvedValue(undefined);
     const findAllSpy = jest
       .spyOn(service, 'findAllForOrganization')
-      .mockResolvedValue([] as any);
+      .mockResolvedValue([]);
 
     await service.recreateAllForOrganization('org_1');
 
@@ -746,8 +288,13 @@ describe('TimelinesService', () => {
       frameworkInstance: expect.objectContaining({ id: 'fi_1' }),
       forceRefresh: true,
     });
-    expect(findAllSpy).toHaveBeenLastCalledWith('org_1', {
+    expect(reconcileSpy).toHaveBeenCalledWith('org_1', {
       bypassRegressionGrace: true,
     });
+    // The refreshed list is read only after the reconcile pass has run.
+    expect(reconcileSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      findAllSpy.mock.invocationCallOrder[0],
+    );
+    expect(findAllSpy).toHaveBeenLastCalledWith('org_1');
   });
 });

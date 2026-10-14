@@ -1,4 +1,5 @@
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { createAppStorageClient } from '@/trigger/lib/app-storage-client';
 import { extractContentFromFile } from '@/trigger/vector-store/helpers/extract-content-from-file';
 import { vectorIndex } from '../core/client';
 import { batchUpsertEmbeddings } from '../core/upsert-embedding';
@@ -39,23 +40,7 @@ export interface ChunkItem {
  * Creates an S3 client instance for Knowledge Base document processing
  */
 export function createKnowledgeBaseS3Client(): S3Client {
-  const region = process.env.APP_AWS_REGION || 'us-east-1';
-  const accessKeyId = process.env.APP_AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.APP_AWS_SECRET_ACCESS_KEY;
-
-  if (!accessKeyId || !secretAccessKey) {
-    throw new Error(
-      'AWS S3 credentials are missing. Please set APP_AWS_ACCESS_KEY_ID and APP_AWS_SECRET_ACCESS_KEY environment variables.',
-    );
-  }
-
-  return new S3Client({
-    region,
-    credentials: {
-      accessKeyId,
-      secretAccessKey,
-    },
-  });
+  return createAppStorageClient();
 }
 
 /**

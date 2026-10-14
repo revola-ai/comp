@@ -5,6 +5,8 @@
 #
 # Random secrets are generated once and shared across the apps that must agree
 # on them. Third-party keys are left as FILL_ME placeholders for you to paste in.
+# UNSUBSCRIBE_SECRET is never generated: it must be the team's one shared value, so
+# it is written as a commented FILL_ME_SHARED line until you paste that value in.
 # Existing .env files are never overwritten; delete one to regenerate it.
 set -euo pipefail
 
@@ -13,10 +15,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 gen() { openssl rand -base64 32 | tr -d '\n'; }
 
 DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/comp"
+SUPABASE_CA="$ROOT/deploy/aws/certs/supabase-ca.crt"
 SECRET_KEY="$(gen)"           # better-auth secret (api) and encryption secret (app)
 ENCRYPTION_KEY="$(gen)"       # credential vault / integration secrets
 REVALIDATION_SECRET="$(gen)"
-INTERNAL_API_TOKEN="$(gen)"
+INTERNAL_API_TOKEN="$(gen)"        # api only: sole auth for its internal routes
+COMP_FORWARDED_IP_TOKEN="$(gen)"   # app and portal attest the forwarded client IP to the api
 SERVICE_TOKEN_TRIGGER="$(gen)"
 SERVICE_TOKEN_PORTAL="$(gen)"
 
@@ -46,14 +50,16 @@ write() {
 
 write "$ROOT/packages/db/.env" <<EOF
 DATABASE_URL="$DATABASE_URL"
-# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
-# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL. The committed Supabase CA
+# below verifies it (required for the production database, ignored for a local one).
+DATABASE_SSL_CA="$SUPABASE_CA"
 EOF
 
 write "$ROOT/apps/framework-editor/.env" <<EOF
 DATABASE_URL="$DATABASE_URL"
-# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
-# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL. The committed Supabase CA
+# below verifies it (required for the production database, ignored for a local one).
+DATABASE_SSL_CA="$SUPABASE_CA"
 NEXT_PUBLIC_API_URL=$API_URL
 BACKEND_API_URL=$API_URL
 EOF
@@ -68,8 +74,9 @@ NEXT_PUBLIC_APP_URL=$APP_URL
 APP_URL=$APP_URL
 PORTAL_URL=$PORTAL_URL
 DATABASE_URL="$DATABASE_URL"
-# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
-# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL. The committed Supabase CA
+# below verifies it (required for the production database, ignored for a local one).
+DATABASE_SSL_CA="$SUPABASE_CA"
 SELF_HOSTED=true
 NEXT_PUBLIC_SELF_HOSTED=true
 
@@ -77,8 +84,12 @@ NEXT_PUBLIC_SELF_HOSTED=true
 SECRET_KEY=$SECRET_KEY
 ENCRYPTION_KEY=$ENCRYPTION_KEY
 INTERNAL_API_TOKEN=$INTERNAL_API_TOKEN
+COMP_FORWARDED_IP_TOKEN=$COMP_FORWARDED_IP_TOKEN
 SERVICE_TOKEN_TRIGGER=$SERVICE_TOKEN_TRIGGER
 SERVICE_TOKEN_PORTAL=$SERVICE_TOKEN_PORTAL
+# Signs email unsubscribe links: one team-wide value (the API signs, the app and production
+# verify), from the password manager. Unset, emails go out without unsubscribe links.
+# UNSUBSCRIBE_SECRET=FILL_ME_SHARED
 
 # --- Sign-in providers (create at console.cloud.google.com/apis/credentials) ---
 AUTH_GOOGLE_ID=FILL_ME
@@ -119,8 +130,9 @@ write "$ROOT/apps/app/.env" <<EOF
 # --- Core ---
 NODE_ENV=development
 DATABASE_URL="$DATABASE_URL"
-# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
-# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL. The committed Supabase CA
+# below verifies it (required for the production database, ignored for a local one).
+DATABASE_SSL_CA="$SUPABASE_CA"
 BETTER_AUTH_URL=$API_URL
 NEXT_PUBLIC_BETTER_AUTH_URL=$API_URL
 NEXT_PUBLIC_API_URL=$API_URL
@@ -134,8 +146,11 @@ AUTH_SECRET=$SECRET_KEY
 SECRET_KEY=$SECRET_KEY
 ENCRYPTION_KEY=$ENCRYPTION_KEY
 REVALIDATION_SECRET=$REVALIDATION_SECRET
-INTERNAL_API_TOKEN=$INTERNAL_API_TOKEN
+COMP_FORWARDED_IP_TOKEN=$COMP_FORWARDED_IP_TOKEN
 SERVICE_TOKEN_TRIGGER=$SERVICE_TOKEN_TRIGGER
+# Signs email unsubscribe links: one team-wide value (the API signs, the app and production
+# verify), from the password manager. Unset, emails go out without unsubscribe links.
+# UNSUBSCRIBE_SECRET=FILL_ME_SHARED
 
 # --- Sign-in providers ---
 AUTH_GOOGLE_ID=FILL_ME
@@ -179,15 +194,16 @@ write "$ROOT/apps/portal/.env" <<EOF
 # --- Core ---
 NODE_ENV=development
 DATABASE_URL="$DATABASE_URL"
-# Shared state (Supabase): set DATABASE_URL to the session pooler URL and point this at the downloaded CA.
-# DATABASE_SSL_CA=/absolute/path/to/packages/db/certs/prod-ca-2021.crt
+# Shared state (Supabase): set DATABASE_URL to the session pooler URL. The committed Supabase CA
+# below verifies it (required for the production database, ignored for a local one).
+DATABASE_SSL_CA="$SUPABASE_CA"
 BETTER_AUTH_URL=$API_URL
 NEXT_PUBLIC_BETTER_AUTH_URL=$API_URL
 NEXT_PUBLIC_API_URL=$API_URL
 
 # --- Secrets (shared with api) ---
 BETTER_AUTH_SECRET=$SECRET_KEY
-INTERNAL_API_TOKEN=$INTERNAL_API_TOKEN
+COMP_FORWARDED_IP_TOKEN=$COMP_FORWARDED_IP_TOKEN
 
 # --- Email ---
 RESEND_API_KEY=FILL_ME

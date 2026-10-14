@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi, type ApiResponse } from '@/lib/api-server';
 
 export interface InviteMemberInput {
@@ -58,7 +59,7 @@ export function removeMemberViaApi({
 }: {
   memberId: string;
 }): Promise<ApiResponse<DeleteMemberApiResponse>> {
-  return serverApi.delete<DeleteMemberApiResponse>(`/v1/people/${memberId}`);
+  return serverApi.delete<DeleteMemberApiResponse>(`/v1/people/${encodePathSegment(memberId)}`);
 }
 
 export function resendPortalInviteViaApi({
@@ -66,5 +67,7 @@ export function resendPortalInviteViaApi({
 }: {
   memberId: string;
 }): Promise<ApiResponse<{ success: boolean }>> {
-  return serverApi.post<{ success: boolean }>(`/v1/people/${memberId}/resend-portal-invite`);
+  return serverApi.post<{ success: boolean }>(
+    `/v1/people/${encodePathSegment(memberId)}/resend-portal-invite`,
+  );
 }

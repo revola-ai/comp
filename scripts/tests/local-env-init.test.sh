@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Tests for scripts/local-env-init.sh. Run: bash scripts/tests/local-env-init.test.sh
+# The script runs from a copy inside a temporary tree, so it writes only there.
+# Generated values are compared by name and equality only; nothing is printed.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+failures=0
+
+mkdir -p "$TMP/scripts" "$TMP/packages/db" "$TMP/apps/framework-editor" "$TMP/apps/api" "$TMP/apps/app" "$TMP/apps/portal"
+cp -f "$ROOT/scripts/local-env-init.sh" "$TMP/scripts/local-env-init.sh"
+bash "$TMP/scripts/local-env-init.sh" >/dev/null
+
+value_of() { # value_of <file> <key>: the value, for comparison only
+  grep -E "^$2=" "$1" | head -n 1 | cut -d= -f2-
+}
+
+check() { # check <name> <condition...>
+  local name="$1"; shift
+  if "$@"; then
+    echo "ok   $name"
+  else
+    echo "FAIL $name"
+    failures=$((failures + 1))
+  fi
+}
+
+has_key() { grep -qE "^$2=" "$1"; }
+lacks_key() { ! grep -qE "^$2=" "$1"; }
+has_line() { grep -qxF "$2" "$1"; }
+same_value() { # same_value <key> <file...>
+  local key="$1" first; shift
+  first="$(value_of "$1" "$key")"
+  [[ -n "$first" ]] || return 1
+  for file in "$@"; do [[ "$(value_of "$file" "$key")" == "$first" ]] || return 1; done
+}
+
+API="$TMP/apps/api/.env"
+APP="$TMP/apps/app/.env"
+PORTAL="$TMP/apps/portal/.env"
+
+check "api keeps the privileged internal token" has_key "$API" INTERNAL_API_TOKEN
+check "app never gets the privileged internal token" lacks_key "$APP" INTERNAL_API_TOKEN
+check "portal never gets the privileged internal token" lacks_key "$PORTAL" INTERNAL_API_TOKEN
+check "api, app and portal share one forwarded-IP token" same_value COMP_FORWARDED_IP_TOKEN "$API" "$APP" "$PORTAL"
+# UNSUBSCRIBE_SECRET is one team-wide value (production verifies links a laptop signed), so
+# the script never invents one: it leaves a commented FILL_ME line to paste the shared value.
+check "api gets no per-laptop unsubscribe secret" lacks_key "$API" UNSUBSCRIBE_SECRET
+check "app gets no per-laptop unsubscribe secret" lacks_key "$APP" UNSUBSCRIBE_SECRET
+check "api asks for the shared unsubscribe secret" has_line "$API" '# UNSUBSCRIBE_SECRET=FILL_ME_SHARED'
+check "app asks for the shared unsubscribe secret" has_line "$APP" '# UNSUBSCRIBE_SECRET=FILL_ME_SHARED'
+# Laptops may point DATABASE_URL at the shared production database, whose TLS check needs
+# the committed Supabase CA; it is ignored for a local database, so it is always set.
+CA_VALUE="\"$TMP/deploy/aws/certs/supabase-ca.crt\""
+for env_file in "$TMP/packages/db/.env" "$TMP/apps/framework-editor/.env" "$API" "$APP" "$PORTAL"; do
+  check "${env_file#"$TMP"/} points DATABASE_SSL_CA at the committed CA" \
+    test "$(value_of "$env_file" DATABASE_SSL_CA)" = "$CA_VALUE"
+done
+check "the committed CA exists" test -s "$ROOT/deploy/aws/certs/supabase-ca.crt"
+
+if [[ "$failures" -gt 0 ]]; then
+  echo "$failures failure(s)"
+  exit 1
+fi
+echo "all passed"

@@ -1,7 +1,6 @@
 import * as React from 'react';
 import {
   Body,
-  Button,
   Container,
   Font,
   Heading,
@@ -12,6 +11,7 @@ import {
   Tailwind,
   Text,
 } from '@react-email/components';
+import { CallToAction } from '../components/call-to-action';
 import { Footer } from '../components/footer';
 import { Logo } from '../components/logo';
 import { getUnsubscribeUrl } from '@trycompai/email';
@@ -23,7 +23,8 @@ interface Props {
   newStatus: string;
   changedByName: string;
   organizationName: string;
-  tasksUrl: string;
+  /** Undefined when the app URL is not configured: the email then has no button. */
+  tasksUrl?: string;
 }
 
 export const TaskBulkStatusChangedEmail = ({
@@ -76,35 +77,29 @@ export const TaskBulkStatusChangedEmail = ({
 
             <Text className="text-[14px] leading-[24px] text-[#121212]">
               <strong>{changedByName}</strong> changed the status of{' '}
-              <strong>{taskCount} {taskText}</strong> to <strong>{statusText}</strong> in{' '}
+              <strong>
+                {taskCount} {taskText}
+              </strong>{' '}
+              to <strong>{statusText}</strong> in{' '}
               <strong>{organizationName}</strong>.
             </Text>
 
-            <Section className="mt-[32px] mb-[32px] text-center">
-              <Button
-                className="rounded-[3px] bg-[#121212] px-[20px] py-[12px] text-center text-[14px] font-semibold text-white no-underline"
-                href={tasksUrl}
-              >
-                View Tasks
-              </Button>
-            </Section>
+            <CallToAction href={tasksUrl} label="View Tasks" />
 
-            <Text className="text-[14px] leading-[24px] text-[#121212]">
-              or copy and paste this URL into your browser:{' '}
-              <a href={tasksUrl} className="text-[#121212] underline">
-                {tasksUrl}
-              </a>
-            </Text>
-
-            <Section className="mt-[30px] mb-[20px]">
-              <Text className="text-[12px] leading-[20px] text-[#666666]">
-                Don't want to receive task assignment notifications?{' '}
-                <Link href={unsubscribeUrl} className="text-[#121212] underline">
-                  Manage your email preferences
-                </Link>
-                .
-              </Text>
-            </Section>
+            {unsubscribeUrl && (
+              <Section className="mt-[30px] mb-[20px]">
+                <Text className="text-[12px] leading-[20px] text-[#666666]">
+                  Don't want to receive task assignment notifications?{' '}
+                  <Link
+                    href={unsubscribeUrl}
+                    className="text-[#121212] underline"
+                  >
+                    Manage your email preferences
+                  </Link>
+                  .
+                </Text>
+              </Section>
+            )}
 
             <br />
 

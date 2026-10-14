@@ -7,7 +7,7 @@ import type { ComplianceCheck } from '../types';
  *
  * If encryption is not available on the system (Windows Home without TPM,
  * or hardware that doesn't support Device Encryption), the check passes
- * with a note — we don't fail users for hardware/edition limitations.
+ * with a note - we don't fail users for hardware/edition limitations.
  */
 export class WindowsDiskEncryptionCheck implements ComplianceCheck {
   checkType = 'disk_encryption' as const;
@@ -20,11 +20,11 @@ export class WindowsDiskEncryptionCheck implements ComplianceCheck {
       return bitlockerResult;
     }
 
-    // BitLocker commands failed — check if encryption is even available
+    // BitLocker commands failed - check if encryption is even available
     const availability = this.checkEncryptionAvailability();
 
     if (!availability.available) {
-      // Encryption is not available on this system — pass with explanation
+      // Encryption is not available on this system - pass with explanation
       return {
         checkType: this.checkType,
         passed: true,
@@ -45,7 +45,8 @@ export class WindowsDiskEncryptionCheck implements ComplianceCheck {
       details: {
         method: 'Get-BitLockerVolume + manage-bde',
         raw: 'Commands failed but encryption appears available',
-        message: 'Disk encryption is not enabled or could not be detected. Enable BitLocker in Settings. If your device is managed by an MDM (e.g. Intune), try running the agent as Administrator.',
+        message:
+          'Disk encryption is not enabled or could not be detected. Enable BitLocker in Settings. If your device is managed by an MDM (e.g. Intune), try running the agent as Administrator.',
       },
       checkedAt: new Date().toISOString(),
     };
@@ -123,7 +124,8 @@ export class WindowsDiskEncryptionCheck implements ComplianceCheck {
     if (edition === 'home' && !hasTpm) {
       return {
         available: false,
-        reason: 'Windows Home edition without TPM — neither BitLocker nor Device Encryption is supported',
+        reason:
+          'Windows Home edition without TPM - neither BitLocker nor Device Encryption is supported',
       };
     }
 
@@ -132,7 +134,8 @@ export class WindowsDiskEncryptionCheck implements ComplianceCheck {
     if (edition === 'home') {
       return {
         available: false,
-        reason: 'Windows Home edition — BitLocker requires Windows Pro. Device Encryption may not be supported by your hardware',
+        reason:
+          'Windows Home edition - BitLocker requires Windows Pro. Device Encryption may not be supported by your hardware',
       };
     }
 
@@ -140,11 +143,11 @@ export class WindowsDiskEncryptionCheck implements ComplianceCheck {
     if (!hasTpm) {
       return {
         available: false,
-        reason: 'No TPM detected — BitLocker requires a TPM 2.0 chip or compatible security device',
+        reason: 'No TPM detected - BitLocker requires a TPM 2.0 chip or compatible security device',
       };
     }
 
-    // Pro/Enterprise with TPM — encryption should be available
+    // Pro/Enterprise with TPM - encryption should be available
     return { available: true, reason: '' };
   }
 

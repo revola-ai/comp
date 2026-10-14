@@ -1,27 +1,16 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { resolveSslConfig } from '@trycompai/db';
+import { buildPgAdapterOptions } from '@trycompai/db';
 
 const globalForPrisma = global as unknown as { prisma?: PrismaClient };
 
-function stripSslMode(connectionString: string): string {
-  const url = new URL(connectionString);
-  url.searchParams.delete('sslmode');
-  return url.toString();
-}
-
 function createPrismaClient(): PrismaClient {
-  const rawUrl = process.env.DATABASE_URL!;
-  // TLS policy is shared with packages/db (resolveSslConfig):
-  // - localhost: TLS off;
-  // - DATABASE_SSL_CA set: full verification against Node's trust store plus that CA;
-  // - PRISMA_ALLOW_INSECURE_TLS=1: unverified TLS, opt-in only;
-  // - otherwise: chain verified against Node's trust store (NODE_EXTRA_CA_CERTS
-  //   augments it), hostname check skipped for RDS Proxy behind an NLB.
-  const ssl = resolveSslConfig(rawUrl);
-  // Strip sslmode from the connection string to avoid conflicts with the explicit ssl option
-  const url = ssl !== undefined ? stripSslMode(rawUrl) : rawUrl;
-  const adapter = new PrismaPg({ connectionString: url, ssl });
+  // One connection policy for every client (packages/db buildPgAdapterOptions): TLS from
+  // resolveSslConfig, DATABASE_POOL_MAX, and ca_file_missing when a production process
+  // would reach a remote database without DATABASE_SSL_CA.
+  const adapter = new PrismaPg(
+    buildPgAdapterOptions({ databaseUrl: process.env.DATABASE_URL }),
+  );
   return new PrismaClient({
     adapter,
     transactionOptions: {
@@ -39,6 +28,13 @@ function getClient(): PrismaClient {
     globalForPrisma.prisma = createPrismaClient();
   }
   return globalForPrisma.prisma;
+}
+
+// Builds the client eagerly (no connection is opened). The API calls this at boot so a
+// broken connection policy (ca_file_missing, an invalid DATABASE_POOL_MAX) stops the
+// process before it listens, instead of failing the first query.
+export function initDatabaseClient(): void {
+  getClient();
 }
 
 export const db = new Proxy({} as PrismaClient, {

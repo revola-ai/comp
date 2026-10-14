@@ -1,0 +1,10 @@
+{
+  "//": "Type checks the Prisma client and config alone. typecheck:ci leaves the whole app out while app/ has pre-existing errors; this keeps these files checked meanwhile.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "plugins": []
+  },
+  "include": ["prisma.config.ts", "prisma/**/*.ts"],
+  "exclude": ["node_modules"]
+}

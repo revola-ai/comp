@@ -1,5 +1,6 @@
 import { logger, tags, task } from '@trigger.dev/sdk';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { createAppStorageClient } from '@/trigger/lib/app-storage-client';
 import { db } from '@db';
 import { batchUpsertEmbeddings } from '@/vector-store/lib/core/upsert-embedding';
 import { chunkText } from '@/vector-store/lib/utils/chunk-text';
@@ -11,23 +12,7 @@ import { extractContentFromFile } from './helpers/extract-content-from-file';
  * Creates an S3 client instance for Trigger.dev tasks
  */
 function createS3Client(): S3Client {
-  const region = process.env.APP_AWS_REGION || 'us-east-1';
-  const accessKeyId = process.env.APP_AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.APP_AWS_SECRET_ACCESS_KEY;
-
-  if (!accessKeyId || !secretAccessKey) {
-    throw new Error(
-      'AWS S3 credentials are missing. Please set APP_AWS_ACCESS_KEY_ID and APP_AWS_SECRET_ACCESS_KEY environment variables in Trigger.dev.',
-    );
-  }
-
-  return new S3Client({
-    region,
-    credentials: {
-      accessKeyId,
-      secretAccessKey,
-    },
-  });
+  return createAppStorageClient();
 }
 
 /**

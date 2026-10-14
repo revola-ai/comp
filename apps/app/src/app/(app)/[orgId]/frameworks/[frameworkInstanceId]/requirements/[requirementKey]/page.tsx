@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import {
   PageHeader,
@@ -23,9 +24,9 @@ export default async function RequirementPage({ params }: PageProps) {
     await params;
 
   const [frameworkRes, requirementRes] = await Promise.all([
-    serverApi.get<any>(`/v1/frameworks/${frameworkInstanceId}`),
+    serverApi.get<any>(`/v1/frameworks/${encodePathSegment(frameworkInstanceId)}`),
     serverApi.get<any>(
-      `/v1/frameworks/${frameworkInstanceId}/requirements/${requirementKey}`,
+      `/v1/frameworks/${encodePathSegment(frameworkInstanceId)}/requirements/${encodePathSegment(requirementKey)}`,
     ),
   ]);
 

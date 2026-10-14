@@ -22,6 +22,7 @@
         "AUTH_TRUSTED_ORIGINS",
         "BETTER_AUTH_SECRET",
         "COMP_EXTENSION_TRUSTED_ORIGINS",
+        "COMP_FORWARDED_IP_TOKEN",
         "DATABASE_URL",
         "DISCORD_WEBHOOK_URL",
         "DUB_API_KEY",
@@ -62,6 +63,7 @@
         "SLACK_SALES_WEBHOOK",
         "TASKS_AUTOMATION_BUCKET",
         "TRUST_PORTAL_PROJECT_ID",
+        "UNSUBSCRIBE_SECRET",
         "UPSTASH_REDIS_REST_TOKEN",
         "UPSTASH_REDIS_REST_URL",
         "UPSTASH_VECTOR_REST_TOKEN",
@@ -96,6 +98,12 @@
             ],
             "persistent": true,
             "cache": false
+        },
+        "@trycompai/device-agent#build": {
+            "dependsOn": ["^build", "db:generate"],
+            "inputs": ["$TURBO_DEFAULT$", ".env*"],
+            "outputs": [".next/**", "!.next/cache/**", "next-env.d.ts", "dist/**"],
+            "env": ["PORTAL_URL", "API_URL", "AUTO_UPDATE_URL", "AGENT_VERSION"]
         },
         "@trycompai/device-agent#dev": {
             "persistent": true,

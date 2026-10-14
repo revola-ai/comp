@@ -26,6 +26,7 @@ import { Prisma, TrustFramework } from '@db';
 import archiver from 'archiver';
 import { PassThrough, Readable } from 'stream';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { appLink } from '../utils/public-url';
 
 @Injectable()
 export class TrustAccessService {
@@ -434,7 +435,11 @@ export class TrustAccessService {
 
     // Construct review URL pointing at the pending access requests list, not
     // the trust portal settings/overview page.
-    const reviewUrl = `${process.env.BETTER_AUTH_URL}/${organizationId}/trust/access-requests`;
+    // An app page: BETTER_AUTH_URL is the API host when the API is self-hosted, so
+    // without NEXT_PUBLIC_APP_URL the email goes out without the button.
+    const reviewUrl = appLink({
+      path: `/${organizationId}/trust/access-requests`,
+    });
 
     // Send notification to all recipients
     const emailPromises = notificationEmails.map((email) =>
@@ -2774,7 +2779,7 @@ export class TrustAccessService {
   }
 
   /**
-   * Resolve a Trust by friendlyUrl, falling back to organizationId — the public
+   * Resolve a Trust by friendlyUrl, falling back to organizationId - the public
    * portal passes either. Two findUnique calls on unique columns give explicit
    * precedence (friendlyUrl wins), so an org whose friendlyUrl happens to equal
    * another org's id can't shadow it. Shared by the public read endpoints.

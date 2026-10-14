@@ -85,7 +85,9 @@ function mergePairs({ existing, additions }: { existing: Pair[]; additions: Pair
   return merged;
 }
 
-export function computeSeedState({ crosswalk = loadCrosswalk() }: { crosswalk?: Crosswalk } = {}): SeedState {
+export function computeSeedState({
+  crosswalk = loadCrosswalk(),
+}: { crosswalk?: Crosswalk } = {}): SeedState {
   const core = loadCsfCore();
   const subById = new Map(core.subcategories.map((s) => [s.id, s]));
   const orderIndex = new Map(core.subcategories.map((s, i) => [s.id, i]));

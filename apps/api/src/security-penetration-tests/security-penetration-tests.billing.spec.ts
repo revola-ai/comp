@@ -87,6 +87,8 @@ describe('SecurityPenetrationTestsService billing usage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.MACED_API_KEY = 'mc_dev_test_maced_api_key';
+    process.env.SECURITY_PENETRATION_TESTS_WEBHOOK_URL =
+      'https://api.comp.revola.ai';
     mockMacedPentestsCreate.mockResolvedValue({
       id: 'run_subscription',
       status: 'provisioning',
@@ -123,6 +125,23 @@ describe('SecurityPenetrationTestsService billing usage', () => {
 
   afterAll(() => {
     process.env.MACED_API_KEY = originalMacedApiKey;
+  });
+
+  it('refuses before reserving any billing when no webhook URL is configured', async () => {
+    // Refunds and auto-retry run only from the provider webhook, so a run without
+    // one could never be refunded or retried.
+    delete process.env.SECURITY_PENETRATION_TESTS_WEBHOOK_URL;
+    await expect(
+      service.createReport('org_123', {
+        targetUrl: 'https://app.example.com',
+        repoUrl: 'https://github.com/org/repo',
+      }),
+    ).rejects.toThrow('Penetration testing is not configured');
+    expect(
+      billingEntitlements.tryConsumeIncludedUsageForProduct,
+    ).not.toHaveBeenCalled();
+    expect(credits.debitOrThrow).not.toHaveBeenCalled();
+    expect(mockMacedPentestsCreate).not.toHaveBeenCalled();
   });
 
   it('persists the subscription usage source on subscription-backed runs', async () => {

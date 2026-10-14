@@ -3,48 +3,47 @@ import { existsSync } from 'node:fs';
 import { cp, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
-// Path relative to the monorepo root (apps/api or apps/app → ../../packages/db/certs/...)
-const BUNDLE_RELATIVE_FROM_APP = '../../packages/db/certs/rds-global-bundle.pem';
-const BUNDLE_DEST_REL = 'certs/rds-global-bundle.pem';
+// The public Supabase root CA, committed once for every runtime (the ECS images carry
+// the same file at /app/certs/supabase-ca.crt). The workers verify the database with it
+// through DATABASE_SSL_CA, which the production connection policy requires.
+const CA_SOURCE_FROM_REPO_ROOT = 'deploy/aws/certs/supabase-ca.crt';
+const CA_DEST_REL = 'certs/supabase-ca.crt';
+const CA_RUNTIME_PATH = `/app/${CA_DEST_REL}`;
 
-function findBundleSrc(workingDir: string): string | undefined {
-  // Walk up from workingDir to find the cert — handles both normal checkouts and git worktrees
-  // where workspaceDir points to the main worktree root (wrong for us).
-  const candidates = [
-    resolve(workingDir, BUNDLE_RELATIVE_FROM_APP),
-    resolve(workingDir, '../packages/db/certs/rds-global-bundle.pem'),
-    resolve(workingDir, 'packages/db/certs/rds-global-bundle.pem'),
-  ];
-
-  return candidates.find((c) => existsSync(c));
+// apps/<name> sits two levels below the repository root. context.workspaceDir is not
+// used: in a git worktree it can point at the main checkout.
+function caSourceOf(context: BuildContext): string {
+  return resolve(context.workingDir, '..', '..', CA_SOURCE_FROM_REPO_ROOT);
 }
 
 export function caBundleExtension(): BuildExtension {
   return {
     name: 'CABundleExtension',
     onBuildStart: (context) => {
-      // Real OS env var at task spawn time — verified flow:
-      //   addLayer.deploy.env → manifest.deploy.sync.env → syncEnvVarsWithServer →
-      //   taskRunProcessProvider injects into worker env before Node TLS init.
+      if (context.target === 'dev') return;
+      // Checked here because errors in onBuildComplete are only logged by the CLI.
+      const source = caSourceOf(context);
+      if (!existsSync(source)) {
+        throw new Error(`CABundleExtension: ${CA_SOURCE_FROM_REPO_ROOT} not found at ${source}`);
+      }
+      // Real OS env vars at task spawn time:
+      //   addLayer.deploy.env -> manifest.deploy.sync.env -> syncEnvVarsWithServer ->
+      //   the worker env, before Node's TLS init. DATABASE_SSL_CA drives
+      //   buildPgAdapterOptions; NODE_EXTRA_CA_CERTS lets other TLS clients trust it too.
       context.addLayer({
         id: 'ca-bundle-env',
         deploy: {
-          env: { NODE_EXTRA_CA_CERTS: `/app/${BUNDLE_DEST_REL}` },
+          env: { DATABASE_SSL_CA: CA_RUNTIME_PATH, NODE_EXTRA_CA_CERTS: CA_RUNTIME_PATH },
           override: true,
         },
       });
     },
     onBuildComplete: async (context: BuildContext, manifest: BuildManifest) => {
-      const src = findBundleSrc(context.workingDir);
-      if (!src) {
-        throw new Error(
-          `CABundleExtension: rds-global-bundle.pem not found. Searched relative to ${context.workingDir}`,
-        );
-      }
-      const dest = join(manifest.outputPath, BUNDLE_DEST_REL);
+      if (context.target === 'dev') return;
+      const dest = join(manifest.outputPath, CA_DEST_REL);
       await mkdir(dirname(dest), { recursive: true });
-      await cp(src, dest);
-      context.logger.log(`Copied RDS CA bundle to ${BUNDLE_DEST_REL}`);
+      await cp(caSourceOf(context), dest);
+      context.logger.log(`Copied the Supabase CA to ${CA_DEST_REL}`);
     },
   };
 }

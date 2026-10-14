@@ -1,4 +1,5 @@
-import { DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { createAppStorageClient } from '@/trigger/lib/app-storage-client';
 import { db, Prisma, PolicyStatus } from '@db';
 import type {
   FrameworkEditorFramework,
@@ -83,23 +84,20 @@ async function deleteDetachedPdfObjects(keys: string[]): Promise<void> {
   if (keys.length === 0) return;
   // Same APP_AWS_* configuration as the other trigger tasks (evidence export)
   // — but non-throwing: cleanup is best-effort and must never fail the
-  // regeneration, so missing configuration is logged and skipped.
+  // regeneration, so missing or invalid configuration is logged and skipped.
   const bucketName = process.env.APP_AWS_BUCKET_NAME;
-  const accessKeyId = process.env.APP_AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.APP_AWS_SECRET_ACCESS_KEY;
-  if (!bucketName || !accessKeyId || !secretAccessKey) {
+  let s3: ReturnType<typeof createAppStorageClient> | undefined;
+  try {
+    s3 = bucketName ? createAppStorageClient() : undefined;
+  } catch {
+    s3 = undefined;
+  }
+  if (!bucketName || !s3) {
     logger.warn(
       `APP_AWS_* S3 configuration missing; skipped deleting detached policy PDFs: ${keys.join(', ')}`,
     );
     return;
   }
-  const s3 = new S3Client({
-    region: process.env.APP_AWS_REGION || 'us-east-1',
-    credentials: { accessKeyId, secretAccessKey },
-    ...(process.env.APP_AWS_ENDPOINT
-      ? { endpoint: process.env.APP_AWS_ENDPOINT, forcePathStyle: true }
-      : {}),
-  });
   for (const key of keys) {
     try {
       await s3.send(new DeleteObjectCommand({ Bucket: bucketName, Key: key }));
@@ -151,7 +149,10 @@ export async function updatePolicyInDatabase(
         await tx.$executeRaw`SELECT id FROM "Policy" WHERE id = ${policyId} FOR UPDATE`;
         const current = await tx.policy.findUniqueOrThrow({
           where: { id: policyId },
-          select: { pdfUrl: true, currentVersion: { select: { pdfUrl: true } } },
+          select: {
+            pdfUrl: true,
+            currentVersion: { select: { pdfUrl: true } },
+          },
         });
         if (policy.currentVersionId) {
           await tx.policyVersion.update({

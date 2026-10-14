@@ -1,6 +1,5 @@
 import {
   Body,
-  Button,
   Container,
   Heading,
   Html,
@@ -10,9 +9,11 @@ import {
   Tailwind,
   Text,
 } from '@react-email/components';
+import { CallToAction } from '../../components/call-to-action';
 import { Footer } from '../../components/footer';
 import { Logo } from '../../components/logo';
 import { UnsubscribeLink } from '../../components/unsubscribe-link';
+import { publicBaseUrl } from '../../lib/public-url';
 import { getUnsubscribeUrl } from '../../lib/unsubscribe';
 
 interface Props {
@@ -38,8 +39,8 @@ export const WeeklyTaskDigestEmail = ({
   organizationId,
   tasks,
 }: Props) => {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.trycomp.ai';
-  const tasksUrl = `${baseUrl}/${organizationId}/tasks`;
+  const appUrl = publicBaseUrl(['NEXT_PUBLIC_APP_URL']);
+  const tasksUrl = appUrl ? `${appUrl}/${organizationId}/tasks` : undefined;
   const taskCountMessage = getTaskCountMessage(tasks.length);
 
   return (
@@ -68,32 +69,22 @@ export const WeeklyTaskDigestEmail = ({
               <ul className="list-disc pl-[20px]">
                 {tasks.map((task) => (
                   <li key={task.id} className="text-[14px] leading-[28px] text-[#121212]">
-                    <Link
-                      href={`${tasksUrl}/${task.id}`}
-                      className="text-[#121212] underline hover:text-[#666666]"
-                    >
-                      {task.title}
-                    </Link>
+                    {tasksUrl ? (
+                      <Link
+                        href={`${tasksUrl}/${task.id}`}
+                        className="text-[#121212] underline hover:text-[#666666]"
+                      >
+                        {task.title}
+                      </Link>
+                    ) : (
+                      task.title
+                    )}
                   </li>
                 ))}
               </ul>
             </Section>
 
-            <Section className="mt-[32px] mb-[42px] text-center">
-              <Button
-                className="text-primary border border-solid border-[#121212] bg-transparent px-6 py-3 text-center text-[14px] font-medium text-[#121212] no-underline"
-                href={tasksUrl}
-              >
-                View All Tasks
-              </Button>
-            </Section>
-
-            <Text className="text-[14px] leading-[24px] break-all text-[#707070]">
-              or copy and paste this URL into your browser{' '}
-              <Link href={tasksUrl} className="text-[#707070] underline">
-                {tasksUrl}
-              </Link>
-            </Text>
+            <CallToAction href={tasksUrl} label="View All Tasks" />
 
             <br />
             <Section>

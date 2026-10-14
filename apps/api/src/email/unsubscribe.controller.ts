@@ -5,11 +5,14 @@ import {
   Query,
   HttpCode,
   BadRequestException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { db } from '@db';
-import { generateUnsubscribeToken } from '@trycompai/email';
-import { timingSafeEqual } from 'node:crypto';
+import {
+  isUnsubscribeConfigured,
+  verifyUnsubscribeToken,
+} from '@trycompai/email';
 
 @ApiTags('Email - Unsubscribe')
 @Controller({ path: 'email/unsubscribe', version: '1' })
@@ -37,12 +40,18 @@ export class UnsubscribeController {
       throw new BadRequestException('Email and token are required');
     }
 
-    // Verify HMAC token (timing-safe comparison)
-    const expectedToken = generateUnsubscribeToken(email);
-    const tokensMatch =
-      expectedToken.length === token.length &&
-      timingSafeEqual(Buffer.from(expectedToken), Buffer.from(token));
-    if (!tokensMatch) {
+    // Without a signing secret no token can be checked: a named 503, not a 500.
+    if (!isUnsubscribeConfigured()) {
+      throw new ServiceUnavailableException({
+        statusCode: 503,
+        error: 'unsubscribe_not_configured',
+        message:
+          'Unsubscribe is not configured on this server (UNSUBSCRIBE_SECRET is not set)',
+      });
+    }
+
+    // Verify HMAC token (timing-safe)
+    if (!verifyUnsubscribeToken({ email, token })) {
       throw new BadRequestException('Invalid token');
     }
 

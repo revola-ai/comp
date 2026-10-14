@@ -3,6 +3,7 @@ import { logger, queue, task } from '@trigger.dev/sdk';
 import { isUserUnsubscribed } from '@trycompai/email';
 import { triggerEmail } from '../../email/trigger-email';
 import { AutomationBulkFailuresEmail } from '../../email/templates/automation-bulk-failures';
+import { appBaseUrl } from '../../utils/public-url';
 import {
   runTaskIntegrationChecks,
   type TaskCheckRunResult,
@@ -43,7 +44,7 @@ const CHILD_BATCH_SIZE = 100;
  * the tasks that freshly failed. Pure + exported for unit testing.
  *
  * Errored/crashed child runs (`!ok`) and runs that didn't transition into
- * `failed` are dropped — matching the prior behavior where an already-failed or
+ * `failed` are dropped - matching the prior behavior where an already-failed or
  * errored task produced no email (it just retries on the next orchestrator tick).
  */
 export function collectFailedTasks(
@@ -85,7 +86,7 @@ function toRecipient(user: {
  *
  * Note the deliberate product change: every recipient receives the FULL org
  * digest (all tasks that failed this run), so a non-admin assignee now sees the
- * org's other failed tasks too — not just their own. This is the intended
+ * org's other failed tasks too - not just their own. This is the intended
  * "one bundled email per org" behavior (replacing one email per failing task).
  */
 async function resolveRecipients(params: {
@@ -150,15 +151,13 @@ export async function sendBundledFailureEmails(params: {
 
   // The email is best-effort: a failure here (e.g. a transient DB blip while
   // resolving recipients) must NOT throw out of the runner, which would fail it
-  // and retry the WHOLE org's checks — and since the tasks are already `failed`
+  // and retry the WHOLE org's checks - and since the tasks are already `failed`
   // by then, the retry would report no transitions and the email would be lost
   // forever. Mirrors the old per-task email's outer try/catch guard.
   try {
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.BETTER_AUTH_URL ||
-      'https://app.trycomp.ai';
-    const tasksUrl = `${appUrl}/${organizationId}/tasks`;
+    // Without the app URL the email lists the tasks without links (never upstream's).
+    const appUrl = appBaseUrl();
+    const tasksUrl = appUrl ? `${appUrl}/${organizationId}/tasks` : undefined;
 
     const recipients = await resolveRecipients({
       organizationId,
@@ -167,7 +166,7 @@ export async function sendBundledFailureEmails(params: {
 
     const taskItems = failedTasks.map((t) => ({
       title: t.taskTitle,
-      url: `${appUrl}/${organizationId}/tasks/${t.taskId}`,
+      url: appUrl ? `${appUrl}/${organizationId}/tasks/${t.taskId}` : undefined,
       failedCount: t.failedCount,
       totalCount: t.totalCount,
     }));
@@ -228,7 +227,7 @@ export async function sendBundledFailureEmails(params: {
  * Per-org runner. The daily orchestrator dispatches ONE of these per org
  * (fire-and-forget). It runs that org's due integration checks in parallel via
  * batchTriggerAndWait, then sends a SINGLE bundled email listing every task that
- * failed this run — instead of one email per failing task.
+ * failed this run - instead of one email per failing task.
  *
  * Mirrors the established in-repo nested fan-out pattern (e.g. onboarding's
  * per-org runners that batchTriggerAndWait their work internally).

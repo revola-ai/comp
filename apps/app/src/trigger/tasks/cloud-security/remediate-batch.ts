@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { db } from '@db/server';
 import { logger, task } from '@trigger.dev/sdk';
 import { postCloudSecurityApi } from './api-response';
@@ -209,7 +210,7 @@ export const remediateBatch = task({
       progress.phase = 'scanning';
       sync(progress);
       await postCloudSecurityApi({
-        path: `/v1/cloud-security/scan/${connectionId}`,
+        path: `/v1/cloud-security/scan/${encodePathSegment(connectionId)}`,
         body: {},
         organizationId,
         userId,

@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import type {
   ConnectionListItemResponse,
@@ -33,7 +34,7 @@ export async function loadIntegrationPageData(
 ): Promise<IntegrationPageData> {
   const [providerResult, connectionsResult, tasksResult] = await Promise.all([
     serverApi.get<IntegrationProviderResponse>(
-      `/v1/integrations/connections/providers/${slug}`,
+      `/v1/integrations/connections/providers/${encodePathSegment(slug)}`,
     ),
     serverApi.get<ConnectionListItemResponse[]>('/v1/integrations/connections'),
     serverApi.get<IntegrationTaskApiResponse>('/v1/tasks'),

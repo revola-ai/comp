@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { AuthFailureLimiter } from '../throttle/auth-failure-limiter';
 import { PlatformAdminGuard } from './platform-admin.guard';
 
 const mockGetSession = jest.fn();
@@ -44,7 +45,7 @@ describe('PlatformAdminGuard', () => {
   let guard: PlatformAdminGuard;
 
   beforeEach(() => {
-    guard = new PlatformAdminGuard();
+    guard = new PlatformAdminGuard(new AuthFailureLimiter());
     jest.clearAllMocks();
   });
 

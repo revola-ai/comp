@@ -5,6 +5,8 @@ import { logger, schedules } from '@trigger.dev/sdk';
 import { isUserUnsubscribed, TaskStatusNotificationEmail } from '@trycompai/email';
 import { sendEmailViaApi } from '../../lib/send-email-via-api';
 
+import { isScheduledRunAllowed } from '../../lib/schedule-guard';
+import { appTaskUrl } from './app-links';
 import { getTargetStatus } from './task-schedule-helpers';
 
 export const taskSchedule = schedules.task({
@@ -12,7 +14,8 @@ export const taskSchedule = schedules.task({
   machine: 'large-1x',
   cron: '0 */12 * * *', // Every 12 hours
   maxDuration: 1000 * 60 * 10, // 10 minutes
-  run: async () => {
+  run: async (_payload, { ctx }) => {
+    if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
     const now = new Date();
     const novu = new Novu({
       secretKey: process.env.NOVU_API_KEY,
@@ -69,7 +72,7 @@ export const taskSchedule = schedules.task({
           },
         },
         // Include App Automations (IntegrationCheckRun) - get all runs to group by checkId.
-        // CS-166: exclude runs from disconnected connections — their historical
+        // CS-166: exclude runs from disconnected connections - their historical
         // "failed" state must not drive scheduled status changes.
         integrationCheckRuns: {
           where: { connection: { status: { not: 'disconnected' } } },
@@ -205,7 +208,7 @@ export const taskSchedule = schedules.task({
         }>,
         task: (typeof allUpdatedTasks)[number],
       ) => {
-        // Exclude platform admins (Comp AI staff) unless the org is internal —
+        // Exclude platform admins (Comp AI staff) unless the org is internal -
         // the single participation rule (no per-member owner carve-out).
         const orgIsInternal = task.organization?.isInternal ?? false;
         for (const entry of members) {
@@ -273,7 +276,10 @@ export const taskSchedule = schedules.task({
                 taskName: recipient.task.title,
                 taskStatus,
                 organizationName: recipient.task.organization.name,
-                taskUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.trycomp.ai'}/${recipient.task.organizationId}/tasks/${recipient.task.id}`,
+                taskUrl: appTaskUrl({
+                  organizationId: recipient.task.organizationId,
+                  taskId: recipient.task.id,
+                }),
               }),
               organizationId: recipient.task.organizationId,
               system: true,
@@ -305,7 +311,10 @@ export const taskSchedule = schedules.task({
             organizationName: recipient.task.organization.name,
             organizationId: recipient.task.organizationId,
             taskId: recipient.task.id,
-            taskUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.trycomp.ai'}/${recipient.task.organizationId}/tasks/${recipient.task.id}`,
+            taskUrl: appTaskUrl({
+              organizationId: recipient.task.organizationId,
+              taskId: recipient.task.id,
+            }),
           },
         })),
       });

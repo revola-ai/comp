@@ -5,6 +5,7 @@
  * These actions securely call the enterprise API with server-side license key
  */
 
+import { encodePathSegment } from '@/lib/api-path';
 import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
 
@@ -364,7 +365,7 @@ export async function publishAutomation(
     // Save version record via NestJS API (also enables automation in one transaction)
     const { serverApi } = await import('@/lib/api-server');
     const versionRes = await serverApi.post(
-      `/v1/tasks/${taskId}/automations/${automationId}/versions`,
+      `/v1/tasks/${encodePathSegment(taskId)}/automations/${encodePathSegment(automationId)}/versions`,
       {
         version: response.version,
         scriptKey: response.scriptKey,
@@ -437,7 +438,7 @@ export async function updateEvaluationCriteria(
   try {
     const { serverApi } = await import('@/lib/api-server');
     const response = await serverApi.patch(
-      `/v1/tasks/${taskId}/automations/${automationId}`,
+      `/v1/tasks/${encodePathSegment(taskId)}/automations/${encodePathSegment(automationId)}`,
       { evaluationCriteria },
     );
     if (response.error) throw new Error(response.error);
@@ -463,7 +464,7 @@ export async function toggleAutomationEnabled(
   try {
     const { serverApi } = await import('@/lib/api-server');
     const response = await serverApi.patch(
-      `/v1/tasks/${taskId}/automations/${automationId}`,
+      `/v1/tasks/${encodePathSegment(taskId)}/automations/${encodePathSegment(automationId)}`,
       { isEnabled },
     );
     if (response.error) throw new Error(response.error);

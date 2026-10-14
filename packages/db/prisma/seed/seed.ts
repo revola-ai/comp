@@ -5,12 +5,15 @@ import path from 'node:path';
 import { frameworkEditorModelSchemas } from './frameworkEditorSchemas';
 import { syncCsfCrosswalk, syncFrameworkScopedEditorLinks } from './sync-framework-scoped-links';
 import { backfillInstanceLinksFromManifests } from './instance-links-from-manifests';
-import { resolveSslConfig, stripSslMode } from '../../src/ssl-config';
+import { buildPgAdapterOptions } from '../../src/pg-adapter-options';
+import { refuseProductionEntryPoint } from '../../src/production-target';
 
-// Same TLS policy as the runtime client (localhost off, DATABASE_SSL_CA verified, ...).
-const databaseUrl = process.env.DATABASE_URL!;
-const ssl = resolveSslConfig(databaseUrl);
-const adapter = new PrismaPg({ connectionString: ssl === undefined ? databaseUrl : stripSslMode(databaseUrl), ssl });
+// A direct `bun prisma/seed/seed.ts` bypasses the Prisma CLI guard: refuse production
+// here, before the client exists (D7: laptops share the production database).
+refuseProductionEntryPoint({ name: 'bun prisma/seed/seed.ts' });
+
+// Same connection policy as the runtime clients (TLS, pool size, production CA rule).
+const adapter = new PrismaPg(buildPgAdapterOptions({ databaseUrl: process.env.DATABASE_URL }));
 const prisma = new PrismaClient({ adapter });
 
 async function seedJsonFiles(subDirectory: string) {

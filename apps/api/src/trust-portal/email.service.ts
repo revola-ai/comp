@@ -98,7 +98,7 @@ export class TrustEmailService {
     requesterJobTitle?: string | null;
     purpose?: string | null;
     requestedDurationDays?: number | null;
-    reviewUrl: string;
+    reviewUrl: string | undefined;
   }): Promise<void> {
     const {
       toEmail,
@@ -138,7 +138,7 @@ export class TrustEmailService {
     toName: string;
     organizationName: string;
     domain: string;
-    settingsUrl: string;
+    settingsUrl: string | undefined;
   }): Promise<void> {
     const { toEmail, toName, organizationName, domain, settingsUrl } = params;
 

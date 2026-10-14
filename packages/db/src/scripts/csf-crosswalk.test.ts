@@ -82,7 +82,9 @@ describe('csf-crosswalk loaders', () => {
       crosswalkSchema.parse(
         minimalCrosswalk({
           csfLinks: {
-            policies: [{ controlTemplateId: 'frk_ct_unmapped00000000000000', policyTemplateId: 'frk_pt_x' }],
+            policies: [
+              { controlTemplateId: 'frk_ct_unmapped00000000000000', policyTemplateId: 'frk_pt_x' },
+            ],
             tasks: [],
           },
         }),
@@ -96,7 +98,9 @@ describe('csf-crosswalk loaders', () => {
         minimalCrosswalk({
           csfLinks: {
             policies: [],
-            tasks: [{ controlTemplateId: 'frk_ct_unmapped00000000000000', taskTemplateId: 'frk_tt_x' }],
+            tasks: [
+              { controlTemplateId: 'frk_ct_unmapped00000000000000', taskTemplateId: 'frk_tt_x' },
+            ],
           },
         }),
       ),
@@ -108,8 +112,12 @@ describe('csf-crosswalk loaders', () => {
       crosswalkSchema.parse(
         minimalCrosswalk({
           csfLinks: {
-            policies: [{ controlTemplateId: 'frk_ct_test0000000000000000', policyTemplateId: 'frk_pt_x' }],
-            tasks: [{ controlTemplateId: 'frk_ct_test0000000000000000', taskTemplateId: 'frk_tt_x' }],
+            policies: [
+              { controlTemplateId: 'frk_ct_test0000000000000000', policyTemplateId: 'frk_pt_x' },
+            ],
+            tasks: [
+              { controlTemplateId: 'frk_ct_test0000000000000000', taskTemplateId: 'frk_tt_x' },
+            ],
           },
         }),
       ),

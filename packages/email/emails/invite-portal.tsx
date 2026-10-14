@@ -1,21 +1,21 @@
 import {
   Body,
-  Button,
   Container,
   Heading,
   Html,
-  Link,
   Preview,
   Section,
   Tailwind,
   Text,
 } from '@react-email/components';
+import { CallToAction } from '../components/call-to-action';
 import { Footer } from '../components/footer';
 import { Logo } from '../components/logo';
 
 interface Props {
   email: string;
-  inviteLink: string;
+  /** Undefined when the portal URL is not configured: the email then has no button. */
+  inviteLink?: string;
   organizationName?: string;
 }
 
@@ -41,21 +41,7 @@ export const InvitePortalEmail = ({ email, inviteLink, organizationName }: Props
                 ? `${organizationName} has invited you to access their Comp AI Portal.`
                 : "You've been invited to access the Comp AI Portal."}
             </Text>
-            <Section className="mt-[32px] mb-[42px] text-center">
-              <Button
-                className="text-primary border border-solid border-[#121212] bg-transparent px-6 py-3 text-center text-[14px] font-medium text-[#121212] no-underline"
-                href={inviteLink}
-              >
-                Accept Invitation
-              </Button>
-            </Section>
-
-            <Text className="text-[14px] leading-[24px] break-all text-[#707070]">
-              or copy and paste this URL into your browser{' '}
-              <Link href={inviteLink} className="text-[#707070] underline">
-                {inviteLink}
-              </Link>
-            </Text>
+            <CallToAction href={inviteLink} label="Accept Invitation" />
 
             <br />
             <Section>

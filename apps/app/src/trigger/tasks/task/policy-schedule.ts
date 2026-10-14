@@ -2,13 +2,16 @@ import { isOrgParticipant } from '@/lib/org-participation-rule';
 import { db } from '@db/server';
 import { Novu } from '@novu/api';
 import { logger, schedules } from '@trigger.dev/sdk';
+import { isScheduledRunAllowed } from '../../lib/schedule-guard';
+import { appPolicyUrl } from './app-links';
 
 export const policySchedule = schedules.task({
   id: 'policy-schedule',
   machine: 'large-1x',
   cron: '0 */12 * * *', // Every 12 hours
   maxDuration: 1000 * 60 * 10, // 10 minutes
-  run: async () => {
+  run: async (_payload, { ctx }) => {
+    if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
     const now = new Date();
 
     const novu = new Novu({
@@ -136,7 +139,7 @@ export const policySchedule = schedules.task({
         }>,
         policy: (typeof overduePolicies)[number],
       ) => {
-        // Exclude platform admins (Comp AI staff) unless the org is internal —
+        // Exclude platform admins (Comp AI staff) unless the org is internal -
         // the single participation rule (no per-member owner carve-out).
         const orgIsInternal = policy.organization?.isInternal ?? false;
         for (const entry of members) {
@@ -185,7 +188,10 @@ export const policySchedule = schedules.task({
             organizationName: recipient.policy.organization.name,
             organizationId: recipient.policy.organizationId,
             policyId: recipient.policy.id,
-            policyUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.trycomp.ai'}/${recipient.policy.organizationId}/policies/${recipient.policy.id}`,
+            policyUrl: appPolicyUrl({
+              organizationId: recipient.policy.organizationId,
+              policyId: recipient.policy.id,
+            }),
           },
         })),
       });

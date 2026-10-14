@@ -13,6 +13,7 @@ import { EvidenceBulkReviewRequestedEmail } from '../email/templates/evidence-bu
 import { AutomationFailuresEmail } from '../email/templates/automation-failures';
 import { AutomationBulkFailuresEmail } from '../email/templates/automation-bulk-failures';
 import { NovuService } from '../notifications/novu.service';
+import { appBaseUrl } from '../utils/public-url';
 
 const BULK_TASK_WORKFLOW_ID = 'evidence-bulk-updated';
 const TASK_WORKFLOW_ID = 'evidence-updated';
@@ -159,11 +160,8 @@ export class TaskNotifierService {
       const recipients = Array.from(recipientBuckets.values());
       const statusLabel = newStatus.replace('_', ' ');
 
-      const appUrl =
-        process.env.NEXT_PUBLIC_APP_URL ??
-        process.env.BETTER_AUTH_URL ??
-        'https://app.trycomp.ai';
-      const tasksUrl = `${appUrl}/${organizationId}/tasks`;
+      const appUrl = appBaseUrl();
+      const tasksUrl = appUrl ? `${appUrl}/${organizationId}/tasks` : undefined;
 
       this.logger.log(
         `Sending bulk status change notifications to ${recipients.length} recipients for ${tasks.length} task(s)`,
@@ -321,11 +319,8 @@ export class TaskNotifierService {
       }
       const taskCount = tasks.length;
 
-      const appUrl =
-        process.env.NEXT_PUBLIC_APP_URL ??
-        process.env.BETTER_AUTH_URL ??
-        'https://app.trycomp.ai';
-      const tasksUrl = `${appUrl}/${organizationId}/tasks`;
+      const appUrl = appBaseUrl();
+      const tasksUrl = appUrl ? `${appUrl}/${organizationId}/tasks` : undefined;
 
       this.logger.log(
         `Sending bulk assignee change notifications to ${recipients.length} recipients for ${taskCount} task(s)`,
@@ -486,11 +481,10 @@ export class TaskNotifierService {
 
       const recipients = Array.from(recipientMap.values());
 
-      const appUrl =
-        process.env.NEXT_PUBLIC_APP_URL ??
-        process.env.BETTER_AUTH_URL ??
-        'https://app.trycomp.ai';
-      const taskUrl = `${appUrl}/${organizationId}/tasks/${taskId}`;
+      const appUrl = appBaseUrl();
+      const taskUrl = appUrl
+        ? `${appUrl}/${organizationId}/tasks/${taskId}`
+        : undefined;
 
       this.logger.log(
         `Sending status change notifications to ${recipients.length} recipients for task "${taskTitle}"`,
@@ -670,11 +664,10 @@ export class TaskNotifierService {
         }
       }
 
-      const appUrl =
-        process.env.NEXT_PUBLIC_APP_URL ??
-        process.env.BETTER_AUTH_URL ??
-        'https://app.trycomp.ai';
-      const taskUrl = `${appUrl}/${organizationId}/tasks/${taskId}`;
+      const appUrl = appBaseUrl();
+      const taskUrl = appUrl
+        ? `${appUrl}/${organizationId}/tasks/${taskId}`
+        : undefined;
 
       this.logger.log(
         `Sending assignee change notifications to ${recipients.length} recipients for task "${taskTitle}"`,
@@ -841,11 +834,10 @@ export class TaskNotifierService {
         return;
       }
 
-      const appUrl =
-        process.env.NEXT_PUBLIC_APP_URL ??
-        process.env.BETTER_AUTH_URL ??
-        'https://app.trycomp.ai';
-      const taskUrl = `${appUrl}/${organizationId}/tasks/${taskId}`;
+      const appUrl = appBaseUrl();
+      const taskUrl = appUrl
+        ? `${appUrl}/${organizationId}/tasks/${taskId}`
+        : undefined;
 
       // Send email notification
       try {
@@ -996,16 +988,15 @@ export class TaskNotifierService {
         return;
       }
 
-      const appUrl =
-        process.env.NEXT_PUBLIC_APP_URL ??
-        process.env.BETTER_AUTH_URL ??
-        'https://app.trycomp.ai';
-      const tasksUrl = `${appUrl}/${organizationId}/tasks`;
+      const appUrl = appBaseUrl();
+      const tasksUrl = appUrl ? `${appUrl}/${organizationId}/tasks` : undefined;
       const taskText = taskCount === 1 ? 'task' : 'tasks';
 
       const taskItems = tasks.map((task) => ({
         title: task.title ?? 'Untitled task',
-        url: `${appUrl}/${organizationId}/tasks/${task.id}`,
+        url: appUrl
+          ? `${appUrl}/${organizationId}/tasks/${task.id}`
+          : undefined,
       }));
 
       // Send email notification
@@ -1142,7 +1133,6 @@ export class TaskNotifierService {
       );
 
       const organizationName = organization?.name ?? 'your organization';
-      const changedByName = 'Automation';
 
       // Build recipient list: assignee + admins
       const recipientMap = new Map<
@@ -1178,11 +1168,10 @@ export class TaskNotifierService {
 
       const recipients = Array.from(recipientMap.values());
 
-      const appUrl =
-        process.env.NEXT_PUBLIC_APP_URL ??
-        process.env.BETTER_AUTH_URL ??
-        'https://app.trycomp.ai';
-      const taskUrl = `${appUrl}/${organizationId}/tasks/${taskId}`;
+      const appUrl = appBaseUrl();
+      const taskUrl = appUrl
+        ? `${appUrl}/${organizationId}/tasks/${taskId}`
+        : undefined;
 
       this.logger.log(
         `Sending automation failure notifications to ${recipients.length} recipients for task "${taskTitle}"`,
@@ -1390,16 +1379,15 @@ export class TaskNotifierService {
       const taskCount = failedTasks.length;
       const taskText = taskCount === 1 ? 'task' : 'tasks';
 
-      const appUrl =
-        process.env.NEXT_PUBLIC_APP_URL ??
-        process.env.BETTER_AUTH_URL ??
-        'https://app.trycomp.ai';
-      const tasksUrl = `${appUrl}/${organizationId}/tasks`;
+      const appUrl = appBaseUrl();
+      const tasksUrl = appUrl ? `${appUrl}/${organizationId}/tasks` : undefined;
 
       // Build task items for the email template
       const taskItems = failedTasks.map((ft) => ({
         title: ft.taskTitle,
-        url: `${appUrl}/${organizationId}/tasks/${ft.taskId}`,
+        url: appUrl
+          ? `${appUrl}/${organizationId}/tasks/${ft.taskId}`
+          : undefined,
         failedCount: ft.failedCount,
         totalCount: ft.totalCount,
       }));

@@ -1,6 +1,6 @@
 import { headers } from 'next/headers';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+import { assertSafeApiPath } from './api-path';
+import { getServerApiBaseUrl, getServerApiHeaders } from './server-api-base-url';
 
 interface ApiResponse<T = unknown> {
   data?: T;
@@ -16,20 +16,25 @@ interface CallOptions {
 
 /**
  * Server-side API client for calling our internal NestJS API from server components
- * Forwards cookies for authentication - API handles auth via better-auth
+ * Forwards cookies for authentication - API handles auth via better-auth.
+ * Throws InvalidApiPathError, before any request, for a path that would
+ * resolve to a different route (see api-path.ts).
  */
 async function call<T = unknown>(
   endpoint: string,
   options: CallOptions = {},
 ): Promise<ApiResponse<T>> {
+  assertSafeApiPath(endpoint);
   const { method = 'GET', body, headers: customHeaders } = options;
 
+  const headerStore = await headers();
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...getServerApiHeaders({ incoming: headerStore }),
   };
 
   // Forward cookies for auth - better-auth handles session validation
-  const cookieHeader = (await headers()).get('cookie');
+  const cookieHeader = headerStore.get('cookie');
   if (cookieHeader) {
     requestHeaders['Cookie'] = cookieHeader;
   }
@@ -40,7 +45,7 @@ async function call<T = unknown>(
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const response = await fetch(`${getServerApiBaseUrl()}${endpoint}`, {
       method,
       headers: requestHeaders,
       body: body ? JSON.stringify(body) : undefined,

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { db } from '@db';
 import type { AuthenticatedRequest } from './types';
 
@@ -13,10 +13,7 @@ import type { AuthenticatedRequest } from './types';
  *     without forcing callers to manage user IDs themselves.
  */
 export type ActingUserSource =
-  | 'session'
-  | 'service-token-acting'
-  | 'api-key-creator'
-  | 'org-owner-fallback';
+  'session' | 'service-token-acting' | 'api-key-creator' | 'org-owner-fallback';
 
 export interface ResolvedActingUser {
   /** User ID to attribute the mutation to. Null only when no fallback was
@@ -50,9 +47,11 @@ export interface ResolvedActingUser {
  *   3. API keys with a recorded creator — attribute to the member who created
  *      the key (if still an active member of the org), so the audit trail
  *      reflects who set up the automation.
- *   4. Everything else (legacy API keys with no recorded creator, keys whose
- *      creator was deactivated/removed, or service tokens without `x-user-id`)
- *      — no per-user identity exists, so we attribute to the org's OLDEST owner
+ *      A personal key whose creator is no longer active is rejected with 401
+ *      (offboarding); only an organization-owned key falls through to 4.
+ *   4. Everything else (legacy API keys with no recorded creator,
+ *      organization-owned keys whose creator left, or service tokens without
+ *      `x-user-id`) - no per-user identity exists, so we attribute to the org's OLDEST owner
  *      (deterministic + stable across deletes of newer owners), consistent with
  *      how 19+ other places in the codebase look up org owners
  *      (`Member.role.contains('owner')`).
@@ -81,9 +80,9 @@ export class ActingUserResolver {
 
     // Path 3 — API key with a recorded creator who is still an active member
     // of this org. Attribute to that member's user so the audit trail reflects
-    // who set up the automation, not the org owner. Legacy keys (no recorded
-    // creator) and keys whose creator has been deactivated/removed fall through
-    // to the owner fallback below.
+    // who set up the automation, not the org owner. Only legacy keys (no
+    // recorded creator) and organization-owned keys reach the owner fallback;
+    // a personal key whose creator left is rejected.
     if (req.isApiKey && req.apiKeyCreatedByMemberId) {
       const creator = await db.member.findFirst({
         where: {
@@ -101,6 +100,13 @@ export class ActingUserResolver {
           source: 'api-key-creator',
           callerLabel: this.buildCallerLabel(req),
         };
+      }
+      if (!req.apiKeyOrganizationOwned) {
+        // ApiKeyService already rejects these; this guards any path that
+        // skipped validation so a departed member's key never acts as owner.
+        throw new UnauthorizedException(
+          'API key creator is no longer an active member of this organization',
+        );
       }
     }
 
@@ -167,9 +173,7 @@ export class ActingUserResolver {
    */
   private buildCallerLabel(req: AuthenticatedRequest): string {
     if (req.isApiKey) {
-      return req.apiKeyName
-        ? `via API key "${req.apiKeyName}"`
-        : 'via API key';
+      return req.apiKeyName ? `via API key "${req.apiKeyName}"` : 'via API key';
     }
     if (req.isServiceToken) {
       return req.serviceName

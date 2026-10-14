@@ -9,7 +9,7 @@ import {
 const notes: ReportContextNote[] = [
   {
     issueTitle: 'appConfiguration read access',
-    context: 'Accepted by design — non-secret bootstrap config.',
+    context: 'Accepted by design - non-secret bootstrap config.',
     updatedAt: new Date('2026-06-11T10:00:00.000Z'),
   },
   {
@@ -38,7 +38,9 @@ describe('appendContextNotesToMarkdown', () => {
     expect(result).toContain('not findings or conclusions of the testing team');
     expect(result).toContain('### appConfiguration read access');
     expect(result).toContain('last updated 2026-06-11');
-    expect(result).toContain('Accepted by design — non-secret bootstrap config.');
+    expect(result).toContain(
+      'Accepted by design - non-secret bootstrap config.',
+    );
     expect(result).toContain('### Unverified email access');
   });
 });

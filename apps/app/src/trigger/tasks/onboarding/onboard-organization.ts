@@ -1,6 +1,6 @@
 import { db } from '@db/server';
 import { logger, metadata, queue, tags, task, tasks } from '@trigger.dev/sdk';
-import axios from 'axios';
+import { revalidateAppPath } from '../../lib/revalidate-app-path';
 import { generateAuditorContentTask } from '../auditor/generate-auditor-content';
 import { generateRiskMitigationsForOrg } from './generate-risk-mitigation';
 import { generateVendorMitigationsForOrg } from './generate-vendor-mitigation';
@@ -232,26 +232,7 @@ export const onboardOrganization = task({
       data: { triggerJobId: null, triggerJobCompleted: true },
     });
 
-    try {
-      logger.info(`Revalidating path ${process.env.NEXT_PUBLIC_BETTER_AUTH_URL}/${organizationId}`);
-      const revalidateResponse = await axios.post(
-        `${process.env.NEXT_PUBLIC_BETTER_AUTH_URL}/api/revalidate/path`,
-        {
-          path: `${process.env.NEXT_PUBLIC_BETTER_AUTH_URL}/${organizationId}`,
-          secret: process.env.REVALIDATION_SECRET,
-          type: 'layout',
-        },
-      );
-
-      if (!revalidateResponse.data?.revalidated) {
-        logger.error(`Failed to revalidate path: ${revalidateResponse.statusText}`);
-        logger.error(revalidateResponse.data);
-      } else {
-        logger.info('Revalidated path successfully');
-      }
-    } catch (err) {
-      logger.error('Error revalidating path', { err });
-    }
+    await revalidateAppPath({ path: `/${organizationId}`, type: 'layout' });
 
     // Generate auditor content in the background
     await tasks.trigger<typeof generateAuditorContentTask>('generate-auditor-content', {

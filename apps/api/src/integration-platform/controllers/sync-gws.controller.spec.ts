@@ -7,12 +7,20 @@ import { CredentialVaultService } from '../services/credential-vault.service';
 import { OAuthCredentialsService } from '../services/oauth-credentials.service';
 import { IntegrationSyncLoggerService } from '../services/integration-sync-logger.service';
 import { GenericEmployeeSyncService } from '../services/generic-employee-sync.service';
+import { GenericDeviceSyncService } from '../services/generic-device-sync.service';
 import { DynamicIntegrationRepository } from '../repositories/dynamic-integration.repository';
 import { CheckRunRepository } from '../repositories/check-run.repository';
 import { db } from '@db';
 
 jest.mock('@db', () => ({
   db: {
+    // Interactive transactions run against the mocked client itself; the
+    // member row lock (SELECT ... FOR UPDATE) goes through $queryRaw.
+    $transaction: jest.fn((run: (tx: unknown) => unknown) =>
+      run(jest.requireMock<{ db: unknown }>('@db').db),
+    ),
+    $queryRaw: jest.fn(() => Promise.resolve([])),
+    apiKey: { updateMany: jest.fn() },
     integrationProvider: { findUnique: jest.fn() },
     user: { findUnique: jest.fn(), create: jest.fn() },
     member: {
@@ -47,7 +55,7 @@ jest.mock('@trycompai/integration-platform', () => {
 });
 
 const mockFetch = jest.fn();
-global.fetch = mockFetch;
+jest.spyOn(global, 'fetch').mockImplementation(mockFetch);
 
 const mockedDb = db as jest.Mocked<typeof db>;
 
@@ -104,6 +112,7 @@ describe('SyncController - Google Workspace employees', () => {
           useValue: { logSync: jest.fn() },
         },
         { provide: GenericEmployeeSyncService, useValue: {} },
+        { provide: GenericDeviceSyncService, useValue: {} },
         { provide: DynamicIntegrationRepository, useValue: {} },
         { provide: CheckRunRepository, useValue: {} },
       ],
@@ -145,6 +154,8 @@ describe('SyncController - Google Workspace employees', () => {
     mockOAuthCredentials.getCredentials.mockResolvedValue({
       clientId: 'client-id',
       clientSecret: 'client-secret',
+      scopes: [],
+      source: 'platform',
     });
 
     mockCredentialVault.refreshOAuthTokens.mockResolvedValue('new-token');
@@ -306,7 +317,7 @@ describe('SyncController - Google Workspace employees', () => {
       expect(result.skipped).toBe(0);
       expect(mockedDb.member.update).toHaveBeenCalledWith({
         where: { id: 'mem_back' },
-        data: { deactivated: false, isActive: true },
+        data: { deactivated: false, isActive: true, offboardDate: null },
       });
     });
 
@@ -330,9 +341,7 @@ describe('SyncController - Google Workspace employees', () => {
         connectionId,
       );
 
-      const detail = result.details.find(
-        (d) => d.email === 'back@example.com',
-      );
+      const detail = result.details.find((d) => d.email === 'back@example.com');
       expect(detail).toEqual({
         email: 'back@example.com',
         status: 'reactivated',
@@ -394,6 +403,15 @@ describe('SyncController - Google Workspace employees', () => {
         where: { id: 'mem_sus' },
         data: { deactivated: true, isActive: false },
       });
+      expect(mockedDb.apiKey.updateMany).toHaveBeenCalledWith({
+        where: {
+          createdByMemberId: { in: ['mem_sus'] },
+          organizationOwned: false,
+          isActive: true,
+        },
+        data: { isActive: false },
+      });
+      expect(mockedDb.$transaction).toHaveBeenCalledTimes(1);
       const detail = result.details.find((d) => d.email === 'sus@example.com');
       expect(detail?.reason).toBe('User is suspended in Google Workspace');
     });
@@ -777,7 +795,9 @@ describe('SyncController - Google Workspace employees', () => {
         email: 'new@example.com',
       });
       (mockedDb.member.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockedDb.member.create as jest.Mock).mockResolvedValue({ id: 'mem_new' });
+      (mockedDb.member.create as jest.Mock).mockResolvedValue({
+        id: 'mem_new',
+      });
       (mockedDb.member.findMany as jest.Mock).mockResolvedValue([]);
 
       await controller.syncGoogleWorkspaceEmployees(orgId, connectionId);

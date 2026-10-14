@@ -22,10 +22,10 @@ import { AuthContext, OrganizationId } from '../auth/auth-context.decorator';
 import { HybridAuthGuard } from '../auth/hybrid-auth.guard';
 import { PermissionGuard } from '../auth/permission.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
-import { ApiKeyService } from '../auth/api-key.service';
 import type { AuthContext as AuthContextType } from '../auth/types';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import type { TransferOwnershipDto } from './dto/transfer-ownership.dto';
+import type { UpdateRoleNotificationsBody } from './dto/update-role-notifications.dto';
 import { OrganizationService } from './organization.service';
 import { GET_ORGANIZATION_RESPONSES } from './schemas/get-organization.responses';
 import { UPDATE_ORGANIZATION_RESPONSES } from './schemas/update-organization.responses';
@@ -34,6 +34,7 @@ import { TRANSFER_OWNERSHIP_RESPONSES } from './schemas/transfer-ownership.respo
 import { GET_ORGANIZATION_PRIMARY_COLOR_RESPONSES } from './schemas/get-organization-primary-color';
 import {
   UPDATE_ORGANIZATION_BODY,
+  UPDATE_ROLE_NOTIFICATIONS_BODY,
   TRANSFER_OWNERSHIP_BODY,
 } from './schemas/organization-api-bodies';
 import { ORGANIZATION_OPERATIONS } from './schemas/organization-operations';
@@ -43,10 +44,7 @@ import { ORGANIZATION_OPERATIONS } from './schemas/organization-operations';
 @UseGuards(HybridAuthGuard, PermissionGuard)
 @ApiSecurity('apikey') // Still document API key for external customers
 export class OrganizationController {
-  constructor(
-    private readonly organizationService: OrganizationService,
-    private readonly apiKeyService: ApiKeyService,
-  ) {}
+  constructor(private readonly organizationService: OrganizationService) {}
 
   @Get()
   @RequirePermission('organization', 'read')
@@ -208,52 +206,10 @@ export class OrganizationController {
   @Put('role-notifications')
   @RequirePermission('organization', 'update')
   @ApiOperation({ summary: 'Update role notification settings' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      required: ['settings'],
-      properties: {
-        settings: {
-          type: 'array',
-          items: {
-            type: 'object',
-            required: [
-              'role',
-              'policyNotifications',
-              'taskReminders',
-              'taskAssignments',
-              'taskMentions',
-              'weeklyTaskDigest',
-              'findingNotifications',
-            ],
-            properties: {
-              role: { type: 'string' },
-              policyNotifications: { type: 'boolean' },
-              taskReminders: { type: 'boolean' },
-              taskAssignments: { type: 'boolean' },
-              taskMentions: { type: 'boolean' },
-              weeklyTaskDigest: { type: 'boolean' },
-              findingNotifications: { type: 'boolean' },
-            },
-          },
-        },
-      },
-    },
-  })
+  @ApiBody(UPDATE_ROLE_NOTIFICATIONS_BODY)
   async updateRoleNotifications(
     @OrganizationId() organizationId: string,
-    @Body()
-    body: {
-      settings: Array<{
-        role: string;
-        policyNotifications: boolean;
-        taskReminders: boolean;
-        taskAssignments: boolean;
-        taskMentions: boolean;
-        weeklyTaskDigest: boolean;
-        findingNotifications: boolean;
-      }>;
-    },
+    @Body() body: UpdateRoleNotificationsBody,
   ) {
     if (!body?.settings || !Array.isArray(body.settings)) {
       throw new BadRequestException(
@@ -265,20 +221,6 @@ export class OrganizationController {
       organizationId,
       body.settings,
     );
-  }
-
-  @Get('api-keys')
-  @RequirePermission('apiKey', 'read')
-  @ApiOperation({ summary: 'List active API keys' })
-  async listApiKeys(@OrganizationId() organizationId: string) {
-    return this.organizationService.listApiKeys(organizationId);
-  }
-
-  @Get('api-keys/available-scopes')
-  @RequirePermission('apiKey', 'read')
-  @ApiOperation({ summary: 'Get available API key scopes' })
-  async getAvailableScopes() {
-    return { data: this.apiKeyService.getAvailableScopes() };
   }
 
   @Get('role-notifications')
@@ -352,40 +294,5 @@ export class OrganizationController {
   @ApiOperation({ summary: 'Remove organization logo' })
   async removeLogo(@OrganizationId() organizationId: string) {
     return this.organizationService.removeLogo(organizationId);
-  }
-
-  @Post('api-keys')
-  @RequirePermission('apiKey', 'create')
-  @ApiOperation({ summary: 'Create a new API key' })
-  async createApiKey(
-    @OrganizationId() organizationId: string,
-    @AuthContext() authContext: AuthContextType,
-    @Body() body: { name: string; expiresAt?: string; scopes?: string[] },
-  ) {
-    if (!body.name) {
-      throw new BadRequestException('Name is required');
-    }
-    return this.apiKeyService.create(
-      organizationId,
-      body.name,
-      body.expiresAt,
-      body.scopes,
-      // Attribute the key to the member creating it (session auth). Null when
-      // created via API key/service token — falls back to org owner at use time.
-      authContext.memberId ?? null,
-    );
-  }
-
-  @Post('api-keys/revoke')
-  @RequirePermission('apiKey', 'delete')
-  @ApiOperation({ summary: 'Revoke an API key' })
-  async revokeApiKey(
-    @OrganizationId() organizationId: string,
-    @Body() body: { id: string },
-  ) {
-    if (!body.id) {
-      throw new BadRequestException('API key ID is required');
-    }
-    return this.apiKeyService.revoke(body.id, organizationId);
   }
 }

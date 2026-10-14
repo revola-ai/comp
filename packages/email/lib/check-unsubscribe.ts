@@ -171,17 +171,16 @@ export async function getUnsubscribedEmails(
             (s) => s[roleSettingField as keyof RoleNotificationRecord],
           );
           if (!enabledByRole) {
-            // All roles say OFF — unsubscribed regardless of personal prefs
+            // All roles say OFF - unsubscribed regardless of personal prefs
             unsubscribed.add(user.email);
             continue;
           }
-          // Role says ON — fall through to personal preferences
+          // Role says ON - fall through to personal preferences
         } else {
-          // No DB records — use built-in defaults for portal-only roles
+          // No DB records - use built-in defaults for portal-only roles
           const allPortalOnly = userRoles.every((r) => PORTAL_ONLY_ROLES.has(r));
           if (allPortalOnly) {
-            const enabled =
-              PORTAL_ONLY_DEFAULTS[roleSettingField as keyof RoleNotificationRecord];
+            const enabled = PORTAL_ONLY_DEFAULTS[roleSettingField as keyof RoleNotificationRecord];
             if (!enabled) {
               unsubscribed.add(user.email);
               continue;
@@ -190,7 +189,7 @@ export async function getUnsubscribedEmails(
         }
       }
 
-      // Check personal preference — overrides the role matrix for any user
+      // Check personal preference - overrides the role matrix for any user
       const preferences =
         user.emailPreferences && typeof user.emailPreferences === 'object'
           ? {
@@ -215,13 +214,13 @@ export async function getUnsubscribedEmails(
  * Check if a user is unsubscribed from a specific type of email notification.
  *
  * Resolution order (when organizationId is provided):
- * 1. Legacy all-or-nothing flag — if set, user is unsubscribed from everything.
+ * 1. Legacy all-or-nothing flag - if set, user is unsubscribed from everything.
  * 2. Check role notification settings for the user's roles in the org.
  *    - If ALL roles disable this notification, the user is unsubscribed (no override).
  *    - If ANY role enables it, fall through to personal preferences.
  *    - If no role settings are configured, portal-only roles (employee/contractor)
  *      use built-in defaults; other roles fall through to personal preferences.
- * 3. Check personal preferences — any user who previously opted out stays opted out.
+ * 3. Check personal preferences - any user who previously opted out stays opted out.
  *    Owners/admins can toggle freely; non-admin users see these as read-only in the UI
  *    but their existing opt-outs are still honored so we don't re-subscribe people.
  *
@@ -294,12 +293,7 @@ export async function isUserUnsubscribed(
 
     // Check role-based notification settings if organizationId is provided
     const roleSettingField = ROLE_SETTING_FIELDS[preferenceType];
-    if (
-      organizationId &&
-      roleSettingField &&
-      db.member &&
-      db.roleNotificationSetting
-    ) {
+    if (organizationId && roleSettingField && db.member && db.roleNotificationSetting) {
       // Look up the user's roles in this organization
       const memberRecords = await db.member.findMany({
         where: {
@@ -312,17 +306,14 @@ export async function isUserUnsubscribed(
 
       if (memberRecords.length > 0) {
         // Roles can be comma-separated (e.g., "admin,auditor")
-        const userRoles = memberRecords.flatMap((m) =>
-          m.role.split(',').map((r) => r.trim()),
-        );
+        const userRoles = memberRecords.flatMap((m) => m.role.split(',').map((r) => r.trim()));
 
-        const roleSettings =
-          await db.roleNotificationSetting.findMany({
-            where: {
-              organizationId,
-              role: { in: userRoles },
-            },
-          });
+        const roleSettings = await db.roleNotificationSetting.findMany({
+          where: {
+            organizationId,
+            role: { in: userRoles },
+          },
+        });
 
         if (roleSettings.length > 0) {
           // Union: if ANY role enables this notification, it's ON
@@ -331,23 +322,18 @@ export async function isUserUnsubscribed(
           );
 
           if (!enabledByRole) {
-            // All roles say OFF — user is unsubscribed regardless
+            // All roles say OFF - user is unsubscribed regardless
             return true;
           }
 
-          // Role says ON — fall through to personal preferences.
+          // Role says ON - fall through to personal preferences.
           // This ensures users who previously opted out stay opted out,
           // even if their role matrix now enables the notification.
         } else {
-          // No DB records — use built-in defaults for portal-only roles
-          const allPortalOnly = userRoles.every((r) =>
-            PORTAL_ONLY_ROLES.has(r),
-          );
+          // No DB records - use built-in defaults for portal-only roles
+          const allPortalOnly = userRoles.every((r) => PORTAL_ONLY_ROLES.has(r));
           if (allPortalOnly) {
-            const enabled =
-              PORTAL_ONLY_DEFAULTS[
-                roleSettingField as keyof RoleNotificationRecord
-              ];
+            const enabled = PORTAL_ONLY_DEFAULTS[roleSettingField as keyof RoleNotificationRecord];
             if (!enabled) {
               return true;
             }
@@ -356,7 +342,7 @@ export async function isUserUnsubscribed(
       }
     }
 
-    // Check personal preference — overrides the role matrix for any user
+    // Check personal preference - overrides the role matrix for any user
     const preferences =
       user.emailPreferences && typeof user.emailPreferences === 'object'
         ? {

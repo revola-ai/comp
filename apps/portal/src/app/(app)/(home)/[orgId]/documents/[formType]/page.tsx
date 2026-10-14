@@ -1,5 +1,6 @@
+import { encodePathSegment } from '@/app/lib/api-path';
 import { auth } from '@/app/lib/auth';
-import { env } from '@/env.mjs';
+import { getServerApiBaseUrl, getServerApiHeaders } from '@/app/lib/server-api-base-url';
 import { db } from '@db/server';
 import { Breadcrumb, PageLayout } from '@trycompai/design-system';
 import { isRedirectError } from 'next/dist/client/components/redirect-error';
@@ -60,7 +61,7 @@ export default async function PortalCompanyFormPage({
       redirect('/auth');
     }
 
-    const apiUrl = env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+    const apiUrl = getServerApiBaseUrl();
     const cookie = reqHeaders.get('cookie') ?? '';
     if (!cookie) {
       redirect(`${basePath}?error=${encodeURIComponent('Failed to authenticate with API')}`);
@@ -68,6 +69,7 @@ export default async function PortalCompanyFormPage({
 
     const apiHeaders = {
       'Content-Type': 'application/json',
+      ...getServerApiHeaders({ incoming: reqHeaders }),
       Cookie: cookie,
     };
 
@@ -124,11 +126,14 @@ export default async function PortalCompanyFormPage({
       }
 
       // Submit via API
-      const submitRes = await fetch(`${apiUrl}/v1/evidence-forms/${formTypeValue}/submissions`, {
-        method: 'POST',
-        headers: apiHeaders,
-        body: JSON.stringify(payload),
-      });
+      const submitRes = await fetch(
+        `${apiUrl}/v1/evidence-forms/${encodePathSegment(formTypeValue)}/submissions`,
+        {
+          method: 'POST',
+          headers: apiHeaders,
+          body: JSON.stringify(payload),
+        },
+      );
 
       if (!submitRes.ok) {
         const errorText = await submitRes.text();

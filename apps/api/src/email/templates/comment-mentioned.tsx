@@ -1,7 +1,6 @@
 import * as React from 'react';
 import {
   Body,
-  Button,
   Container,
   Font,
   Heading,
@@ -12,6 +11,7 @@ import {
   Tailwind,
   Text,
 } from '@react-email/components';
+import { CallToAction } from '../components/call-to-action';
 import { Footer } from '../components/footer';
 import { Logo } from '../components/logo';
 import { getUnsubscribeUrl } from '@trycompai/email';
@@ -25,7 +25,8 @@ interface Props {
   entityRoutePath: string;
   entityId: string;
   organizationId: string;
-  commentUrl: string;
+  /** Undefined when the app URL is not configured: the email then has no button. */
+  commentUrl?: string;
 }
 
 export const CommentMentionedEmail = ({
@@ -34,13 +35,10 @@ export const CommentMentionedEmail = ({
   commentContent,
   mentionedByName,
   entityName,
-  entityRoutePath,
-  entityId,
-  organizationId,
   commentUrl,
 }: Props) => {
   const unsubscribeUrl = getUnsubscribeUrl(toEmail);
-  
+
   // Extract plain text from TipTap JSON if needed
   const getPlainText = (content: string): string => {
     try {
@@ -49,7 +47,8 @@ export const CommentMentionedEmail = ({
         // Extract text from TipTap JSON
         const extractText = (node: any): string => {
           if (node.type === 'text') return node.text || '';
-          if (node.type === 'mention') return `@${node.attrs?.label || node.attrs?.id || ''}`;
+          if (node.type === 'mention')
+            return `@${node.attrs?.label || node.attrs?.id || ''}`;
           if (node.content && Array.isArray(node.content)) {
             return node.content.map(extractText).join('');
           }
@@ -64,9 +63,10 @@ export const CommentMentionedEmail = ({
   };
 
   const plainTextContent = getPlainText(commentContent);
-  const previewText = plainTextContent.length > 100 
-    ? plainTextContent.substring(0, 100) + '...' 
-    : plainTextContent;
+  const previewText =
+    plainTextContent.length > 100
+      ? plainTextContent.substring(0, 100) + '...'
+      : plainTextContent;
 
   return (
     <Html>
@@ -112,31 +112,22 @@ export const CommentMentionedEmail = ({
               </Text>
             </Section>
 
-            <Section className="mt-[32px] mb-[32px] text-center">
-              <Button
-                className="rounded-[3px] bg-[#121212] px-[20px] py-[12px] text-center text-[14px] font-semibold text-white no-underline"
-                href={commentUrl}
-              >
-                View Comment
-              </Button>
-            </Section>
+            <CallToAction href={commentUrl} label="View Comment" />
 
-            <Text className="text-[14px] leading-[24px] text-[#121212]">
-              or copy and paste this URL into your browser:{' '}
-              <a href={commentUrl} className="text-[#121212] underline">
-                {commentUrl}
-              </a>
-            </Text>
-
-            <Section className="mt-[30px] mb-[20px]">
-              <Text className="text-[12px] leading-[20px] text-[#666666]">
-                Don't want to receive comment mention notifications?{' '}
-                <Link href={unsubscribeUrl} className="text-[#121212] underline">
-                  Manage your email preferences
-                </Link>
-                .
-              </Text>
-            </Section>
+            {unsubscribeUrl && (
+              <Section className="mt-[30px] mb-[20px]">
+                <Text className="text-[12px] leading-[20px] text-[#666666]">
+                  Don't want to receive comment mention notifications?{' '}
+                  <Link
+                    href={unsubscribeUrl}
+                    className="text-[#121212] underline"
+                  >
+                    Manage your email preferences
+                  </Link>
+                  .
+                </Text>
+              </Section>
+            )}
 
             <br />
 
@@ -149,4 +140,3 @@ export const CommentMentionedEmail = ({
 };
 
 export default CommentMentionedEmail;
-

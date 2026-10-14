@@ -2,10 +2,12 @@ import { Link, Section, Text } from '@react-email/components';
 
 interface UnsubscribeLinkProps {
   email: string;
-  unsubscribeUrl: string;
+  /** Undefined when no unsubscribe secret is configured: the email then has no link. */
+  unsubscribeUrl: string | undefined;
 }
 
-export function UnsubscribeLink({ email, unsubscribeUrl }: UnsubscribeLinkProps) {
+export function UnsubscribeLink({ unsubscribeUrl }: UnsubscribeLinkProps) {
+  if (!unsubscribeUrl) return null;
   return (
     <Section className="mt-[24px]">
       <Text className="text-[12px] leading-[18px] text-[#999999]">

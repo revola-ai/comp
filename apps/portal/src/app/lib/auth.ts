@@ -9,9 +9,8 @@
  */
 
 import type { ReadonlyHeaders } from 'next/dist/server/web/spec-extension/adapters/headers';
-
-const API_URL =
-  process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+import { buildAuthForwardHeaders } from './auth-forward-headers';
+import { getServerApiBaseUrl } from './server-api-base-url';
 
 const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
 
@@ -78,27 +77,16 @@ export interface Invitation {
 }
 
 /**
- * Convert Headers to a plain object for fetch
- */
-function headersToObject(headers: ReadonlyHeaders | Headers): Record<string, string> {
-  const obj: Record<string, string> = {};
-  headers.forEach((value, key) => {
-    if (key.toLowerCase() === 'cookie' || key.toLowerCase().startsWith('x-')) {
-      obj[key] = value;
-    }
-  });
-  return obj;
-}
-
-/**
  * Get the current session from the API.
  */
-async function getSession(options: { headers: ReadonlyHeaders | Headers }): Promise<Session | null> {
+async function getSession(options: {
+  headers: ReadonlyHeaders | Headers;
+}): Promise<Session | null> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/get-session`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/get-session`, {
       method: 'GET',
       headers: {
-        ...headersToObject(options.headers),
+        ...buildAuthForwardHeaders({ incoming: options.headers }),
         'Content-Type': 'application/json',
       },
       cache: 'no-store',
@@ -126,10 +114,10 @@ async function setActiveOrganization(options: {
   body: { organizationId: string };
 }): Promise<void> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/organization/set-active`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/organization/set-active`, {
       method: 'POST',
       headers: {
-        ...headersToObject(options.headers),
+        ...buildAuthForwardHeaders({ incoming: options.headers }),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ organizationId: options.body.organizationId }),

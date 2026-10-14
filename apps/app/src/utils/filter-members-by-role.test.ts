@@ -51,7 +51,9 @@ function makeMember(overrides: { id: string; role: string | null }): Member & { 
       banExpires: null,
       twoFactorEnabled: false,
     },
-  } as Member & { user: User };
+    // `role` may be null here although the schema says string: one case below
+    // checks that a member row without a role is handled.
+  } as unknown as Member & { user: User };
 }
 
 describe('filterMembersByOwnerOrAdmin', () => {

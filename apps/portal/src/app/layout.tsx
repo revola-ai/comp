@@ -1,4 +1,5 @@
 import { auth } from '@/app/lib/auth';
+import { siteMetadata } from '@/app/lib/site-metadata';
 import { env } from '@/env.mjs';
 import { initializeServer } from '@trycompai/analytics/server';
 import { cn } from '@trycompai/ui/cn';
@@ -13,47 +14,11 @@ import { Suspense } from 'react';
 import { Toaster } from 'sonner';
 import { Providers } from './providers';
 
-export const metadata: Metadata = {
-  metadataBase: new URL('https://portal.trycomp.ai'),
+export const metadata: Metadata = siteMetadata({
+  baseUrl: process.env.NEXT_PUBLIC_PORTAL_URL,
   title: 'Comp AI | Employee Portal',
   description: 'Enter your email and one time password to continue',
-  twitter: {
-    title: 'Comp AI | Employee Portal',
-    description: 'Enter your email and one time password to continue',
-    images: [
-      {
-        url: 'https://cdn.trycomp.ai/opengraph-image.jpg',
-        width: 800,
-        height: 600,
-      },
-      {
-        url: 'https://cdn.trycomp.ai/opengraph-image.jpg',
-        width: 1800,
-        height: 1600,
-      },
-    ],
-  },
-  openGraph: {
-    title: 'Comp AI | Employee Portal',
-    description: 'Enter your email and one time password to continue',
-    url: 'https://portal.trycomp.ai',
-    siteName: 'Comp AI',
-    images: [
-      {
-        url: 'https://cdn.trycomp.ai/opengraph-image.jpg',
-        width: 800,
-        height: 600,
-      },
-      {
-        url: 'https://cdn.trycomp.ai/opengraph-image.jpg',
-        width: 1800,
-        height: 1600,
-      },
-    ],
-    locale: 'en_US',
-    type: 'website',
-  },
-};
+});
 
 export const viewport = {
   width: 'device-width',

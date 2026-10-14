@@ -1,15 +1,14 @@
 import {
   Body,
-  Button,
   Container,
   Heading,
   Html,
-  Link,
   Preview,
   Section,
   Tailwind,
   Text,
 } from '@react-email/components';
+import { CallToAction } from '../../components/call-to-action';
 import { Footer } from '../../components/footer';
 import { Logo } from '../../components/logo';
 import { UnsubscribeLink } from '../../components/unsubscribe-link';
@@ -21,7 +20,8 @@ interface Props {
   taskName: string;
   taskStatus: 'failed' | 'todo';
   organizationName: string;
-  taskUrl: string;
+  /** Undefined when the app URL is not configured: the email then has no button. */
+  taskUrl?: string;
 }
 
 export const TaskStatusNotificationEmail = ({
@@ -65,21 +65,7 @@ export const TaskStatusNotificationEmail = ({
 
             <Text className="text-[14px] leading-[24px] text-[#121212]">{statusMessage}</Text>
 
-            <Section className="mt-[32px] mb-[42px] text-center">
-              <Button
-                className="text-primary border border-solid border-[#121212] bg-transparent px-6 py-3 text-center text-[14px] font-medium text-[#121212] no-underline"
-                href={taskUrl}
-              >
-                View Task
-              </Button>
-            </Section>
-
-            <Text className="text-[14px] leading-[24px] break-all text-[#707070]">
-              or copy and paste this URL into your browser{' '}
-              <Link href={taskUrl} className="text-[#707070] underline">
-                {taskUrl}
-              </Link>
-            </Text>
+            <CallToAction href={taskUrl} label="View Task" />
 
             <br />
             <Section>

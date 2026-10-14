@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import { PageLayout } from '@trycompai/design-system';
 import { redirect } from 'next/navigation';
@@ -15,9 +16,9 @@ export default async function ReviewUpdatePage({ params }: PageProps) {
   const { orgId, frameworkInstanceId } = await params;
 
   const [frameworkRes, previewRes] = await Promise.all([
-    serverApi.get<any>(`/v1/frameworks/${frameworkInstanceId}`),
+    serverApi.get<any>(`/v1/frameworks/${encodePathSegment(frameworkInstanceId)}`),
     serverApi.get<{ data: UpdatePreview }>(
-      `/v1/frameworks/${frameworkInstanceId}/update-preview`,
+      `/v1/frameworks/${encodePathSegment(frameworkInstanceId)}/update-preview`,
     ),
   ]);
 

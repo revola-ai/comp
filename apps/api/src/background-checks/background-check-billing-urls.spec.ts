@@ -30,6 +30,18 @@ describe('validateBackgroundCheckBillingRedirectUrl', () => {
     ).toThrow(BadRequestException);
   });
 
+  it('never takes BETTER_AUTH_URL (the API host) as the app origin', () => {
+    process.env.NEXT_PUBLIC_APP_URL = '';
+    process.env.APP_URL = '';
+    process.env.BETTER_AUTH_URL = 'https://api.comp.revola.ai';
+
+    expect(() =>
+      validateBackgroundCheckBillingRedirectUrl(
+        'https://api.comp.revola.ai/return',
+      ),
+    ).toThrow('App URL is not configured on the server.');
+  });
+
   it('rejects opaque redirect URLs', () => {
     process.env.NEXT_PUBLIC_APP_URL = 'https://app.trycomp.ai';
     process.env.APP_URL = '';

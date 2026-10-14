@@ -17,7 +17,6 @@ export default defineConfig({
       caBundleExtension(),
       prismaExtension({
         version: '7.6.0',
-        dbPackageVersion: '^2.0.0',
       }),
       integrationPlatformExtension(),
       emailExtension(),

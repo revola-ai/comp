@@ -29,6 +29,7 @@ import {
 } from './utils/member-deactivation';
 import { checkAutoCompletePhases } from '../frameworks/frameworks-timeline.helper';
 import { TimelinesService } from '../timelines/timelines.service';
+import { deactivateMemberAndRevokeApiKeys } from '../auth/api-key-offboarding';
 
 @Injectable()
 export class PeopleService {
@@ -467,15 +468,13 @@ export class PeopleService {
     await clearAssignments({ memberId, organizationId });
     await removeMemberFromOrgChart({ organizationId, memberId });
 
-    await db.member.update({
-      where: { id: memberId, organizationId },
-      data: {
-        deactivated: true,
-        isActive: false,
-        ...(skipOffboarding
-          ? { offboardDate: null }
-          : { offboardDate: member.offboardDate ?? new Date() }),
-      },
+    // Revokes the member's personal API keys in the same transaction.
+    await deactivateMemberAndRevokeApiKeys({
+      memberId,
+      organizationId,
+      offboardDate: skipOffboarding
+        ? null
+        : (member.offboardDate ?? new Date()),
     });
 
     // Direct DB session deletion is correct here — the API server IS the auth server,

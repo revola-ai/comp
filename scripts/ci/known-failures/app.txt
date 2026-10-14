@@ -1,0 +1,150 @@
+# Known failing tests in apps/app (vitest), checked in CI by scripts/ci/known-failures.ts.
+#
+# These tests already failed on revola/self-host because of upstream test drift.
+# CI passes only when exactly these fail.
+# A new failure, an entry that now passes, or an entry that no longer runs (renamed,
+# deleted or skipped) each fail the job.
+#
+# Format: one id per line, `<file relative to apps/app> > <describe> > ... > <test title>`.
+# A bare file path means the file failed outside any test (it did not load, or a hook threw).
+#
+# This list only shrinks: when you fix a test, delete its line.
+# Never add a line for a new failure; fix the test instead.
+# To check locally:
+#   cd apps/app && VITEST_RUN_ERRORS_FILE=/tmp/app-run-errors.json \
+#     npx vitest run --reporter=default --reporter=json \
+#     --outputFile.json=/tmp/app-report.json \
+#     --reporter=../../scripts/ci/vitest-run-errors-reporter.ts
+#   bun ../../scripts/ci/known-failures.ts --report /tmp/app-report.json \
+#     --list ../../scripts/ci/known-failures/app.txt \
+#     --run-errors /tmp/app-run-errors.json
+# The run-errors file also fails the check on an error thrown outside any test, which
+# vitest's JSON report leaves out.
+
+src/app/(app)/[orgId]/admin/organizations/[adminOrgId]/components/PoliciesTab.test.tsx > PoliciesTab > shows Regenerate button for each policy
+src/app/(app)/[orgId]/admin/organizations/[adminOrgId]/components/PoliciesTab.test.tsx > PoliciesTab > triggers regeneration when Regenerate is clicked
+src/app/(app)/[orgId]/cloud-tests/components/CloudSettingsModal.test.tsx > CloudSettingsModal permission gating > always shows connection info regardless of permissions
+src/app/(app)/[orgId]/cloud-tests/components/CloudSettingsModal.test.tsx > CloudSettingsModal permission gating > always shows connection status regardless of permissions
+src/app/(app)/[orgId]/cloud-tests/components/EmptyState.test.tsx > EmptyState permission gating > disables connect button in GCP form for auditor
+src/app/(app)/[orgId]/cloud-tests/components/EmptyState.test.tsx > EmptyState permission gating > enables connect button in GCP form for admin
+src/app/(app)/[orgId]/documents/components/CompanyFormPageClient.test.tsx > CompanyFormPageClient > Admin user (full permissions) > checks evidence:create and evidence:read permissions
+src/app/(app)/[orgId]/documents/components/CompanyFormPageClient.test.tsx > CompanyFormPageClient > Admin user (full permissions) > renders the Export CSV button when user has evidence:read
+src/app/(app)/[orgId]/documents/components/CompanyFormPageClient.test.tsx > CompanyFormPageClient > Admin user (full permissions) > renders the New Submission button when user has evidence:create
+src/app/(app)/[orgId]/documents/components/CompanyFormPageClient.test.tsx > CompanyFormPageClient > Auditor user (read-only) > hides New Submission button when user lacks evidence:create
+src/app/(app)/[orgId]/documents/components/CompanyFormPageClient.test.tsx > CompanyFormPageClient > Auditor user (read-only) > shows Export CSV when auditor has evidence:read
+src/app/(app)/[orgId]/documents/components/CompanyFormPageClient.test.tsx > CompanyFormPageClient > Auditor user (read-only) > still renders the findings section
+src/app/(app)/[orgId]/documents/components/CompanyFormPageClient.test.tsx > CompanyFormPageClient > No permissions > hides Export CSV button without evidence:read
+src/app/(app)/[orgId]/documents/components/CompanyFormPageClient.test.tsx > CompanyFormPageClient > No permissions > hides New Submission button without evidence:create
+src/app/(app)/[orgId]/documents/components/CompanyFormPageClient.test.tsx > CompanyFormPageClient > No permissions > still renders the page header
+src/app/(app)/[orgId]/documents/components/CompanySubmissionWizard.account-types.test.tsx > CompanySubmissionWizard — account-types rendering > renders the 10 seeded rows with Allowed/Disallowed dropdowns and prefilled values
+src/app/(app)/[orgId]/frameworks/[frameworkInstanceId]/components/FrameworkOverview.test.tsx > FrameworkOverview permission gating > shows delete dropdown menu when user has framework:delete permission
+src/app/(app)/[orgId]/integrations/components/PlatformIntegrations.test.tsx > PlatformIntegrations > Employee sync import prompt > does not show import prompt for non-sync providers
+src/app/(app)/[orgId]/integrations/components/PlatformIntegrations.test.tsx > PlatformIntegrations > Employee sync import prompt > shows import prompt toast after Google Workspace OAuth callback
+src/app/(app)/[orgId]/integrations/components/PlatformIntegrations.test.tsx > PlatformIntegrations > Vendor-prioritized ordering > shows integrations from vendor list before non-vendor integrations
+src/app/(app)/[orgId]/layout.test.tsx > Layout activeOrganizationId sync > should NOT call setActiveOrganization when session org matches URL org
+src/app/(app)/[orgId]/layout.test.tsx > Layout activeOrganizationId sync > should call setActiveOrganization via auth API when session org differs from URL org
+src/app/(app)/[orgId]/layout.test.tsx > Layout activeOrganizationId sync > should call setActiveOrganization when activeOrganizationId is null
+src/app/(app)/[orgId]/layout.test.tsx > Layout activeOrganizationId sync > should continue rendering even if setActiveOrganization fails
+src/app/(app)/[orgId]/layout.test.tsx > Layout activeOrganizationId sync > should not do a direct DB session update
+src/app/(app)/[orgId]/overview/components/AddFrameworkModal.test.tsx > AddFrameworkModal > Permission gating > checks the correct resource and action for permission
+src/app/(app)/[orgId]/overview/components/AddFrameworkModal.test.tsx > AddFrameworkModal > Permission gating > disables the "Add Selected" button when user has no permissions
+src/app/(app)/[orgId]/overview/components/AddFrameworkModal.test.tsx > AddFrameworkModal > Permission gating > disables the "Add Selected" button when user lacks framework:create permission (auditor)
+src/app/(app)/[orgId]/people/[employeeId]/components/EmployeeBackgroundCheck.test.tsx > EmployeeBackgroundCheck — V1 two-paths > switches to the Attach form when the Attach path is selected
+src/app/(app)/[orgId]/people/all/components/InviteMembersModal.test.tsx > InviteMembersModal > fetches and displays custom roles alongside built-in roles
+src/app/(app)/[orgId]/people/all/components/InviteMembersModal.test.tsx > InviteMembersModal > renders the invite button
+src/app/(app)/[orgId]/people/all/components/InviteMembersModal.test.tsx > InviteMembersModal > renders with built-in roles even when custom roles fetch fails
+src/app/(app)/[orgId]/policies/[policyId]/components/PolicyHeaderActions.test.tsx > PolicyHeaderActions > admin permissions (policy:update + policy:delete) > renders the dropdown trigger button
+src/app/(app)/[orgId]/policies/[policyId]/components/PolicyHeaderActions.test.tsx > PolicyHeaderActions > auditor permissions (no update, no delete) > returns null when user has neither policy:update nor policy:delete
+src/app/(app)/[orgId]/policies/[policyId]/components/PolicyHeaderActions.test.tsx > PolicyHeaderActions > delete-only permissions (no update) > renders the dropdown when user has policy:delete only
+src/app/(app)/[orgId]/policies/[policyId]/components/PolicyHeaderActions.test.tsx > PolicyHeaderActions > null policy > returns null when policy is null
+src/app/(app)/[orgId]/policies/[policyId]/components/PolicyHeaderActions.test.tsx > PolicyHeaderActions > update-only permissions (no delete) > renders the dropdown when user has policy:update only
+src/app/(app)/[orgId]/policies/[policyId]/editor/components/PolicyDetails.test.tsx > PolicyContentManager > pending approval state > renders editor as read-only when pending approval
+src/app/(app)/[orgId]/risk/(overview)/RisksTable.test.tsx > RisksTable permission gating > renders SEVERITY label + RISK SCORE number, both from current state
+src/app/(app)/[orgId]/risk/(overview)/RisksTable.test.tsx > RisksTable permission gating > renders core table columns regardless of permissions
+src/app/(app)/[orgId]/risk/[riskId]/components/RiskPageClient.test.tsx > RiskPageClient permission gating > always renders TaskItems regardless of permissions
+src/app/(app)/[orgId]/risk/[riskId]/components/RiskPageClient.test.tsx > RiskPageClient permission gating > hides RiskOverview, charts, and comments when viewing a task item
+src/app/(app)/[orgId]/risk/[riskId]/components/RiskPageClient.test.tsx > RiskPageClient permission gating > renders RiskActions for auditor (the component itself handles gating)
+src/app/(app)/[orgId]/risk/[riskId]/components/RiskPageClient.test.tsx > RiskPageClient permission gating > renders RiskActions in the page header for admin
+src/app/(app)/[orgId]/risk/[riskId]/components/RiskPageClient.test.tsx > RiskPageClient permission gating > renders RiskOverview, charts, and comments when not viewing a task
+src/app/(app)/[orgId]/risk/[riskId]/components/RiskPageClient.test.tsx > RiskPageClient permission gating > renders page header regardless of user permissions
+src/app/(app)/[orgId]/risk/[riskId]/components/RiskPageClient.test.tsx > RiskPageClient permission gating > renders the page header with risk title
+src/app/(app)/[orgId]/risk/[riskId]/components/RiskPageClient.test.tsx > RiskPageClient permission gating > shows short task ID as title when viewing a task item
+src/app/(app)/[orgId]/security/penetration-tests/[reportId]/page.test.tsx > Penetration Test detail page > redirects when member cannot be found
+src/app/(app)/[orgId]/security/penetration-tests/[reportId]/page.test.tsx > Penetration Test detail page > renders the detail client component for authorized members
+src/app/(app)/[orgId]/security/penetration-tests/[reportId]/penetration-test-page-client.test.tsx > PenetrationTestPageClient > allows progress updates to render from the progress hook contract
+src/app/(app)/[orgId]/security/penetration-tests/[reportId]/penetration-test-page-client.test.tsx > PenetrationTestPageClient > falls back to a generic message when report error is not an Error instance
+src/app/(app)/[orgId]/security/penetration-tests/[reportId]/penetration-test-page-client.test.tsx > PenetrationTestPageClient > renders completed report details and artifact links
+src/app/(app)/[orgId]/security/penetration-tests/[reportId]/penetration-test-page-client.test.tsx > PenetrationTestPageClient > renders progress fallback text when agent counts are unavailable
+src/app/(app)/[orgId]/security/penetration-tests/[reportId]/penetration-test-page-client.test.tsx > PenetrationTestPageClient > renders running progress section when a live report is available
+src/app/(app)/[orgId]/security/penetration-tests/[reportId]/penetration-test-page-client.test.tsx > PenetrationTestPageClient > shows an error state when report loading fails
+src/app/(app)/[orgId]/security/penetration-tests/[reportId]/penetration-test-page-client.test.tsx > PenetrationTestPageClient > shows repository placeholder when repoUrl is missing
+src/app/(app)/[orgId]/security/penetration-tests/page.test.tsx > Penetration Tests page > redirects when member cannot be found
+src/app/(app)/[orgId]/security/penetration-tests/page.test.tsx > Penetration Tests page > renders the client page for authorized members
+src/app/(app)/[orgId]/settings/context-hub/ContextTable.test.tsx > ContextTable permission gating > does not render dropdown triggers when user lacks evidence:update permission
+src/app/(app)/[orgId]/settings/context-hub/ContextTable.test.tsx > ContextTable permission gating > hides Add Entry button and actions column when user has no permissions
+src/app/(app)/[orgId]/settings/context-hub/ContextTable.test.tsx > ContextTable permission gating > hides Add Entry button and actions column when user lacks evidence:update permission
+src/app/(app)/[orgId]/settings/context-hub/components/context-form.test.tsx > ContextForm > calls api.patch for existing entries and shows success toast
+src/app/(app)/[orgId]/settings/context-hub/components/context-form.test.tsx > ContextForm > calls api.post for new entries and shows success toast
+src/app/(app)/[orgId]/settings/context-hub/components/context-form.test.tsx > ContextForm > shows error toast on api failure
+src/app/(app)/[orgId]/settings/context-hub/components/context-list.test.tsx > ContextList > calls api.delete and shows success toast on delete
+src/app/(app)/[orgId]/tasks/[taskId]/components/SingleTask.test.tsx > SingleTask permission gating > always shows the download evidence button regardless of permissions
+src/app/(app)/[orgId]/tasks/[taskId]/components/SingleTask.test.tsx > SingleTask permission gating > hides delete button when user lacks task:delete
+src/app/(app)/[orgId]/tasks/[taskId]/components/SingleTask.test.tsx > SingleTask permission gating > hides regenerate button when user lacks task:update
+src/app/(app)/[orgId]/tasks/[taskId]/components/SingleTask.test.tsx > SingleTask permission gating > renders task title regardless of permissions
+src/app/(app)/[orgId]/tasks/[taskId]/components/SingleTask.test.tsx > SingleTask permission gating > shows delete but not regenerate with only task:delete permission
+src/app/(app)/[orgId]/tasks/[taskId]/components/SingleTask.test.tsx > SingleTask permission gating > shows regenerate and delete buttons for admin
+src/app/(app)/[orgId]/tasks/[taskId]/components/SingleTask.test.tsx > SingleTask permission gating > shows regenerate but not delete with only task:update permission
+src/app/(app)/[orgId]/tasks/[taskId]/components/TaskPropertiesSidebar.test.tsx > TaskPropertiesSidebar permission gating > disables all selectors when user lacks task:update
+src/app/(app)/[orgId]/tasks/[taskId]/components/TaskPropertiesSidebar.test.tsx > TaskPropertiesSidebar permission gating > enables all PropertySelectors when user has task:update
+src/app/(app)/[orgId]/tasks/[taskId]/components/TaskPropertiesSidebar.test.tsx > TaskPropertiesSidebar permission gating > enables all selectors when user has task:update (assign is part of update)
+src/app/(app)/[orgId]/tasks/[taskId]/components/TaskPropertiesSidebar.test.tsx > TaskPropertiesSidebar permission gating > renders Properties heading regardless of permissions
+src/app/(app)/[orgId]/vendors/(overview)/components/VendorsTable.test.tsx > VendorsTable > does not render ACTIONS column for auditor role
+src/app/(app)/[orgId]/vendors/(overview)/components/VendorsTable.test.tsx > VendorsTable > does not render ACTIONS column when user lacks vendor:delete permission
+src/app/(app)/[orgId]/vendors/(overview)/components/VendorsTable.test.tsx > VendorsTable > does not render delete action trigger when user lacks vendor:delete permission
+src/app/(app)/[orgId]/vendors/(overview)/components/VendorsTable.test.tsx > VendorsTable > renders ACTIONS column when user has vendor:delete permission
+src/app/(app)/[orgId]/vendors/(overview)/components/VendorsTable.test.tsx > VendorsTable > renders a residual score badge for assessed vendors
+src/app/(app)/[orgId]/vendors/(overview)/components/VendorsTable.test.tsx > VendorsTable > renders delete action trigger per row when user has vendor:delete permission
+src/app/(app)/[orgId]/vendors/(overview)/components/VendorsTable.test.tsx > VendorsTable > renders the INHERENT RISK column with a numeric score for assessed vendors
+src/app/(app)/[orgId]/vendors/(overview)/components/VendorsTable.test.tsx > VendorsTable > renders the RESIDUAL RISK column immediately after INHERENT RISK
+src/app/(app)/[orgId]/vendors/(overview)/components/VendorsTable.test.tsx > VendorsTable > renders vendor name and category regardless of permissions
+src/app/api/people/agent-devices/route.test.ts > GET /api/people/agent-devices > marks a device with lastCheckIn >= 7 days ago as stale
+src/app/api/people/agent-devices/route.test.ts > GET /api/people/agent-devices > marks a device with null lastCheckIn as stale
+src/app/api/people/agent-devices/route.test.ts > GET /api/people/agent-devices > marks a fresh + !isCompliant device as non_compliant
+src/app/api/people/agent-devices/route.test.ts > GET /api/people/agent-devices > marks a fresh + isCompliant device as compliant
+src/app/api/people/agent-devices/route.test.ts > GET /api/people/agent-devices > returns hasActiveAgentSession=true for devices with an unexpired linked session, false otherwise
+src/components/forms/organization/delete-organization.test.tsx > DeleteOrganization > calls api.delete and shows success toast
+src/components/forms/organization/delete-organization.test.tsx > DeleteOrganization > renders for owners
+src/components/forms/organization/delete-organization.test.tsx > DeleteOrganization > requires typing "delete" to enable the confirm button
+src/components/forms/organization/delete-organization.test.tsx > DeleteOrganization > shows error toast when delete fails
+src/components/forms/organization/update-organization-website.test.tsx > UpdateOrganizationWebsite > calls api.patch on submit and shows success toast
+src/components/forms/organization/update-organization-website.test.tsx > UpdateOrganizationWebsite > shows error toast when api returns error
+src/components/risks/risk-overview.test.tsx > RiskOverview permission gating > always renders the UpdateRiskOverview child component
+src/components/risks/risk-overview.test.tsx > RiskOverview permission gating > hides the edit button when user has no permissions
+src/components/risks/risk-overview.test.tsx > RiskOverview permission gating > hides the edit button when user lacks risk:update permission
+src/components/risks/risk-overview.test.tsx > RiskOverview permission gating > renders risk title and description regardless of permissions
+src/components/risks/risk-overview.test.tsx > RiskOverview permission gating > shows the edit button when user has risk:update permission
+src/components/risks/treatment-plan/RelinkButton.spec.tsx > RelinkButton > chains onAfterLink when re-link completes with links
+src/components/risks/treatment-plan/TreatmentPlanTab.spec.tsx > TreatmentPlanTab > coverage gate: Mitigate with no linked work shows inherent as the target
+src/components/task-items/TaskItemCreateDialog.test.tsx > TaskItemCreateDialog permission gating > does not render TaskItemForm when user lacks permission
+src/components/task-items/TaskItemCreateDialog.test.tsx > TaskItemCreateDialog permission gating > renders nothing when user has no permissions
+src/components/task-items/TaskItemCreateDialog.test.tsx > TaskItemCreateDialog permission gating > renders nothing when user lacks task:create permission
+src/components/task-items/TaskItemCreateDialog.test.tsx > TaskItemCreateDialog permission gating > renders the TaskItemForm when user has task:create permission
+src/components/task-items/TaskItemCreateDialog.test.tsx > TaskItemCreateDialog permission gating > renders the dialog when user has task:create permission
+src/components/task-items/TaskItemFocusView.test.tsx > TaskItemFocusView permission gating > always renders activity timeline and comments regardless of permissions
+src/components/task-items/TaskItemFocusView.test.tsx > TaskItemFocusView permission gating > passes canDelete=false to sidebar when user lacks task:delete permission
+src/components/task-items/TaskItemFocusView.test.tsx > TaskItemFocusView permission gating > passes canDelete=false when user has no permissions
+src/components/task-items/TaskItemFocusView.test.tsx > TaskItemFocusView permission gating > passes canDelete=true to sidebar when user has task:delete permission
+src/components/task-items/TaskItemFocusView.test.tsx > TaskItemFocusView permission gating > passes readOnly=false to children when user has task:update permission
+src/components/task-items/TaskItemFocusView.test.tsx > TaskItemFocusView permission gating > passes readOnly=true to children when user lacks task:update permission
+src/components/task-items/TaskItemItem.test.tsx > TaskItemItem permission gating > disables priority dropdown trigger when user lacks task:update permission
+src/components/task-items/TaskItemItem.test.tsx > TaskItemItem permission gating > disables status dropdown trigger when user lacks task:update permission
+src/components/task-items/TaskItemItem.test.tsx > TaskItemItem permission gating > enables status dropdown trigger when user has task:update permission
+src/lib/permissions.test.ts > canAccessApp > returns true for users with any app-implying resource
+src/lib/permissions.test.ts > canAccessApp > returns true for users with pentest permissions (custom role)
+src/lib/permissions.test.ts > getDefaultRoute > returns frameworks as first route for full-access users
+src/lib/rerank-suggestions.spec.ts > rerankSuggestions > requests a GA model slug, never a -preview alias
+src/trigger/tasks/onboarding/link-risks-and-vendors-to-work.spec.ts > linkRisksAndVendorsToWork > links each risk to top-K matching tasks (above threshold)
+src/trigger/tasks/onboarding/link-risks-and-vendors-to-work.spec.ts > linkRisksAndVendorsToWork > links vendors via _TaskToVendor when vendorId is provided
+src/trigger/tasks/onboarding/link-risks-and-vendors-to-work.spec.ts > linkRisksAndVendorsToWork > scopes to a single risk when riskId is provided
+src/trigger/tasks/onboarding/link-risks-and-vendors-to-work.spec.ts > linkRisksAndVendorsToWork > skips a risk with no candidates above threshold
+flaky: src/app/(app)/[orgId]/people/[employeeId]/components/EmployeeBackgroundCheck.test.tsx > EmployeeBackgroundCheck — V1 two-paths > PATCHes /v1/people/:id with exempt + reason when Confirm exemption is clicked

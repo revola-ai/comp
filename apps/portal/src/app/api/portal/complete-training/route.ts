@@ -1,4 +1,5 @@
 import { auth } from '@/app/lib/auth';
+import { getServerApiBaseUrl, getServerApiHeaders } from '@/app/lib/server-api-base-url';
 import { env } from '@/env.mjs';
 import { db } from '@db/server';
 import {
@@ -124,11 +125,14 @@ export async function POST(req: NextRequest) {
   // renders a PDF certificate and talks to the email provider — awaiting that
   // made the employee's click wait seconds on the happy path, and time out on
   // the unhappy one, for work whose outcome they never see.
+  // Built from this request so the deferred API call carries the employee's IP.
+  const serverHeaders = getServerApiHeaders({ incoming: req.headers });
   after(() =>
     sendCompletionEmailIfComplete({
       videoId,
       memberId: member.id,
       organizationId,
+      serverHeaders,
     }),
   );
 
@@ -139,15 +143,17 @@ async function sendCompletionEmailIfComplete({
   videoId,
   memberId,
   organizationId,
+  serverHeaders,
 }: {
   videoId: string;
   memberId: string;
   organizationId: string;
+  serverHeaders: Record<string, string>;
 }): Promise<void> {
   const serviceToken = env.SERVICE_TOKEN_PORTAL;
   if (!serviceToken) return;
 
-  const apiUrl = env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+  const apiUrl = getServerApiBaseUrl();
 
   try {
     if (videoId === HIPAA_TRAINING_ID) {
@@ -156,6 +162,7 @@ async function sendCompletionEmailIfComplete({
         serviceToken,
         memberId,
         organizationId,
+        serverHeaders,
       });
       return;
     }
@@ -176,6 +183,7 @@ async function sendCompletionEmailIfComplete({
         serviceToken,
         memberId,
         organizationId,
+        serverHeaders,
       });
     }
   } catch (error) {
@@ -195,15 +203,18 @@ async function triggerCompletionEmail({
   serviceToken,
   memberId,
   organizationId,
+  serverHeaders,
 }: {
   url: string;
   serviceToken: string;
   memberId: string;
   organizationId: string;
+  serverHeaders: Record<string, string>;
 }): Promise<void> {
   const response = await fetch(url, {
     method: 'POST',
     headers: {
+      ...serverHeaders,
       'Content-Type': 'application/json',
       'x-service-token': serviceToken,
       'x-organization-id': organizationId,

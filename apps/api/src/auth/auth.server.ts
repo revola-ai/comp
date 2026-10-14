@@ -7,6 +7,8 @@ import {
 } from '@trycompai/email';
 import { triggerEmail } from '../email/trigger-email';
 import { InviteEmail } from '../email/templates/invite-member';
+import { appLink } from '../utils/public-url';
+import { mcpLoginPage as getMcpLoginPage } from './mcp-login-page';
 import { db } from '@db';
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
@@ -15,22 +17,34 @@ import {
   bearer,
   emailOTP,
   magicLink,
-  mcp,
   multiSession,
   organization,
 } from 'better-auth/plugins';
 import { ac, allRoles } from '@trycompai/auth';
 import { createAuthMiddleware } from 'better-auth/api';
 import { Redis } from '@upstash/redis';
-import type { AccessControl } from 'better-auth/plugins/access';
 import {
   resolveMicrosoftEmail,
   type MicrosoftEmailClaims,
 } from './microsoft-email';
 import {
   getBetterAuthTrustedOrigins,
-  isStaticTrustedOrigin,
+  isTrustedOriginWithCustomDomains,
 } from './origin-policy';
+import { getCookieDomain } from './cookie-domain';
+import { assertEdgeSecrets } from './edge-secrets';
+import {
+  accountLinkingTrustedProviders,
+  assertMicrosoftTenant,
+  microsoftTenantId,
+} from './microsoft-tenant';
+import {
+  createAllowlistedEmailSender,
+  createEmailDomainAllowlistHook,
+} from './email-domain-allowlist';
+import { withApiKeyRevokingDeletes } from './api-key-revoking-deletes';
+import { gramMcpPlugins } from './gram-mcp-oauth';
+import { CLIENT_IP_HEADER } from '../throttle/client-ip-header.middleware';
 
 export {
   getBetterAuthTrustedOrigins,
@@ -45,21 +59,6 @@ export {
 } from './origin-policy';
 
 const MAGIC_LINK_EXPIRES_IN_SECONDS = 60 * 60; // 1 hour
-
-/**
- * Determine the cookie domain based on environment.
- */
-function getCookieDomain(): string | undefined {
-  const baseUrl = process.env.BASE_URL || '';
-
-  if (baseUrl.includes('staging.trycomp.ai')) {
-    return '.staging.trycomp.ai';
-  }
-  if (baseUrl.includes('trycomp.ai')) {
-    return '.trycomp.ai';
-  }
-  return undefined;
-}
 
 // ── Custom domain lookup via Redis cache ─────────────────────────────────────
 
@@ -82,7 +81,7 @@ async function getCustomDomains(): Promise<Set<string>> {
     console.error('[CORS] Redis cache read failed, falling back to DB:', error);
   }
 
-  // Cache miss or Redis unavailable — query DB
+  // Cache miss or Redis unavailable - query DB
   try {
     const trusts = await db.trust.findMany({
       where: {
@@ -103,7 +102,7 @@ async function getCustomDomains(): Promise<Set<string>> {
         ex: CORS_DOMAINS_CACHE_TTL_SECONDS,
       });
     } catch {
-      // Redis unavailable — continue without caching
+      // Redis unavailable - continue without caching
     }
 
     return new Set(domains);
@@ -118,20 +117,10 @@ async function getCustomDomains(): Promise<Set<string>> {
  * 1. Static trusted origins list
  * 2. *.trycomp.ai / *.trust.inc subdomains
  * 3. Published custom domains from the DB (cached in Redis, TTL 5 min)
+ * With SELF_HOSTED=true only the static self-hosted set applies (no 2 or 3).
  */
 export async function isTrustedOrigin(origin: string): Promise<boolean> {
-  if (isStaticTrustedOrigin(origin)) {
-    return true;
-  }
-
-  // Check verified custom domains from DB via Redis cache
-  try {
-    const url = new URL(origin);
-    const customDomains = await getCustomDomains();
-    return customDomains.has(url.hostname);
-  } catch {
-    return false;
-  }
+  return isTrustedOriginWithCustomDomains({ origin, getCustomDomains });
 }
 
 // Build social providers config
@@ -158,7 +147,9 @@ if (
   socialProviders.microsoft = {
     clientId: process.env.AUTH_MICROSOFT_CLIENT_ID,
     clientSecret: process.env.AUTH_MICROSOFT_CLIENT_SECRET,
-    tenantId: process.env.AUTH_MICROSOFT_TENANT_ID || 'common',
+    // One Entra tenant whenever AUTH_ALLOWED_EMAIL_DOMAINS is set (checked at
+    // boot below, ./microsoft-tenant.ts).
+    tenantId: microsoftTenantId({ env: process.env }),
     prompt: 'select_account',
     // Microsoft Entra often omits the `email` claim for work/school accounts,
     // which makes better-auth abort sign-in with `email_not_found`. Fall back to
@@ -170,42 +161,24 @@ if (
   };
 }
 
-const cookieDomain = getCookieDomain();
+// Throws at boot when AUTH_COOKIE_DOMAIN is malformed, too broad, or does not
+// cover the api, app and portal hosts (see ./cookie-domain.ts), and, in that
+// production deployment, when an edge secret is missing (./edge-secrets.ts).
+const cookieDomain = getCookieDomain({ env: process.env });
+assertEdgeSecrets({ env: process.env });
+assertMicrosoftTenant({ env: process.env });
 
 // ── Hosted MCP (Speakeasy Gram) OAuth ────────────────────────────────────────
 // The MCP server is hosted on Gram. Gram obtains an OAuth access token from this
 // API (better-auth as the authorization server) so users authenticate with
-// "Sign in with Google" instead of pasting an API key.
-//
-// Gram's OAuth Proxy registers as a single static client and handles Dynamic
-// Client Registration toward MCP clients on our behalf — so we keep public DCR
-// off for now and register Gram as a trusted client. Configured via env so the
-// secret isn't committed and the plugin is inert in envs where hosted MCP isn't
-// set up yet.
-const gramMcpClient =
-  process.env.GRAM_OAUTH_CLIENT_ID &&
-  process.env.GRAM_OAUTH_CLIENT_SECRET &&
-  process.env.GRAM_OAUTH_REDIRECT_URI
-    ? {
-        clientId: process.env.GRAM_OAUTH_CLIENT_ID,
-        clientSecret: process.env.GRAM_OAUTH_CLIENT_SECRET,
-        name: 'Comp AI MCP (Gram)',
-        type: 'web' as const,
-        disabled: false,
-        redirectUrls: [process.env.GRAM_OAUTH_REDIRECT_URI],
-        metadata: null,
-        // First-party client: Gram is Comp AI's own hosted MCP, so the user's
-        // login (Sign in with Google) IS the authorization — no separate consent
-        // screen is needed. This also avoids having to build a consent page UI.
-        skipConsent: true,
-      }
-    : null;
+// "Sign in with Google" instead of pasting an API key. Gram's OAuth Proxy is
+// the only client: the MCP endpoints exist only when GRAM_OAUTH_* configures it,
+// client registration is refused (./gram-mcp-oauth.ts), and Gram's
+// oauthApplication row is written from GRAM_OAUTH_* at boot by the production
+// deployment only (./gram-mcp-client-sync.service.ts).
 
 // Where better-auth sends the user to authenticate during the OAuth flow.
-// Must point at the app's sign-in page. Override per environment via env.
-const mcpLoginPage =
-  process.env.MCP_OAUTH_LOGIN_PAGE ||
-  `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.trycomp.ai'}/auth`;
+const mcpLoginPage = getMcpLoginPage();
 
 // =============================================================================
 // Security Validation
@@ -253,7 +226,9 @@ validateSecurityConfig();
  * Cross-subdomain cookies (.trycomp.ai) ensure the session works on all apps.
  */
 export const auth = betterAuth({
-  database: prismaAdapter(db, {
+  // Member and user deletes revoke the deleted members' personal API keys in
+  // the same transaction (api-key-revoking-deletes.ts).
+  database: prismaAdapter(withApiKeyRevokingDeletes(db), {
     provider: 'postgresql',
   }),
   // baseURL must point to the API (e.g., https://api.trycomp.ai) so that
@@ -264,7 +239,7 @@ export const auth = betterAuth({
   baseURL: process.env.BASE_URL || 'http://localhost:3333',
   trustedOrigins: getBetterAuthTrustedOrigins(),
   emailAndPassword: {
-    // Not used — apps sign in via magic link, email OTP, and OAuth.
+    // Not used - apps sign in via magic link, email OTP, and OAuth.
     enabled: false,
   },
   emailVerification: {
@@ -283,6 +258,11 @@ export const auth = betterAuth({
   advanced: {
     database: {
       generateId: false,
+    },
+    // Rate-limit on the verified client IP set by clientIpHeaderMiddleware,
+    // never on a forgeable X-Forwarded-For.
+    ipAddress: {
+      ipAddressHeaders: [CLIENT_IP_HEADER],
     },
     // Prevent cookie collisions between environments.
     // Production keeps the default 'better-auth' prefix (unchanged).
@@ -304,6 +284,13 @@ export const auth = betterAuth({
     }),
   },
   databaseHooks: {
+    user: {
+      // AUTH_ALLOWED_EMAIL_DOMAINS: refuse sign-ups from other domains unless
+      // the address holds a pending invitation.
+      create: {
+        before: createEmailDomainAllowlistHook({ env: process.env, db }),
+      },
+    },
     session: {
       create: {
         before: async (session) => {
@@ -403,7 +390,7 @@ export const auth = betterAuth({
 
           if (!userOrg) {
             console.error(
-              '[Auth] SECURITY: Admin action blocked — no organization could be resolved for admin user',
+              '[Auth] SECURITY: Admin action blocked - no organization could be resolved for admin user',
               { userId, path: ctx.path },
             );
             throw new Error(
@@ -445,11 +432,7 @@ export const auth = betterAuth({
         if (process.env.NODE_ENV === 'development') {
           console.log('[Auth] Sending invitation to:', data.email);
         }
-        const appUrl =
-          process.env.NEXT_PUBLIC_APP_URL ??
-          process.env.BETTER_AUTH_URL ??
-          'https://app.trycomp.ai';
-        const inviteLink = `${appUrl}/invite/${data.invitation.id}`;
+        const inviteLink = appLink({ path: `/invite/${data.invitation.id}` });
         await triggerEmail({
           to: data.email,
           subject: `You've been invited to join ${data.organization.name} on Comp AI`,
@@ -486,56 +469,54 @@ export const auth = betterAuth({
     }),
     magicLink({
       expiresIn: MAGIC_LINK_EXPIRES_IN_SECONDS,
-      sendMagicLink: async ({ email, url }) => {
-        // The `url` from better-auth points to the API's verify endpoint
-        // and includes the callbackURL from the client's sign-in request.
-        // Flow: user clicks link → API verifies token & sets session cookie
-        // → API redirects (302) to callbackURL (the app).
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[Auth] Sending magic link to:', email);
-          console.log('[Auth] Magic link URL:', url);
-        }
-        await triggerEmail({
-          to: email,
-          subject: 'Login to Comp AI',
-          react: MagicLinkEmail({ email, url }),
-        });
-      },
+      // AUTH_ALLOWED_EMAIL_DOMAINS: no link is mailed to a new address that
+      // may not sign up, with the same answer as a mailed one.
+      sendMagicLink: createAllowlistedEmailSender({
+        env: process.env,
+        db,
+        send: async ({ email, url }: { email: string; url: string }) => {
+          // The `url` from better-auth points to the API's verify endpoint
+          // and includes the callbackURL from the client's sign-in request.
+          // Flow: user clicks link → API verifies token & sets session cookie
+          // → API redirects (302) to callbackURL (the app).
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[Auth] Sending magic link to:', email);
+            console.log('[Auth] Magic link URL:', url);
+          }
+          await triggerEmail({
+            to: email,
+            subject: 'Login to Comp AI',
+            react: MagicLinkEmail({ email, url }),
+          });
+        },
+      }),
     }),
     emailOTP({
       otpLength: 6,
       expiresIn: 10 * 60,
-      async sendVerificationOTP({ email, otp }) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[Auth] Sending OTP to:', email);
-        }
-        await triggerEmail({
-          to: email,
-          subject: 'One-Time Password for Comp AI',
-          react: OTPVerificationEmail({ email, otp }),
-        });
-      },
+      // AUTH_ALLOWED_EMAIL_DOMAINS: as for magic links, no code is mailed to
+      // a new address that may not sign up.
+      sendVerificationOTP: createAllowlistedEmailSender({
+        env: process.env,
+        db,
+        send: async ({ email, otp }: { email: string; otp: string }) => {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[Auth] Sending OTP to:', email);
+          }
+          await triggerEmail({
+            to: email,
+            subject: 'One-Time Password for Comp AI',
+            react: OTPVerificationEmail({ email, otp }),
+          });
+        },
+      }),
     }),
     multiSession(),
     bearer(),
     admin({
       defaultRole: 'user',
     }),
-    // OAuth 2.0 / OIDC provider for hosted MCP (Gram). Wraps oidcProvider and
-    // exposes /api/auth/mcp/* (authorize, token, register) + the two
-    // /api/auth/.well-known/* discovery docs, plus the auth.api.getMcpSession()
-    // helper used by HybridAuthGuard. (Gram points its OAuth proxy at /mcp/*.)
-    mcp({
-      loginPage: mcpLoginPage,
-      ...(process.env.MCP_RESOURCE_URL
-        ? { resource: process.env.MCP_RESOURCE_URL }
-        : {}),
-      oidcConfig: {
-        loginPage: mcpLoginPage,
-        allowDynamicClientRegistration: false,
-        ...(gramMcpClient ? { trustedClients: [gramMcpClient] } : {}),
-      },
-    }),
+    ...gramMcpPlugins({ env: process.env, loginPage: mcpLoginPage }),
   ],
   socialProviders,
   user: {
@@ -574,7 +555,10 @@ export const auth = betterAuth({
     modelName: 'Account',
     accountLinking: {
       enabled: true,
-      trustedProviders: ['google', 'github', 'microsoft'],
+      // Trusted providers link to an existing account by email without a
+      // verified-email claim: Google, and Microsoft only when bound to one
+      // tenant (./microsoft-tenant.ts).
+      trustedProviders: accountLinkingTrustedProviders({ env: process.env }),
     },
     // Skip the state cookie CSRF check for OAuth flows.
     // In our cross-origin setup (app/portal → API), the state cookie may not

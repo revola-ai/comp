@@ -6,6 +6,7 @@ import {
 } from './run-org-browser-automations';
 import { isDueToday } from '../shared/is-due-today';
 import { normalizeHostnameFromUrl } from '../../browserbase/browserbase-url';
+import { isScheduledRunAllowed } from '../lib/schedule-guard';
 
 /**
  * Pure helper extracted for unit testing. Filters a list of candidate
@@ -148,7 +149,8 @@ export const browserAutomationsSchedule = schedules.task({
   id: 'browser-automations-schedule',
   cron: '0 5 * * *', // Daily at 5:00 AM UTC
   maxDuration: 60 * 30, // 30 minutes — Trigger.dev maxDuration is in SECONDS
-  run: async (payload) => {
+  run: async (payload, { ctx }) => {
+    if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
     logger.info('Starting daily browser automations orchestrator', {
       scheduledAt: payload.timestamp,
       lastRun: payload.lastTimestamp,

@@ -1,8 +1,19 @@
 name: Security Questionnaire Extension Release
 
+# Revola fork: manual only. Upstream published on every push to `release` and built
+# the extension against upstream's API and app; here a release needs this deployment's
+# URLs as inputs and fails fast unless they are https URLs on a revola.ai host.
 on:
   workflow_dispatch:
     inputs:
+      api_url:
+        description: 'API URL of this deployment (for example https://api.comp.revola.ai)'
+        required: true
+        type: string
+      app_url:
+        description: 'App URL of this deployment (for example https://app.comp.revola.ai)'
+        required: true
+        type: string
       publish_target:
         description: 'Who receives this release'
         type: choice
@@ -10,12 +21,6 @@ on:
         options:
           - trustedTesters
           - default
-  push:
-    branches:
-      - release
-    paths:
-      - '.github/workflows/security-questionnaire-extension-release.yml'
-      - 'apps/browser-extension/security-questionnaire-ext/**'
 
 permissions:
   contents: write
@@ -27,8 +32,6 @@ concurrency:
 env:
   EXTENSION_DIR: apps/browser-extension/security-questionnaire-ext
   EXTENSION_TAG_PREFIX: security-questionnaire-ext-v
-  WXT_PUBLIC_API_BASE_URL: https://api.trycomp.ai
-  WXT_PUBLIC_APP_BASE_URL: https://app.trycomp.ai
 
 jobs:
   release:
@@ -36,6 +39,23 @@ jobs:
     if: ${{ github.ref == 'refs/heads/release' }}
     runs-on: warp-ubuntu-latest-arm64-4x
     steps:
+      - name: Validate deployment URLs
+        # Inputs arrive through env, never interpolated into the script; the validated
+        # values become the build's WXT_PUBLIC_* variables for every later step.
+        env:
+          API_URL: ${{ inputs.api_url }}
+          APP_URL: ${{ inputs.app_url }}
+        run: |
+          for NAME in API_URL APP_URL; do
+            VALUE="${!NAME}"
+            if ! [[ "$VALUE" =~ ^https://([a-z0-9-]+\.)+revola\.ai/?$ ]]; then
+              echo "::error::$NAME must be an https URL on a revola.ai host for this fork's extension."
+              exit 1
+            fi
+          done
+          echo "WXT_PUBLIC_API_BASE_URL=${API_URL%/}" >> "$GITHUB_ENV"
+          echo "WXT_PUBLIC_APP_BASE_URL=${APP_URL%/}" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -134,9 +154,9 @@ jobs:
                 'Refusing to publish: manifest still points at ' + localhost.join(', '),
               );
             }
-            if (!hosts.some((host) => host.startsWith('https://api.trycomp.ai'))) {
+            if (!hosts.some((host) => host.startsWith(process.env.WXT_PUBLIC_API_BASE_URL))) {
               throw new Error(
-                'Refusing to publish: manifest is missing the production API host',
+                'Refusing to publish: manifest is missing the API host of this deployment',
               );
             }
           "

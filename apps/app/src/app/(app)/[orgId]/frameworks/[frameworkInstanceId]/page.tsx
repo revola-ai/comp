@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import { redirect } from 'next/navigation';
 import { FrameworkDetailContent } from './components/FrameworkDetailContent';
@@ -14,9 +15,9 @@ export default async function FrameworkPage({ params }: PageProps) {
   const { orgId: organizationId, frameworkInstanceId } = await params;
 
   const [frameworkRes, updateStatusRes] = await Promise.all([
-    serverApi.get<any>(`/v1/frameworks/${frameworkInstanceId}`),
+    serverApi.get<any>(`/v1/frameworks/${encodePathSegment(frameworkInstanceId)}`),
     serverApi.get<{ data: FrameworkUpdateStatus }>(
-      `/v1/frameworks/${frameworkInstanceId}/update-status`,
+      `/v1/frameworks/${encodePathSegment(frameworkInstanceId)}/update-status`,
     ),
   ]);
 

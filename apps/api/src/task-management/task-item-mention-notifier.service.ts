@@ -4,6 +4,7 @@ import { orgParticipantMemberWhere } from '../utils/org-participation';
 import { isUserUnsubscribed } from '@trycompai/email';
 import { triggerEmail } from '../email/trigger-email';
 import { TaskItemMentionedEmail } from '../email/templates/task-item-mentioned';
+import { appLink } from '../utils/public-url';
 import { NovuService } from '../notifications/novu.service';
 
 @Injectable()
@@ -88,15 +89,11 @@ export class TaskItemMentionNotifierService {
       const entityRoutePath = entityType === 'vendor' ? 'vendors' : 'risk';
 
       // Build task URL
-      const appUrl =
-        process.env.NEXT_PUBLIC_APP_URL ??
-        process.env.BETTER_AUTH_URL ??
-        'https://app.trycomp.ai';
-      const taskUrlBase = `${appUrl}/${organizationId}/${entityRoutePath}/${entityId}`;
-      const taskUrlObj = new URL(taskUrlBase);
-      taskUrlObj.searchParams.set('taskItemId', taskItemId);
-      taskUrlObj.hash = 'task-items';
-      const taskUrl = taskUrlObj.toString();
+      const taskUrl = appLink({
+        path: `/${organizationId}/${entityRoutePath}/${entityId}`,
+        searchParams: { taskItemId },
+        hash: 'task-items',
+      });
 
       const mentionedByName =
         mentionedByUser.name || mentionedByUser.email || 'Someone';

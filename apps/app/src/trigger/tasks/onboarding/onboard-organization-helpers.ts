@@ -34,6 +34,7 @@ import {
   type MitigationCitation,
 } from './select-mitigation-citations';
 import { updatePolicy } from './update-policy';
+import { revalidateAppPath } from '../../lib/revalidate-app-path';
 
 type VendorForRiskAssessmentTrigger = {
   id: string;
@@ -368,26 +369,7 @@ function combineSentencesWithCitations({
  * Revalidates the organization path for cache busting
  */
 export async function revalidateOrganizationPath(organizationId: string): Promise<void> {
-  try {
-    logger.info(`Revalidating path ${process.env.BETTER_AUTH_URL}/${organizationId}`);
-    const revalidateResponse = await axios.post(
-      `${process.env.BETTER_AUTH_URL}/api/revalidate/path`,
-      {
-        path: `${process.env.BETTER_AUTH_URL}/${organizationId}`,
-        secret: process.env.REVALIDATION_SECRET,
-        type: 'layout',
-      },
-    );
-
-    if (!revalidateResponse.data?.revalidated) {
-      logger.error(`Failed to revalidate path: ${revalidateResponse.statusText}`);
-      logger.error(revalidateResponse.data);
-    } else {
-      logger.info('Revalidated path successfully');
-    }
-  } catch (err) {
-    logger.error('Error revalidating path', { err });
-  }
+  await revalidateAppPath({ path: `/${organizationId}`, type: 'layout' });
 }
 
 /**

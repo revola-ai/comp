@@ -4,6 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { isUserUnsubscribed } from '@trycompai/email';
 import { triggerEmail } from '../email/trigger-email';
 import { TaskItemAssignedEmail } from '../email/templates/task-item-assigned';
+import { appLink } from '../utils/public-url';
 import { NovuService } from '../notifications/novu.service';
 
 type TaskItemEntityType = 'vendor' | 'risk';
@@ -93,7 +94,7 @@ export class TaskItemAssignmentNotifierService {
       }
 
       // Skip notifications for platform admins unless this is an internal org
-      // (where platform admins are real members) — the single participation rule.
+      // (where platform admins are real members) - the single participation rule.
       if (
         !isOrgParticipant(assigneeUser.role, {
           orgIsInternal: organization?.isInternal ?? false,
@@ -110,20 +111,12 @@ export class TaskItemAssignmentNotifierService {
         return;
       }
 
-      const appUrl =
-        process.env.NEXT_PUBLIC_APP_URL ??
-        process.env.BETTER_AUTH_URL ??
-        'https://app.trycomp.ai';
-      const taskUrlBase = `${appUrl}${getEntityUrlPath({
-        organizationId,
-        entityType,
-        entityId,
-      })}`;
       // Deep-link directly to the TaskItems section + select the task
-      const taskUrlObj = new URL(taskUrlBase);
-      taskUrlObj.searchParams.set('taskItemId', taskItemId);
-      taskUrlObj.hash = 'task-items';
-      const taskUrl = taskUrlObj.toString();
+      const taskUrl = appLink({
+        path: getEntityUrlPath({ organizationId, entityType, entityId }),
+        searchParams: { taskItemId },
+        hash: 'task-items',
+      });
 
       const assigneeName =
         assigneeUser.name?.trim() || assigneeUser.email?.trim() || 'User';

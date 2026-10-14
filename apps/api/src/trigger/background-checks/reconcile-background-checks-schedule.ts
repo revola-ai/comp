@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { BackgroundCheckIdentityClient } from '../../background-checks/background-check-identity.client';
 import { fetchCompletedReportSnapshot } from '../../background-checks/background-check-report-snapshot';
 import { backgroundCheckStatuses } from '../../background-checks/background-checks.types';
+import { isScheduledRunAllowed } from '../lib/schedule-guard';
 
 // Checks in these states are still in flight and can still advance. Terminal
 // states (completed/completed_with_flags/failed/cancelled) are left untouched.
@@ -216,5 +217,8 @@ export const reconcileBackgroundChecksSchedule = schedules.task({
   cron: '0 * * * *', // hourly (UTC)
   maxDuration: 30 * 60, // 30 minutes — Trigger.dev maxDuration is in SECONDS
 
-  run: () => runReconciliation(),
+  run: async (_payload, { ctx }) => {
+    if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
+    return runReconciliation();
+  },
 });

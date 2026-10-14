@@ -1,24 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { jsPDF } from 'jspdf';
+import { COMP_LOGO_PNG_DATA_URL } from './comp-logo';
 
 // Primary brand color (teal/green) - hsl(165, 100%, 15%)
 const PRIMARY_COLOR = { r: 0, g: 77, b: 61 };
-
-const COMP_AI_LOGO_URL = 'https://assets.trycomp.ai/logo.png';
-
-const getLogoDataUrl = async (): Promise<string | null> => {
-  try {
-    const response = await fetch(COMP_AI_LOGO_URL);
-    if (!response.ok) {
-      return null;
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    const base64 = Buffer.from(arrayBuffer).toString('base64');
-    return `data:image/png;base64,${base64}`;
-  } catch {
-    return null;
-  }
-};
 
 @Injectable()
 export class TrainingCertificatePdfService {
@@ -53,37 +38,41 @@ export class TrainingCertificatePdfService {
     return cleanedText;
   }
 
-  async generateHipaaCertificatePdf(params: {
+  generateHipaaCertificatePdf(params: {
     userName: string;
     organizationName: string;
     completedAt: Date;
   }): Promise<Buffer> {
-    return this.generateCertificatePdf({
-      ...params,
-      title: 'HIPAA Security Awareness Training',
-      subtitle: 'HIPAA Security Awareness Training program',
-    });
+    return Promise.resolve(
+      this.generateCertificatePdf({
+        ...params,
+        title: 'HIPAA Security Awareness Training',
+        subtitle: 'HIPAA Security Awareness Training program',
+      }),
+    );
   }
 
-  async generateTrainingCertificatePdf(params: {
+  generateTrainingCertificatePdf(params: {
     userName: string;
     organizationName: string;
     completedAt: Date;
   }): Promise<Buffer> {
-    return this.generateCertificatePdf({
-      ...params,
-      title: 'Security Awareness Training',
-      subtitle: 'Security Awareness Training program',
-    });
+    return Promise.resolve(
+      this.generateCertificatePdf({
+        ...params,
+        title: 'Security Awareness Training',
+        subtitle: 'Security Awareness Training program',
+      }),
+    );
   }
 
-  private async generateCertificatePdf(params: {
+  private generateCertificatePdf(params: {
     userName: string;
     organizationName: string;
     completedAt: Date;
     title: string;
     subtitle: string;
-  }): Promise<Buffer> {
+  }): Buffer {
     const { userName, organizationName, completedAt, title, subtitle } = params;
 
     const doc = new jsPDF({
@@ -108,20 +97,16 @@ export class TrainingCertificatePdfService {
     doc.setLineWidth(0.5);
     doc.rect(15, 15, pageWidth - 30, pageHeight - 30, 'S');
 
-    // Add Comp AI logo at top center
-    const logoDataUrl = await getLogoDataUrl();
-    if (logoDataUrl) {
-      const logoWidth = 15;
-      const logoHeight = 15;
-      doc.addImage(
-        logoDataUrl,
-        'PNG',
-        pageWidth / 2 - logoWidth / 2,
-        22,
-        logoWidth,
-        logoHeight,
-      );
-    }
+    // Add Comp AI logo at top center (bundled, never fetched)
+    const logoSizeTop = 15;
+    doc.addImage(
+      COMP_LOGO_PNG_DATA_URL,
+      'PNG',
+      pageWidth / 2 - logoSizeTop / 2,
+      22,
+      logoSizeTop,
+      logoSizeTop,
+    );
 
     // Certificate header
     doc.setFont('helvetica', 'normal');
@@ -232,9 +217,14 @@ export class TrainingCertificatePdfService {
     const brandStartX = pageWidth / 2 - totalBrandWidth / 2;
 
     // Add small logo next to text
-    if (logoDataUrl) {
-      doc.addImage(logoDataUrl, 'PNG', brandStartX, 164, logoSize, logoSize);
-    }
+    doc.addImage(
+      COMP_LOGO_PNG_DATA_URL,
+      'PNG',
+      brandStartX,
+      164,
+      logoSize,
+      logoSize,
+    );
     doc.text(compAiText, brandStartX + logoSize + gap, 171);
 
     // Footer

@@ -53,7 +53,7 @@
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,md}": "prettier --write"
   },
-  "packageManager": "bun@1.3.4",
+  "packageManager": "bun@1.4.2",
   "private": true,
   "scripts": {
     "build": "turbo build",
@@ -78,13 +78,15 @@
     "prepare": "husky",
     "test": "turbo test --parallel",
     "test:release": "node scripts/test-release.js",
+    "test:shell": "for f in scripts/tests/*.test.sh; do [ -e \"$f\" ] || { echo \"no shell tests in scripts/tests\" >&2; exit 1; }; bash \"$f\" || exit 1; done",
     "typecheck": "turbo typecheck",
-    "typecheck:ci": "turbo typecheck --filter={apps/**} --filter={packages/**} --filter=!@trycompai/integrations --filter=!@trycompai/ui"
+    "typecheck:ci": "bun run --cwd apps/framework-editor typecheck:prisma && turbo typecheck --filter={apps/**} --filter={packages/**} --filter=@trycompai/deploy-aws --filter=!@trycompai/integrations --filter=!@trycompai/ui --filter=!@trycompai/framework-editor"
   },
   "workspaces": [
     "apps/*",
     "apps/browser-extension/*",
     "!apps/mcp-server",
+    "deploy/aws",
     "packages/*"
   ],
   "dependencies": {

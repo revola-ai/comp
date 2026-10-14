@@ -1,6 +1,7 @@
 import type * as NodeFs from 'node:fs';
 import type * as NodePath from 'node:path';
 import type * as NodeTls from 'node:tls';
+import { DatabaseConfigError } from './database-config-error';
 
 export type SslConfig =
   | undefined
@@ -10,11 +11,16 @@ export type SslConfig =
 
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
 
-function isLocalhostUrl(connectionString: string): boolean {
+// pg connects to a `host` query parameter instead of the authority host, so every
+// host the URL could reach must be local.
+export function isLocalhostUrl(connectionString: string): boolean {
   try {
-    const { hostname } = new URL(connectionString);
-    const stripped = hostname.replace(/^\[/, '').replace(/\]$/, '');
-    return LOCAL_HOSTNAMES.has(stripped);
+    const url = new URL(connectionString);
+    const queryHosts = url.searchParams.getAll('host');
+    const hosts = (queryHosts.length > 0 ? queryHosts : [url.hostname]).flatMap((value) =>
+      value.split(','),
+    );
+    return hosts.every((host) => LOCAL_HOSTNAMES.has(host.replace(/^\[/, '').replace(/\]$/, '')));
   } catch {
     // Malformed URL — be conservative and treat as remote so we don't
     // accidentally disable TLS verification.
@@ -58,7 +64,10 @@ function trustStoreWith(caPath: string): string[] {
   const tls = process.getBuiltinModule('node:tls') as typeof NodeTls;
   const absolute = path.resolve(caPath);
   if (!fs.existsSync(absolute)) {
-    throw new Error(`DATABASE_SSL_CA points to a file that does not exist: ${absolute}`);
+    throw new DatabaseConfigError({
+      code: 'ca_file_missing',
+      detail: `DATABASE_SSL_CA points to a file that does not exist: ${absolute}`,
+    });
   }
   return [...tls.rootCertificates, fs.readFileSync(absolute, 'utf8')];
 }

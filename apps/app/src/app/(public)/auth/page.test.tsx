@@ -15,6 +15,7 @@ vi.mock('@/env.mjs', () => ({ env: {} }));
 vi.mock('@/components/login-form', () => ({ LoginForm: () => null }));
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import { redirect } from 'next/navigation';
 import Page from './page';
 import { mockAuthApi, createMockSession, createMockUser } from '@/test-utils/mocks/auth';
@@ -57,5 +58,30 @@ describe('Auth page invite routing', () => {
     await expect(Page({ searchParams: Promise.resolve({}) })).rejects.toThrow('REDIRECT:/');
 
     expect(mockRedirect).toHaveBeenCalledWith('/');
+  });
+});
+
+describe('Auth page sign-in errors', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuthApi.getSession.mockResolvedValue(null);
+  });
+
+  it('explains an allowlist rejection returned through the OAuth callback', async () => {
+    render(
+      await Page({
+        searchParams: Promise.resolve({ error: 'email_domain_not_allowed:_example.com' }),
+      }),
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Sign-ups are limited to revola.ai; ask an admin for an invite',
+    );
+  });
+
+  it('shows no alert without an error', async () => {
+    render(await Page({ searchParams: Promise.resolve({}) }));
+
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

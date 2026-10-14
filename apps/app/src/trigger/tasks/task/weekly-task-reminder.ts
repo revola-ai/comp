@@ -1,6 +1,7 @@
 import { isOrgParticipant } from '@/lib/org-participation-rule';
 import { db } from '@db/server';
 import { logger, schedules } from '@trigger.dev/sdk';
+import { isScheduledRunAllowed } from '../../lib/schedule-guard';
 import { sendWeeklyTaskDigestEmailTask } from '../email/weekly-task-digest-email';
 
 const ORG_INACTIVITY_DAYS = 90;
@@ -9,7 +10,8 @@ export const weeklyTaskReminder = schedules.task({
   id: 'weekly-task-reminder',
   cron: '0 9 * * 1', // Every Monday at 9:00 AM UTC
   maxDuration: 1000 * 60 * 10, // 10 minutes
-  run: async () => {
+  run: async (_payload, { ctx }) => {
+    if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
     logger.info('Starting weekly task reminder job');
 
     const inactivityCutoff = new Date();

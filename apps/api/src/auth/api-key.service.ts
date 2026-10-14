@@ -3,47 +3,46 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  type OnApplicationBootstrap,
 } from '@nestjs/common';
 import { db } from '@db';
 import { statement } from '@trycompai/auth';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { lockKeyCreator } from './api-key-creator-lock';
+import {
+  ApiKeySchemaOutOfDateError,
+  asApiKeySchemaError,
+  assertApiKeySchema,
+} from './api-key-schema-check';
+import { asCredentialStoreError } from './credential-store-error';
+import type { ApiKeyProvenance } from './api-key-provenance';
+import {
+  extractKeyPrefix,
+  findMatchingApiKey,
+  hashApiKey,
+  reportLegacyApiKeys,
+} from './api-key-lookup';
+import {
+  type ApiKeyValidationResult,
+  apiKeyRejection,
+  toValidationResult,
+} from './api-key-validation';
 
-/** Result from validating an API key */
-export interface ApiKeyValidationResult {
-  /** API key row primary key — exposed on the request so downstream
-   *  attribution logic (audit logs, owner-fallback resolver) can reference
-   *  the exact key used without an extra DB lookup. */
-  apiKeyId: string;
-  /** Human-readable name set when the key was created (e.g. "CI Pipeline").
-   *  Surfaced in audit log descriptions for API-key-initiated mutations. */
-  apiKeyName: string;
-  organizationId: string;
-  scopes: string[];
-  /** Member (org membership) that created this key, or null for legacy keys
-   *  created before creator attribution existed. Used by ActingUserResolver
-   *  to attribute API-key mutations to the real creator. */
-  createdByMemberId: string | null;
-}
+export type { ApiKeyValidationResult } from './api-key-validation';
 
 @Injectable()
-export class ApiKeyService {
+export class ApiKeyService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ApiKeyService.name);
 
   /**
-   * Hash an API key for comparison
-   * @param apiKey The API key to hash
-   * @param salt Optional salt to use for hashing
-   * @returns The hashed API key
+   * Refuses to start when the database lacks an ApiKey column this build
+   * reads (migrations must be applied before the image is deployed), then
+   * reports active legacy keys without delaying the start.
    */
-  private hashApiKey(apiKey: string, salt?: string): string {
-    if (salt) {
-      // If salt is provided, use it for hashing
-      return createHash('sha256')
-        .update(apiKey + salt)
-        .digest('hex');
-    }
-    // For backward compatibility, hash without salt
-    return createHash('sha256').update(apiKey).digest('hex');
+  async onApplicationBootstrap(): Promise<void> {
+    const warn = (message: string) => this.logger.warn(message);
+    await assertApiKeySchema({ warn });
+    void reportLegacyApiKeys({ warn });
   }
 
   private generateApiKey(): string {
@@ -51,23 +50,24 @@ export class ApiKeyService {
     return `comp_${apiKey}`;
   }
 
-  /** Extract the first 8 chars after the `comp_` prefix for indexed lookup */
-  private extractPrefix(apiKey: string): string {
-    return apiKey.slice(5, 13);
-  }
-
   private generateSalt(): string {
     return randomBytes(16).toString('hex');
   }
 
-  async create(
-    organizationId: string,
-    name: string,
-    expiresAt?: string,
-    scopes?: string[],
-    createdByMemberId?: string | null,
-  ) {
-    // New keys must have explicit scopes — no more legacy empty-scope keys
+  async create({
+    organizationId,
+    name,
+    expiresAt,
+    scopes,
+    provenance,
+  }: {
+    organizationId: string;
+    name: string;
+    expiresAt?: string;
+    scopes?: string[];
+    provenance: ApiKeyProvenance;
+  }) {
+    // New keys must have explicit scopes - no more legacy empty-scope keys
     if (!scopes || scopes.length === 0) {
       throw new BadRequestException(
         'API keys must have at least one scope. Use the "Full Access" preset to grant all permissions.',
@@ -82,7 +82,7 @@ export class ApiKeyService {
 
     const apiKey = this.generateApiKey();
     const salt = this.generateSalt();
-    const hashedKey = this.hashApiKey(apiKey, salt);
+    const hashedKey = hashApiKey({ apiKey, salt });
 
     let expirationDate: Date | null = null;
     if (expiresAt && expiresAt !== 'never') {
@@ -104,25 +104,36 @@ export class ApiKeyService {
       }
     }
 
-    const keyPrefix = this.extractPrefix(apiKey);
+    const keyPrefix = extractKeyPrefix(apiKey);
 
-    const record = await db.apiKey.create({
-      data: {
-        name,
-        key: hashedKey,
-        keyPrefix,
-        salt,
-        expiresAt: expirationDate,
+    // The creator's row stays locked until the key is committed, so a
+    // concurrent removal or deactivation either runs first (and creation is
+    // refused) or after (and revokes this key).
+    const record = await db.$transaction(async (tx) => {
+      const createdByMemberId = await lockKeyCreator({
+        tx,
         organizationId,
-        scopes,
-        createdByMemberId: createdByMemberId ?? null,
-      },
-      select: {
-        id: true,
-        name: true,
-        createdAt: true,
-        expiresAt: true,
-      },
+        provenance,
+      });
+      return tx.apiKey.create({
+        data: {
+          name,
+          key: hashedKey,
+          keyPrefix,
+          salt,
+          expiresAt: expirationDate,
+          organizationId,
+          scopes,
+          createdByMemberId,
+          organizationOwned: provenance.organizationOwned,
+        },
+        select: {
+          id: true,
+          name: true,
+          createdAt: true,
+          expiresAt: true,
+        },
+      });
     });
 
     return {
@@ -186,90 +197,29 @@ export class ApiKeyService {
         return null;
       }
 
-      // Use key prefix for indexed lookup when available (new keys),
-      // fall back to full scan for legacy keys without prefix
-      const keyPrefix = apiKey.startsWith('comp_')
-        ? this.extractPrefix(apiKey)
-        : null;
-
-      const apiKeyRecords = await db.apiKey.findMany({
-        where: {
-          isActive: true,
-          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-          ...(keyPrefix ? { keyPrefix } : {}),
-        },
-        select: {
-          id: true,
-          name: true,
-          key: true,
-          salt: true,
-          organizationId: true,
-          expiresAt: true,
-          scopes: true,
-          createdByMemberId: true,
-        },
-      });
-
-      // Find the matching API key by hashing with each candidate's salt
-      const matchingRecord = apiKeyRecords.find((record) => {
-        const hashedKey = record.salt
-          ? this.hashApiKey(apiKey, record.salt)
-          : this.hashApiKey(apiKey);
-        return hashedKey === record.key;
-      });
-
-      if (!matchingRecord) {
-        // If prefix lookup found nothing, try legacy keys (no prefix set)
-        if (keyPrefix) {
-          const legacyRecords = await db.apiKey.findMany({
-            where: {
-              isActive: true,
-              keyPrefix: null,
-              OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-            },
-            select: {
-              id: true,
-              name: true,
-              key: true,
-              salt: true,
-              organizationId: true,
-              expiresAt: true,
-              scopes: true,
-              createdByMemberId: true,
-            },
-          });
-          const legacyMatch = legacyRecords.find((record) => {
-            const hashedKey = record.salt
-              ? this.hashApiKey(apiKey, record.salt)
-              : this.hashApiKey(apiKey);
-            return hashedKey === record.key;
-          });
-          if (legacyMatch) {
-            // Backfill the prefix for future lookups
-            await db.apiKey.update({
-              where: { id: legacyMatch.id },
-              data: { keyPrefix, lastUsedAt: new Date() },
-            });
-            return {
-              apiKeyId: legacyMatch.id,
-              apiKeyName: legacyMatch.name,
-              organizationId: legacyMatch.organizationId,
-              scopes: legacyMatch.scopes,
-              createdByMemberId: legacyMatch.createdByMemberId ?? null,
-            };
-          }
-        }
+      const match = await findMatchingApiKey({ apiKey });
+      if (!match) {
         this.logger.warn('Invalid or expired API key attempted');
         return null;
       }
+      const { record: matchingRecord, backfillPrefix } = match;
 
-      // Update the lastUsedAt timestamp
+      // Offboarding: a personal key stops working once its creator is no
+      // longer an active member, even before revocation has run, and a
+      // creatorless personal key not flagged legacyCreatorless is an orphan.
+      const rejection = apiKeyRejection(matchingRecord);
+      if (rejection) {
+        this.logger.warn(
+          `API key ${matchingRecord.id} rejected (${rejection}): its creator is no longer an active member`,
+        );
+        return null;
+      }
+
       await db.apiKey.update({
-        where: {
-          id: matchingRecord.id,
-        },
+        where: { id: matchingRecord.id },
         data: {
           lastUsedAt: new Date(),
+          ...(backfillPrefix ? { keyPrefix: backfillPrefix } : {}),
         },
       });
 
@@ -277,16 +227,20 @@ export class ApiKeyService {
         `Valid API key used for organization: ${matchingRecord.organizationId}`,
       );
 
-      return {
-        apiKeyId: matchingRecord.id,
-        apiKeyName: matchingRecord.name,
-        organizationId: matchingRecord.organizationId,
-        scopes: matchingRecord.scopes,
-        createdByMemberId: matchingRecord.createdByMemberId ?? null,
-      };
+      return toValidationResult(matchingRecord);
     } catch (error) {
+      // A database missing a column this build reads was not migrated
+      // before the deploy: say so by name. A database failure is not a
+      // verdict on the key: the caller gets 503, not "invalid key" (which
+      // would count against its IP). Anything else is a bug and surfaces as
+      // one.
+      const schemaError = asApiKeySchemaError(error);
+      if (schemaError instanceof ApiKeySchemaOutOfDateError) {
+        this.logger.error(schemaError.message);
+        throw schemaError;
+      }
       this.logger.error('Error validating API key:', error);
-      return null;
+      throw asCredentialStoreError(error);
     }
   }
 

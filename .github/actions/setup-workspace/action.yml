@@ -1,0 +1,40 @@
+name: Set up workspace
+description: >
+  Node and Bun at the repo's versions, a frozen install, every generated Prisma client, and
+  the build output of the workspace packages the api, app and portal import.
+  Needs no secrets and no database.
+
+runs:
+  using: composite
+  steps:
+    # Prisma 7 refuses Node 23; .nvmrc names the supported major.
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version-file: .nvmrc
+
+    - name: Set up Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        # Keep in step with "packageManager" in package.json.
+        bun-version: '1.4.2'
+
+    - name: Install dependencies
+      shell: bash
+      run: bun install --frozen-lockfile
+
+    # packages/db, apps/api, apps/app, apps/portal and apps/framework-editor each generate
+    # their own client from packages/db/prisma/schema; nothing connects to a database.
+    - name: Generate Prisma clients
+      shell: bash
+      run: bun run db:generate
+
+    # Workspace packages resolve to dist/ (package.json exports), which is not committed.
+    # `x^...` is every workspace package x depends on, so new dependencies are built too.
+    - name: Build workspace packages
+      shell: bash
+      run: >-
+        bunx turbo run build --ui=stream
+        --filter=@trycompai/api^...
+        --filter=@trycompai/app^...
+        --filter=@trycompai/portal^...

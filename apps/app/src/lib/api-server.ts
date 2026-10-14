@@ -1,5 +1,6 @@
-import { env } from '@/env.mjs';
 import { headers } from 'next/headers';
+import { assertSafeApiPath } from './api-path';
+import { getServerApiBaseUrl, getServerApiHeaders } from './server-api-base-url';
 
 export interface ApiResponse<T = unknown> {
   data?: T;
@@ -16,20 +17,24 @@ interface CallOptions {
  * Server-side API client for calling our internal NestJS API from server components.
  * Forwards cookies for authentication — API resolves the session (including
  * activeOrganizationId) via better-auth, so no X-Organization-Id header is needed.
+ * Throws InvalidApiPathError, before any request, for a path that would
+ * resolve to a different route (see api-path.ts).
  */
 async function call<T = unknown>(
   endpoint: string,
   options: CallOptions = {},
 ): Promise<ApiResponse<T>> {
+  assertSafeApiPath(endpoint);
   const { method = 'GET', body } = options;
-  const baseUrl = env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+  const baseUrl = getServerApiBaseUrl();
+  const headerStore = await headers();
 
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...getServerApiHeaders({ incoming: headerStore }),
   };
 
   // Forward cookies for auth - better-auth handles session validation
-  const headerStore = await headers();
   const cookieHeader = headerStore.get('cookie');
   if (cookieHeader) {
     requestHeaders['Cookie'] = cookieHeader;

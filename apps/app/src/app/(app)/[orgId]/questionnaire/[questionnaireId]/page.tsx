@@ -1,4 +1,5 @@
 import PageWithBreadcrumb from '@/components/pages/PageWithBreadcrumb';
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import { notFound } from 'next/navigation';
 import { QuestionnaireDetailClient } from './components/QuestionnaireDetailClient';
@@ -25,7 +26,7 @@ export default async function QuestionnaireDetailPage({
 
   // GET /v1/questionnaire/:id returns questionnaire fields flat (no data wrapper)
   const result = await serverApi.get<QuestionnaireApiResponse>(
-    `/v1/questionnaire/${questionnaireId}`,
+    `/v1/questionnaire/${encodePathSegment(questionnaireId)}`,
   );
 
   const questionnaire = result.data;

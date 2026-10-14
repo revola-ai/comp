@@ -19,16 +19,46 @@ jest.mock('./ensure-valid-credentials', () => ({
   requestValidCredentials: jest.fn(),
 }));
 
+// schedules.task is mocked to return the config, so .run is invokable here.
+// Runs as the PRODUCTION Trigger.dev environment; other environments are
+// skipped by the schedule guard (covered in trigger/lib/schedule-guard.spec.ts).
+function runAsProduction(payload: {
+  timestamp: string;
+  lastTimestamp: string | null;
+}): Promise<{ refreshed: number }> {
+  const scheduled = refreshExpiringTokensSchedule as unknown as {
+    run: (
+      p: { timestamp: string; lastTimestamp: string | null },
+      params: {
+        ctx: { environment: { type: string }; task: { id: string } };
+      },
+    ) => Promise<{ refreshed: number }>;
+  };
+  return scheduled.run(payload, {
+    ctx: {
+      environment: { type: 'PRODUCTION' },
+      task: { id: 'refresh-expiring-tokens-schedule' },
+    },
+  });
+}
+
 describe('refreshExpiringTokensSchedule', () => {
   const nowMs = Date.parse('2026-04-24T00:00:00.000Z');
-  const lookaheadMs = 24 * 60 * 60 * 1000;
+
+  const originalApiUrl = process.env.API_URL;
 
   beforeEach(() => {
-    jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+    // The task reads both Date.now() and new Date(), so pin the whole clock,
+    // and it refuses to run without API_URL.
+    jest.useFakeTimers({ now: nowMs });
+    process.env.API_URL = 'http://api.test';
     (requestValidCredentials as jest.Mock).mockResolvedValue({ success: true });
   });
 
   afterEach(() => {
+    jest.useRealTimers();
+    if (originalApiUrl === undefined) delete process.env.API_URL;
+    else process.env.API_URL = originalApiUrl;
     jest.restoreAllMocks();
     jest.clearAllMocks();
   });
@@ -58,10 +88,10 @@ describe('refreshExpiringTokensSchedule', () => {
       connectionWithLatestExpiringSoon,
     ]);
 
-    const result = await refreshExpiringTokensSchedule.run({
+    const result = await runAsProduction({
       timestamp: new Date(nowMs).toISOString(),
       lastTimestamp: null,
-    } as any);
+    });
 
     expect(result.refreshed).toBe(1);
     expect(requestValidCredentials).toHaveBeenCalledTimes(1);
@@ -86,10 +116,10 @@ describe('refreshExpiringTokensSchedule', () => {
       connectionLatestValid,
     ]);
 
-    const result = await refreshExpiringTokensSchedule.run({
+    const result = await runAsProduction({
       timestamp: new Date(nowMs).toISOString(),
       lastTimestamp: null,
-    } as any);
+    });
 
     expect(result.refreshed).toBe(0);
     expect(requestValidCredentials).not.toHaveBeenCalled();

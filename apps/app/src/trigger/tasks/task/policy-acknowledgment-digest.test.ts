@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@db/server', () => ({
   db: {
@@ -10,7 +10,9 @@ vi.mock('./policy-acknowledgment-digest-helpers', async (importOriginal) => {
   const mod = await importOriginal<typeof import('./policy-acknowledgment-digest-helpers')>();
   return {
     ...mod,
-    filterDigestMembersByCompliance: vi.fn().mockImplementation(async (_db: unknown, members: unknown[]) => members),
+    filterDigestMembersByCompliance: vi
+      .fn()
+      .mockImplementation(async (_db: unknown, members: unknown[]) => members),
   };
 });
 
@@ -34,10 +36,11 @@ vi.mock('@trigger.dev/sdk', () => ({
 }));
 
 import { db } from '@db/server';
-import { filterDigestMembersByCompliance } from './policy-acknowledgment-digest-helpers';
-import { sendBatchEmailViaApi } from '../../lib/send-email-via-api';
+import { render } from '@react-email/render';
 import { getUnsubscribedEmails } from '@trycompai/email/lib/check-unsubscribe';
+import { sendBatchEmailViaApi } from '../../lib/send-email-via-api';
 import { policyAcknowledgmentDigest } from './policy-acknowledgment-digest';
+import { filterDigestMembersByCompliance } from './policy-acknowledgment-digest-helpers';
 
 const mockDb = db as unknown as {
   organization: { findMany: ReturnType<typeof vi.fn> };
@@ -49,8 +52,11 @@ const mockGetUnsubscribedEmails = vi.mocked(getUnsubscribedEmails);
 
 // The mock replaces schedules.task with a passthrough that returns the config
 // directly, so `.run` is available on the exported constant at runtime.
-const taskUnderTest = policyAcknowledgmentDigest as unknown as {
-  run: (payload: unknown) => Promise<{
+const scheduledTask = policyAcknowledgmentDigest as unknown as {
+  run: (
+    payload: unknown,
+    params: { ctx: { environment: { type: string }; task: { id: string } } },
+  ) => Promise<{
     success: boolean;
     emailsSent: number;
     emailsFailed: number;
@@ -58,6 +64,15 @@ const taskUnderTest = policyAcknowledgmentDigest as unknown as {
     recipients: number;
     orgsSkippedUnsubscribed: number;
   }>;
+};
+
+// Runs as the PRODUCTION Trigger.dev environment; the schedule guard skips
+// every other environment (covered in trigger/lib/schedule-guard.test.ts).
+const taskUnderTest = {
+  run: (payload: unknown) =>
+    scheduledTask.run(payload, {
+      ctx: { environment: { type: 'PRODUCTION' }, task: { id: 'policy-acknowledgment-digest' } },
+    }),
 };
 
 describe('policyAcknowledgmentDigest', () => {
@@ -118,6 +133,51 @@ describe('policyAcknowledgmentDigest', () => {
       success: true,
       emailsSent: 1,
       orgsSkippedUnsubscribed: 0,
+    });
+  });
+
+  describe('policy links', () => {
+    const oneOrg = () => [
+      {
+        id: 'org_1',
+        name: 'Acme',
+        policy: [
+          {
+            id: 'pol_a',
+            name: 'Access Control',
+            signedBy: [],
+            visibility: 'ALL',
+            visibleToDepartments: [],
+          },
+        ],
+        members: [
+          {
+            id: 'mem_alice',
+            department: 'it',
+            user: { id: 'usr_alice', name: 'Alice', email: 'alice@example.com', role: null },
+          },
+        ],
+      },
+    ];
+    const renderedElement = () => JSON.stringify(vi.mocked(render).mock.calls[0]?.[0]);
+
+    afterEach(() => vi.unstubAllEnvs());
+
+    it('link to the portal of this deployment', async () => {
+      vi.stubEnv('NEXT_PUBLIC_PORTAL_URL', 'https://portal.comp.revola.ai');
+      mockFindMany.mockResolvedValueOnce(oneOrg());
+      await taskUnderTest.run({ timestamp: new Date() });
+      expect(renderedElement()).toContain('https://portal.comp.revola.ai/org_1/policy/pol_a');
+    });
+
+    it('are left out, never pointing at an upstream host, without NEXT_PUBLIC_PORTAL_URL', async () => {
+      vi.stubEnv('NEXT_PUBLIC_PORTAL_URL', undefined);
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      mockFindMany.mockResolvedValueOnce(oneOrg());
+      const result = await taskUnderTest.run({ timestamp: new Date() });
+      expect(result).toMatchObject({ emailsSent: 1 });
+      expect(renderedElement()).toContain('Access Control');
+      expect(renderedElement()).not.toMatch(/trycomp\.ai/);
     });
   });
 
@@ -328,9 +388,7 @@ describe('policyAcknowledgmentDigest', () => {
         ],
       },
     ]);
-    mockGetUnsubscribedEmails.mockResolvedValueOnce(
-      new Set(['alice@example.com']),
-    );
+    mockGetUnsubscribedEmails.mockResolvedValueOnce(new Set(['alice@example.com']));
 
     const result = await taskUnderTest.run({ timestamp: new Date() } as never);
 
@@ -412,9 +470,7 @@ describe('policyAcknowledgmentDigest', () => {
     };
     expect(call.emails).toHaveLength(1);
     expect(call.emails[0].to).toBe('alice@example.com');
-    expect(call.emails[0].subject).toBe(
-      'You have 3 policies to review across 2 organizations',
-    );
+    expect(call.emails[0].subject).toBe('You have 3 policies to review across 2 organizations');
     expect(call.organizationId).toBe('org_1');
     expect(result).toMatchObject({
       success: true,
@@ -426,7 +482,7 @@ describe('policyAcknowledgmentDigest', () => {
 
   it('rolls up across orgs by email when the same person has multiple User records (schema allows duplicate emails)', async () => {
     // Regression: User.email is not @unique in the Prisma schema, so one
-    // person can end up with multiple user rows — typically when they get
+    // person can end up with multiple user rows - typically when they get
     // invited to separate orgs through different flows. Keying the rollup
     // on user.id split those duplicates into one email each. Rollup must
     // collapse by normalized email instead.
@@ -473,7 +529,7 @@ describe('policyAcknowledgmentDigest', () => {
             id: 'mem_2',
             department: 'hr',
             user: {
-              // Different user row, same email — Alice was re-invited under
+              // Different user row, same email - Alice was re-invited under
               // a separate user record.
               id: 'usr_alice_second',
               name: 'Alice',
@@ -492,9 +548,7 @@ describe('policyAcknowledgmentDigest', () => {
       emails: Array<{ to: string; subject: string }>;
       organizationId: string;
     };
-    expect(call.emails[0].subject).toBe(
-      'You have 2 policies to review across 2 organizations',
-    );
+    expect(call.emails[0].subject).toBe('You have 2 policies to review across 2 organizations');
     expect(call.organizationId).toBe('org_1');
     expect(result).toMatchObject({
       success: true,
@@ -558,11 +612,8 @@ describe('policyAcknowledgmentDigest', () => {
       },
     ]);
     // Alice is unsubscribed from policy notifications in org_1 only.
-    mockGetUnsubscribedEmails.mockImplementation(
-      async (_db, _emails, _pref, orgId) =>
-        orgId === 'org_1'
-          ? new Set<string>(['alice@example.com'])
-          : new Set<string>(),
+    mockGetUnsubscribedEmails.mockImplementation(async (_db, _emails, _pref, orgId) =>
+      orgId === 'org_1' ? new Set<string>(['alice@example.com']) : new Set<string>(),
     );
 
     const result = await taskUnderTest.run({ timestamp: new Date() } as never);
@@ -636,9 +687,7 @@ describe('policyAcknowledgmentDigest', () => {
         ],
       },
     ]);
-    mockGetUnsubscribedEmails.mockResolvedValue(
-      new Set<string>(['alice@example.com']),
-    );
+    mockGetUnsubscribedEmails.mockResolvedValue(new Set<string>(['alice@example.com']));
 
     const result = await taskUnderTest.run({ timestamp: new Date() } as never);
 
@@ -758,8 +807,6 @@ describe('policyAcknowledgmentDigest', () => {
     // DST transitions during the 90-day window.
     const expected = new Date();
     expected.setDate(expected.getDate() - 90);
-    expect(Math.abs((gte as Date).getTime() - expected.getTime())).toBeLessThan(
-      5_000,
-    );
+    expect(Math.abs((gte as Date).getTime() - expected.getTime())).toBeLessThan(5_000);
   });
 });

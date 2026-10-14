@@ -52,6 +52,10 @@ function metadata() {
   });
 }
 
+// Both renderers are CPU-bound; under a full parallel jest run the first DOCX
+// render (which loads the docx library) can exceed jest's 5 s default.
+const RENDER_TIMEOUT_MS = 30_000;
+
 describe('Monitoring document export', () => {
   const sections = buildExportSections({ type: 'monitoring', input: INPUT });
 
@@ -63,7 +67,7 @@ describe('Monitoring document export', () => {
     });
     expect(result.fileBuffer.length).toBeGreaterThan(0);
     expect(result.mimeType).toBe('application/pdf');
-  });
+  }, RENDER_TIMEOUT_MS);
 
   it('renders a non-empty DOCX', async () => {
     const result = await generateIsmsExportFile({
@@ -72,5 +76,5 @@ describe('Monitoring document export', () => {
       format: 'docx',
     });
     expect(result.fileBuffer.length).toBeGreaterThan(0);
-  });
+  }, RENDER_TIMEOUT_MS);
 });

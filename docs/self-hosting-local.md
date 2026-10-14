@@ -100,9 +100,41 @@ Why the session pooler: Supabase's direct connection is IPv6-only without the IP
 Session mode works for the apps, the Trigger workers, `prisma migrate deploy` and the seed.
 
 TLS: the pooler's certificate is signed by Supabase's own CA, which is not in Node's trust store.
-Download it (Database, SSL, "Download certificate"), save it as `packages/db/certs/prod-ca-2021.crt` (gitignored) and set `DATABASE_SSL_CA` to its absolute path.
+The CA is committed at `deploy/aws/certs/supabase-ca.crt`, and `scripts/local-env-init.sh` sets `DATABASE_SSL_CA` to its absolute path in every env file it writes (a local database ignores it).
+For env files written before that, set `DATABASE_SSL_CA` to the absolute path of `deploy/aws/certs/supabase-ca.crt` in each of them by hand.
 `resolveSslConfig` then verifies the chain and the hostname against Node's roots plus that CA; a wrong CA is rejected (`self signed certificate in certificate chain`).
 Do not use `PRISMA_ALLOW_INSECURE_TLS=1` for a shared database.
+Every Prisma client builds its connection through `buildPgAdapterOptions` (`packages/db/src/pg-adapter-options.ts`), which logs the TLS mode once at startup and never the URL.
+It applies the strict TLS rules to any non-local host under `NODE_ENV=production`, and to the production database (the project in `packages/db/src/production-target.json`) whatever `NODE_ENV` says, so a laptop on the shared database gets them too.
+Under those rules it refuses to start without `DATABASE_SSL_CA` (error code `ca_file_missing`; `PRISMA_ALLOW_INSECURE_TLS=1` is the only explicit opt-out) and refuses URL parameters that would replace the verified TLS, such as `ssl=false` or `sslmode=disable` (error code `ssl_param_conflict`; `sslmode=require`, `verify-ca` and `verify-full` are accepted).
+`DATABASE_POOL_MAX` (a whole number from 1 to 50) caps each process's pool; unset keeps the driver default.
+
+### Schema changes against the shared database
+
+Laptops and production share this database, so `prisma migrate dev`, `migrate reset`, `migrate deploy`, `migrate resolve`, `db push`, `db seed`, `db execute` and `studio` refuse to run when `DATABASE_URL`, or a `--url <value>` / `--url=<value>` flag overriding it, points at the production project recorded in `packages/db/src/production-target.json`.
+That file holds the SHA-256 of the project ref, never the ref itself (the fork is public); the guard hashes the ref a URL carries (the pooler user `postgres.<ref>` or the host `db.<ref>.supabase.co`) and compares, so another project on the same regional pooler is not refused.
+The check runs inside every `prisma.config.ts` (`packages/db`, `apps/app`, `apps/portal`, `apps/framework-editor`), so it applies to the package scripts and to `bunx prisma ...` alike; `bun run db:seed`, a direct `bun prisma/seed/seed.ts` and `bun run backfill:framework-versions` check too.
+`COMP_I_AM_TOUCHING_PROD=1` runs them anyway; use it only when you mean to change production by hand.
+
+The schema flow:
+
+1. Start the local Postgres (`bun docker:up` in `packages/db`), edit the schema, then run `bun run db:migrate:create --name <change>` in `packages/db`.
+   It runs `prisma migrate dev --create-only` against `postgresql://postgres:postgres@127.0.0.1:5432/comp_dev` (Prisma creates the database if it is missing), whatever `DATABASE_URL` your env files hold, and refuses any non-local `--url`.
+2. Review the generated SQL and commit the migration folder with the schema change.
+3. After review and merge, production applies it with `release.sh migrate --sha <commit>`; nothing else migrates the shared database.
+
+Until `release.sh migrate` exists, Kyle applies reviewed migrations to the shared database by hand, after review, from `packages/db`: `COMP_I_AM_TOUCHING_PROD=1 bunx prisma migrate deploy`.
+Nobody runs new code that needs a migration the shared database does not have yet: the API, app and portal query the new columns and fail with "column does not exist" until it is applied (for example `ApiKey.organizationOwned`, which API-key validation and member offboarding read).
+
+#### Release order: migrations first, then the image
+
+Every release applies its migrations to the shared database before any new API, app or portal image (or laptop build) runs against it.
+Migrations here are additive, so the running old images keep working on the migrated database; the reverse order breaks the new image.
+The API checks this at boot: it reads one API key with every column API-key validation selects, and when one is missing it refuses to start with `ApiKeySchemaOutOfDateError` ("The database is missing ApiKey.<column> ... Apply the pending migrations before deploying this image").
+On ECS the new task then never becomes healthy and the old one keeps serving; apply the migrations and redeploy the same image.
+An unreachable database at boot is only a warning, since it says nothing about the schema.
+Migrations `20261006063557` to `20261013130000` (the `ApiKey` columns `organizationOwned` and `legacyCreatorless`, and the API-key revocation triggers) are the current example: apply them before deploying an API image that contains them.
+The onboarding advice below to skip the migrate step holds only once every committed migration has been applied this way.
 
 Moving an existing local database to Supabase (done once, 2026-09-16):
 
@@ -117,13 +149,42 @@ bunx prisma migrate status   # "Database schema is up to date!"
 The dump carries `_prisma_migrations`, so no migration runs during the restore; Supabase already provides `pgcrypto` in its `extensions` schema, which is on the default `search_path`, so `generate_prefixed_cuid()` keeps working.
 Files are copied bucket by bucket with `aws s3 sync --endpoint-url` from MinIO to the Supabase S3 endpoint (there were none to copy at migration time).
 
-Onboarding a colleague: they clone the fork, run the one-time setup up to `./scripts/local-env-init.sh`, then replace the local values with the shared ones above (share them through a password manager, never in git), download the CA, set `DATABASE_SSL_CA`, and skip the migrate/seed step (the shared database is already migrated).
+Onboarding a colleague: they clone the fork, run the one-time setup up to `./scripts/local-env-init.sh`, then replace the local values with the shared ones above (share them through a password manager, never in git), keep the `DATABASE_SSL_CA` the script wrote, and skip the migrate/seed step (the shared database is already migrated, once Kyle has applied every committed migration as described under Schema changes against the shared database).
 Their Google OAuth client must list `http://localhost:3000` and `http://localhost:3333` too, or they use the same client.
 Every member of a Trigger.dev project has their own Development environment and dev key, so jobs a person starts (onboarding, policy regeneration) run on that person's own `trigger dev`; invite colleagues to the Trigger.dev organization and have each create their own dev keys for `comp-app` and `comp-api`.
-`ENCRYPTION_KEY` must be identical on every machine: it encrypts integration credentials stored in the shared database, so a colleague with a different key cannot read credentials someone else saved. Share `SECRET_KEY` too (it is also `AUTH_SECRET` in `apps/app` and `BETTER_AUTH_SECRET` in `apps/portal`) so auth behaves the same everywhere; `INTERNAL_API_TOKEN` and the `SERVICE_TOKEN_*` values only connect one person's own API and app and can stay per machine.
-Deploying the workers with `trigger deploy` removes that dependency on someone's laptop being up, but it does not work for this fork yet: the deploy build (`apps/api/customPrismaExtension.ts`) installs `@trycompai/db` from npm, which is upstream's package and lacks this fork's exports (`resolveSslConfig`, `buildManifestFromFramework`), so deployed tasks would fail at first database access.
-Making it work means vendoring `packages/db/dist` into the worker image (or publishing the fork's package), shipping the Supabase CA alongside the RDS bundle in `apps/api/caBundleExtension.ts`, and setting `DATABASE_SSL_CA` to its path inside the image.
-Until then, run `trigger dev` locally.
+Deploying the workers with `trigger deploy` removes that dependency on someone's laptop being up.
+The deploy build of both projects vendors this fork's `packages/db/dist` into the worker image (`customPrismaExtension.ts`, via `packages/db/scripts/vendor-db-for-trigger.ts`) instead of installing upstream's `@trycompai/db` from npm, so run `bun run build` in `packages/db` first; the build stops if `dist/index.js` is missing.
+`caBundleExtension.ts` copies the committed Supabase CA (`deploy/aws/certs/supabase-ca.crt`) to `/app/certs/supabase-ca.crt` and sets `DATABASE_SSL_CA` (and `NODE_EXTRA_CA_CERTS`) to that path for deployed tasks.
+Tasks reach application storage through `createAppStorageClient` (`src/trigger/lib/app-storage-client.ts`), which honours `APP_AWS_ENDPOINT` with path-style access.
+Until the hosted deployment exists, run `trigger dev` locally for the jobs you start yourself, and see "Local runs write production data" below for who runs the scheduled jobs.
+
+`ENCRYPTION_KEY` must be identical on every machine: it encrypts integration credentials stored in the shared database, so a colleague with a different key cannot read credentials someone else saved.
+`UNSUBSCRIBE_SECRET` must be identical on every machine and in production as well: it signs the unsubscribe links in emails and the one-click `List-Unsubscribe` header, and a link a laptop signed is opened on the production hosts and verified there.
+Share `SECRET_KEY` too (it is also `AUTH_SECRET` in `apps/app` and `BETTER_AUTH_SECRET` in `apps/portal`) so auth behaves the same everywhere; `INTERNAL_API_TOKEN` (API only, never set in `apps/app` or `apps/portal`), `COMP_FORWARDED_IP_TOKEN` (the same value in the API, app and portal) and the `SERVICE_TOKEN_*` values only connect one person's own API and app and can stay per machine.
+
+`scripts/local-env-init.sh` never generates `UNSUBSCRIBE_SECRET`: it writes a commented `# UNSUBSCRIBE_SECRET=FILL_ME_SHARED` line in `apps/api/.env` and `apps/app/.env`; replace it with the shared value from the password manager in both files.
+An env file written before 2026-10-06 holds a per-laptop generated value instead; replace that with the shared value too, or links that laptop sends fail verification in production with `Invalid token`.
+The API signs (email footers and the `List-Unsubscribe` header) and verifies (`POST /v1/email/unsubscribe`); the app verifies (`/unsubscribe/preferences`, `PUT /api/email-preferences`) and falls back to `AUTH_SECRET` when `UNSUBSCRIBE_SECRET` is unset, so a value set only in `apps/api` makes the app reject the API's links with `Invalid token`.
+Without the secret (and without `AUTH_SECRET`, which the API does not set), email is still sent, invitations, sign-in codes and notifications alike: the API leaves out the `List-Unsubscribe` header on every message, the notification templates leave out their unsubscribe link, and each process logs one warning naming `UNSUBSCRIBE_SECRET`.
+Recipients of notifications sent that way cannot unsubscribe from them, and the messages miss the one-click unsubscribe header that Gmail and Yahoo require of bulk senders.
+`POST /v1/email/unsubscribe` answers `503` with `unsubscribe_not_configured`, and the app's preferences page and `PUT /api/email-preferences` report unsubscribing as unavailable (`503`), instead of signing or checking anything with a public default.
+
+### Local runs write production data
+
+The shared database, Storage and Redis are the production state (decision D7 of the AWS hosting plan), not a copy.
+Anything a local app, API or `trigger dev` worker does (onboarding, policy edits, emails, integration syncs) changes real production data and can reach real people.
+
+Scheduled tasks (`schedules.task`) are therefore skipped by default outside the Trigger.dev `PRODUCTION` environment: a local `trigger dev` logs "Skipping scheduled run outside production" and returns without doing any work, so the daily and weekly jobs do not run twice against production.
+`COMP_RUN_SCHEDULES_IN_DEV=true` in a worker's env file (`apps/app/.env` and `apps/api/.env`) turns schedules back on for that laptop's `trigger dev` after a restart; it then writes to production like a deployed schedule does.
+
+Until the first release deploys the hosted Trigger.dev `prod` environment, nothing else runs the schedules (token refresh, integration checks, reminders, digests).
+During that period exactly one designated laptop runs `trigger dev` for both projects with `COMP_RUN_SCHEDULES_IN_DEV=true` in `apps/app/.env` and `apps/api/.env`, and keeps it running.
+Everyone else leaves `COMP_RUN_SCHEDULES_IN_DEV` unset, so their `trigger dev` never fires a schedule a second time.
+Once the hosted `prod` deployment exists, the designated laptop removes the variable too, and schedules run only in production.
+The guard lives in `apps/{api,app}/src/trigger/lib/schedule-guard.ts`, and a test fails if a new `schedules.task` does not call it.
+
+App tasks reach the app's cache revalidation route through `NEXT_PUBLIC_APP_URL` (`http://localhost:3000` locally); set it in `apps/app/.env`, or revalidation logs `RevalidateUrlNotConfiguredError` and pages refresh only on their next load.
+Server-side app and portal code calls the API at `BACKEND_API_URL` when it is set (the internal Service Connect address in AWS) and at `NEXT_PUBLIC_API_URL` otherwise, so locally leave `BACKEND_API_URL` unset.
 
 Tests keep their guard: `packages/db` database suites only run when `DATABASE_URL` names a database ending in `_test`, so `bun test` never touches the shared database; keep a local Postgres for `comp_test`.
 
@@ -131,6 +192,12 @@ Tests keep their guard: `packages/db` database suites only run when `DATABASE_UR
 
 `SELF_HOSTED=true` (api) and `NEXT_PUBLIC_SELF_HOSTED=true` (app) are already set.
 New organizations are auto-approved and the Stripe / booking flow is skipped.
+With `SELF_HOSTED=true` the API trusts only the origins in `AUTH_TRUSTED_ORIGINS` plus the api, app and portal origins behind `AUTH_COOKIE_DOMAIN`, never `*.trycomp.ai` or `*.trust.inc`; when `AUTH_TRUSTED_ORIGINS` is unset outside production it also keeps the `http://localhost` defaults.
+`AUTH_COOKIE_DOMAIN` (api, unset locally) is the shared session-cookie domain for a deployed install, for example `.comp.revola.ai`; the API refuses to start unless it starts with a dot, has at least three labels (or `AUTH_COOKIE_DOMAIN_ALLOW_BROAD=1`) and covers the hosts of `BASE_URL`, `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_PORTAL_URL`.
+`AUTH_ALLOWED_EMAIL_DOMAINS` (api, unset locally) is a comma-separated list such as `revola.ai`; when set, an account can only be created for those domains or for an address with a pending, unexpired invitation.
+OAuth sign-up (Google, Microsoft, GitHub) from any other address fails with `email_domain_not_allowed`.
+Magic-link and email-code requests never fail that way: every address gets the same success at the same time, existing users get their email, and a new address that may not sign up simply gets none, so the answer never reveals which addresses have an account.
+Those emails are sent in the background, so a delivery failure shows only in the API log (by error name and code), not in the response.
 
 ### Platform admin role
 

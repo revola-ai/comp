@@ -20,6 +20,18 @@ model ApiKey {
   createdByMemberId String?
   createdBy         Member? @relation("ApiKeyCreatedBy", fields: [createdByMemberId], references: [id], onDelete: SetNull)
 
+  // Organization-owned keys survive their creator's offboarding. Personal keys
+  // (the default) are revoked when the creator is removed or deactivated, and
+  // rejected at validation while the creator is inactive.
+  organizationOwned Boolean @default(false)
+
+  // True only for personal keys that had no recorded creator when this column
+  // was added (migration 20261013120000): keys from before creator attribution.
+  // Validation accepts a creatorless personal key only when this is set; any
+  // other creatorless personal key lost its creator and is refused. Nothing
+  // sets it after the backfill.
+  legacyCreatorless Boolean @default(false)
+
   @@index([organizationId])
   @@index([key])
   @@index([keyPrefix])

@@ -9,6 +9,8 @@ describe('BackgroundCheckIdentityClient idempotency key', () => {
       ...originalEnv,
       BACKGROUND_CHECK_API_KEY: 'bc_test',
       BACKGROUND_CHECK_API_BASE_URL: 'https://identity.test',
+      BACKGROUND_WH_ENDPOINT:
+        'https://api.comp.revola.ai/v1/background-checks/webhook',
     };
   });
 
@@ -20,7 +22,8 @@ describe('BackgroundCheckIdentityClient idempotency key', () => {
   function mockFetchOk() {
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true,
-      text: async () => JSON.stringify({ id: 'check_1', status: 'invited' }),
+      text: () =>
+        Promise.resolve(JSON.stringify({ id: 'check_1', status: 'invited' })),
     });
     global.fetch = fetchMock as unknown as typeof fetch;
     return fetchMock;
@@ -40,6 +43,20 @@ describe('BackgroundCheckIdentityClient idempotency key', () => {
     employeeEmail: 'ada@example.com',
     requesterEmail: 'admin@example.com',
   };
+
+  it('refuses, without calling Identity, when BACKGROUND_WH_ENDPOINT is unset', async () => {
+    // An upstream default would have Identity post results about Revola employees to
+    // upstream Comp's API.
+    delete process.env.BACKGROUND_WH_ENDPOINT;
+    const fetchMock = mockFetchOk();
+    await expect(
+      new BackgroundCheckIdentityClient().createBackgroundCheck({
+        ...params,
+        idempotencyKey: 'comp-background-check:bcr_1',
+      }),
+    ).rejects.toThrow('Background check service is not configured');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 
   it('forwards the provided idempotency key as the Idempotency-Key header', async () => {
     const fetchMock = mockFetchOk();

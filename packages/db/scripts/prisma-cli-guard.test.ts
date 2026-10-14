@@ -1,0 +1,178 @@
+import { describe, expect, it } from 'bun:test';
+import { classifyPrismaCommand, enforcePrismaCliGuard } from './prisma-cli-guard';
+import { hashProjectRef } from './production-target';
+
+const REF = 'abcdefghijklmnopqrst';
+const TARGET = {
+  projectRefSha256: hashProjectRef(REF),
+  poolerHost: 'aws-9-xx-test-1.pooler.supabase.com',
+};
+const PROD_URL = `postgresql://postgres.${REF}:pw@${TARGET.poolerHost}:5432/postgres`;
+const LOCAL_URL = 'postgresql://postgres:postgres@127.0.0.1:5432/comp';
+
+describe('classifyPrismaCommand', () => {
+  const table: Array<[string[], boolean, string]> = [
+    [['migrate', 'dev'], true, 'migrate dev'],
+    [['migrate', 'dev', '--create-only', '--name', 'add_widget'], true, 'migrate dev'],
+    [['migrate', 'reset', '--force'], true, 'migrate reset'],
+    [['db', 'push', '--skip-generate', '--accept-data-loss'], true, 'db push'],
+    [['db', 'seed'], true, 'db seed'],
+    [['--schema', 'prisma/schema', 'migrate', 'dev'], true, 'migrate dev'],
+    [['migrate', '--schema', 'prisma/schema', 'reset'], true, 'migrate reset'],
+    [['generate'], false, 'generate'],
+    [['generate', '--schema=prisma/schema'], false, 'generate'],
+    [['migrate', 'deploy'], true, 'migrate deploy'],
+    [['migrate', 'resolve', '--applied', '20261005000000_x'], true, 'migrate resolve'],
+    [['db', 'execute', '--file', 'x.sql'], true, 'db execute'],
+    [['migrate', 'status'], false, 'migrate status'],
+    [['migrate', 'diff', '--from-empty', '--to-schema', 'dev'], false, 'migrate diff'],
+    [['studio'], true, 'studio'],
+    [['studio', '--port', '5555', '--browser', 'none'], true, 'studio'],
+    [['--schema', 'prisma/schema', 'studio'], true, 'studio'],
+    [['studio', '--help'], false, 'studio'],
+    [['db', 'pull', '--url', 'postgresql://x'], false, 'db pull'],
+    [['db', 'pull'], false, 'db pull'],
+    [['validate'], false, 'validate'],
+    [['migrate', 'dev', '--help'], false, 'migrate dev'],
+    [['db', 'push', '-h'], false, 'db push'],
+    [[], false, ''],
+  ];
+  for (const [args, guarded, command] of table) {
+    it(`${guarded ? 'guards' : 'allows'} \`prisma ${args.join(' ')}\``, () => {
+      expect(classifyPrismaCommand(args)).toEqual({ guarded, command });
+    });
+  }
+});
+
+type Outcome = { exitCode: number | undefined; errors: string[] };
+
+function run({ args, env }: { args: string[]; env: Record<string, string | undefined> }): Outcome {
+  const outcome: Outcome = { exitCode: undefined, errors: [] };
+  enforcePrismaCliGuard({
+    argv: ['/usr/bin/node', '/repo/node_modules/prisma/build/index.js', ...args],
+    env,
+    target: TARGET,
+    exit: (code) => {
+      outcome.exitCode = code;
+    },
+    printError: (line) => outcome.errors.push(line),
+  });
+  return outcome;
+}
+
+describe('enforcePrismaCliGuard', () => {
+  for (const args of [
+    ['migrate', 'dev'],
+    ['migrate', 'reset'],
+    ['db', 'push'],
+    ['db', 'seed'],
+    ['migrate', 'deploy'],
+    ['migrate', 'resolve', '--rolled-back', '20261005000000_x'],
+    ['db', 'execute', '--stdin'],
+    ['studio'],
+  ]) {
+    it(`refuses \`prisma ${args.join(' ')}\` against the production target and exits 1`, () => {
+      const outcome = run({ args, env: { DATABASE_URL: PROD_URL } });
+      expect(outcome.exitCode).toBe(1);
+      const message = outcome.errors.join('\n');
+      expect(message).toContain(`prisma ${args.slice(0, 2).join(' ')}`.trim());
+      expect(message).not.toContain(REF);
+      expect(message).toContain('COMP_I_AM_TOUCHING_PROD=1');
+      expect(message).not.toContain(TARGET.poolerHost);
+      expect(message).not.toContain(':pw@');
+    });
+  }
+
+  it('lets a guarded command through with COMP_I_AM_TOUCHING_PROD=1 and says so once', () => {
+    const outcome = run({
+      args: ['migrate', 'dev'],
+      env: { DATABASE_URL: PROD_URL, COMP_I_AM_TOUCHING_PROD: '1' },
+    });
+    expect(outcome.exitCode).toBeUndefined();
+    expect(outcome.errors).toHaveLength(1);
+    expect(outcome.errors[0]).toContain('COMP_I_AM_TOUCHING_PROD=1');
+  });
+
+  it('lets a guarded command through silently for a local host', () => {
+    const outcome = run({
+      args: ['migrate', 'reset', '--force'],
+      env: { DATABASE_URL: LOCAL_URL },
+    });
+    expect(outcome).toEqual({ exitCode: undefined, errors: [] });
+  });
+
+  it('lets allowed commands through against production', () => {
+    for (const args of [
+      ['generate'],
+      ['migrate', 'status'],
+      ['migrate', 'diff', '--from-migrations', 'prisma/migrations', '--to-schema', 'prisma/schema'],
+    ]) {
+      expect(run({ args, env: { DATABASE_URL: PROD_URL } })).toEqual({
+        exitCode: undefined,
+        errors: [],
+      });
+    }
+  });
+
+  it('refuses a guarded command when DATABASE_URL is missing', () => {
+    expect(run({ args: ['db', 'push'], env: {} }).exitCode).toBe(1);
+  });
+});
+
+describe('enforcePrismaCliGuard with --url', () => {
+  for (const spelling of [(url: string) => ['--url', url], (url: string) => [`--url=${url}`]]) {
+    const flag = spelling('<url>').join(' ');
+    for (const command of [['db', 'push'], ['migrate', 'dev'], ['studio']]) {
+      it(`refuses \`prisma ${command.join(' ')} ${flag}\` naming production over a local DATABASE_URL`, () => {
+        const outcome = run({
+          args: [...command, ...spelling(PROD_URL)],
+          env: { DATABASE_URL: LOCAL_URL },
+        });
+        expect(outcome.exitCode).toBe(1);
+        const message = outcome.errors.join('\n');
+        expect(message).toContain('--url');
+        expect(message).toContain('COMP_I_AM_TOUCHING_PROD=1');
+        expect(message).not.toContain(REF);
+        expect(message).not.toContain(':pw@');
+      });
+    }
+
+    it(`lets \`${flag}\` naming production through with COMP_I_AM_TOUCHING_PROD=1`, () => {
+      const outcome = run({
+        args: ['db', 'push', ...spelling(PROD_URL)],
+        env: { DATABASE_URL: LOCAL_URL, COMP_I_AM_TOUCHING_PROD: '1' },
+      });
+      expect(outcome.exitCode).toBeUndefined();
+      expect(outcome.errors).toHaveLength(1);
+      expect(outcome.errors[0]).toContain('COMP_I_AM_TOUCHING_PROD=1');
+    });
+
+    it(`lets \`${flag}\` naming a local database through silently`, () => {
+      expect(
+        run({ args: ['db', 'push', ...spelling(LOCAL_URL)], env: { DATABASE_URL: LOCAL_URL } }),
+      ).toEqual({ exitCode: undefined, errors: [] });
+    });
+
+    it(`refuses \`${flag}\` it cannot verify`, () => {
+      const outcome = run({
+        args: ['migrate', 'dev', ...spelling('not a url')],
+        env: { DATABASE_URL: LOCAL_URL },
+      });
+      expect(outcome.exitCode).toBe(1);
+    });
+  }
+
+  it('still refuses a production DATABASE_URL when --url names a local database', () => {
+    const outcome = run({
+      args: ['db', 'push', '--url', LOCAL_URL],
+      env: { DATABASE_URL: PROD_URL },
+    });
+    expect(outcome.exitCode).toBe(1);
+  });
+
+  it('allows unguarded commands with a production --url', () => {
+    expect(
+      run({ args: ['db', 'pull', '--url', PROD_URL], env: { DATABASE_URL: LOCAL_URL } }),
+    ).toEqual({ exitCode: undefined, errors: [] });
+  });
+});

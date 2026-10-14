@@ -1,3 +1,4 @@
+import { encodePathSegment } from '@/lib/api-path';
 import { serverApi } from '@/lib/api-server';
 import { PageLayout } from '@trycompai/design-system';
 import type { Metadata } from 'next';
@@ -21,7 +22,7 @@ export default async function RiskPage({ searchParams, params }: PageProps) {
   const { taskItemId } = await searchParams;
 
   const [riskResult, peopleResult] = await Promise.all([
-    serverApi.get<any>(`/v1/risks/${riskId}`),
+    serverApi.get<any>(`/v1/risks/${encodePathSegment(riskId)}`),
     serverApi.get<any>('/v1/people'),
   ]);
 

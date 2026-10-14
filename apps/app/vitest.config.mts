@@ -3,6 +3,11 @@ import { resolve } from 'path';
 import tsconfigPaths from 'vite-tsconfig-paths';
 import { defineConfig } from 'vitest/config';
 
+// One timezone on every machine: date-formatting tests (e.g. MetricsSection's "not UTC"
+// schedule label) otherwise pass on a laptop and fail on a UTC CI runner. Set before the
+// workers start, which inherit it.
+process.env.TZ = 'America/Los_Angeles';
+
 export default defineConfig({
   plugins: [tsconfigPaths(), react()],
   test: {

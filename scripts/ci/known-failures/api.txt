@@ -1,0 +1,66 @@
+# Known failing tests in apps/api (jest), checked in CI by scripts/ci/known-failures.ts.
+#
+# These tests already failed on revola/self-host because of upstream test drift.
+# CI passes only when exactly these fail.
+# A new failure, an entry that now passes, or an entry that no longer runs (renamed,
+# deleted or skipped) each fail the job.
+#
+# Format: one id per line, `<file relative to apps/api> > <describe> > ... > <test title>`.
+# `flaky: <id>` marks a test that passes alone but fails in some full runs (state leaking
+# between files in one jest worker); it may pass or fail, but must still run. Fix and delete it.
+# A bare file path means the file failed outside any test (it did not load, or a hook threw).
+# A whole-file entry hides every test in that file: none of them runs, so a regression there
+# cannot fail CI until the file loads again. Why each whole-file entry below fails to load
+# (fix the spec's mock or import, then delete its line):
+#   admin-context.controller.spec.ts: AuditLogEntityType undefined (@db mock lacks Prisma enums)
+#   admin-evidence.controller.spec.ts: ESM better-auth/plugins/access via @trycompai/auth
+#   admin-findings.controller.spec.ts: ESM better-auth/plugins/access via @trycompai/auth
+#   admin-policies.controller.spec.ts: ESM better-auth/plugins/access via @trycompai/auth
+#   admin-tasks.controller.spec.ts: ESM better-auth/plugins/access via @trycompai/auth
+#   admin-vendors.controller.spec.ts: AuditLogEntityType undefined (@db mock lacks Prisma enums)
+#   frameworks.controller.spec.ts: BackgroundCheckStatus undefined (@db mock lacks Prisma enums)
+#
+# This list only shrinks: when you fix a test, delete its line.
+# Never add a line for a new failure; fix the test instead.
+# To check locally:
+#   cd apps/api && npx jest --ci --json --outputFile=/tmp/api-report.json
+#   bun ../../scripts/ci/known-failures.ts --report /tmp/api-report.json \
+#     --list ../../scripts/ci/known-failures/api.txt
+
+src/admin-organizations/admin-audit-log-context.spec.ts > AdminAuditLogInterceptor context parsing > keeps context entity ids instead of treating them as org-level actions
+src/admin-organizations/admin-context.controller.spec.ts
+src/admin-organizations/admin-evidence.controller.spec.ts
+src/admin-organizations/admin-findings.controller.spec.ts
+src/admin-organizations/admin-policies.controller.spec.ts
+src/admin-organizations/admin-tasks.controller.spec.ts
+src/admin-organizations/admin-vendors.controller.spec.ts
+src/billing/billing-entitlements.service.spec.ts > BillingEntitlementsService > consumes the active subscription for a product family
+src/billing/billing-entitlements.service.spec.ts > BillingEntitlementsService > returns exhausted instead of throwing when allowance is concurrently exhausted
+src/billing/billing-entitlements.service.spec.ts > BillingEntitlementsService > treats product consumption retries as consumed before credit fallback
+src/cloud-security/remediation.controller.spec.ts > RemediationController > rollback > should call service with actionId and organizationId
+src/controls/controls.controller.spec.ts > ControlsController > findOne > should call service.findOne with id and organizationId
+src/controls/sync-custom-framework-links.spec.ts > syncDirectLinksToCustomFrameworks > should create framework-scoped links for all custom FIs
+src/controls/sync-custom-framework-links.spec.ts > syncDirectLinksToCustomFrameworks > should do nothing when control is not mapped to any custom framework
+src/controls/sync-custom-framework-links.spec.ts > syncDirectLinksToCustomFrameworks > should skip empty direct relationships
+src/controls/sync-custom-framework-links.spec.ts > syncDirectLinksToCustomFrameworks > should skip entirely when org has no custom frameworks
+src/frameworks/frameworks-scores.helper.spec.ts > frameworks-scores.helper > requires installed device for people completion when device agent step is enabled
+src/frameworks/frameworks-timeline.helper.spec.ts > frameworks-timeline.helper > auto-completes AUTO_FINDINGS phase only when all findings for that framework type are closed
+src/frameworks/frameworks-timeline.helper.spec.ts > frameworks-timeline.helper > does not auto-complete AUTO_FINDINGS phase when no findings exist for that framework type
+src/frameworks/frameworks-timeline.helper.spec.ts > frameworks-timeline.helper > maps SOC 2 v.1 AUTO_FINDINGS phases to SOC 2 finding type
+src/frameworks/frameworks.controller.spec.ts
+src/frameworks/frameworks.service.spec.ts > FrameworksService > custom-framework isolation > findOne on a platform FI merges per-instance custom requirements with platform requirements
+src/integration-platform/controllers/sync-gws.controller.spec.ts > SyncController - Google Workspace employees > deactivation of suspended/deleted users > should deactivate members who are suspended in Google Workspace
+src/integration-platform/controllers/task-integrations.controller.spec.ts > TaskIntegrationsController > runCheckForTask (all accounts) > does NOT fail the task when the only finding is excepted (goes done)
+src/integration-platform/controllers/task-integrations.controller.spec.ts > TaskIntegrationsController > runCheckForTask (all accounts) > goes done when the only finding is excepted and there are NO passing results
+src/integration-platform/controllers/task-integrations.controller.spec.ts > TaskIntegrationsController > runCheckForTask (all accounts) > still fails the task for a dynamic integration on a REAL finding
+src/integration-platform/repositories/check-run.repository.spec.ts > CheckRunRepository.findLatestResultsByConnectionAndCheck > loads the FULL result set for the latest run — no take cap — filtered by resourceType
+src/integration-platform/repositories/check-run.repository.spec.ts > CheckRunRepository.findLatestResultsByConnectionAndCheck > omits the resourceType filter when not provided (loads all rows)
+src/offboarding-checklist/offboarding-export.service.spec.ts > OffboardingExportService > creates a zip with summary CSV and vendor revocations CSV
+src/offboarding-checklist/offboarding-export.service.spec.ts > OffboardingExportService > includes checklist item evidence in numbered folders
+src/offboarding-checklist/offboarding-export.service.spec.ts > OffboardingExportService > includes vendor evidence files from S3
+src/offboarding-checklist/offboarding-export.service.spec.ts > OffboardingExportService > skips evidence files that fail to download
+src/openapi-docs.spec.ts > OpenAPI document > public metadata > curates high-value API pages with operation-specific SEO copy
+flaky: src/security-penetration-tests/security-penetration-tests.billing.spec.ts > SecurityPenetrationTestsService billing usage > persists the subscription usage source on subscription-backed runs
+src/tasks/tasks.controller.spec.ts > TasksController > updateTasksStatus > should call tasksService.updateTasksStatus with correct params
+src/tasks/tasks.controller.spec.ts > TasksController > updateTasksStatus > should parse reviewDate when provided
+src/tasks/tasks.controller.spec.ts > TasksController > updateTasksStatus > should use getApiKeyActorUserId for API key auth

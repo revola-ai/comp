@@ -3,6 +3,9 @@
 /node_modules
 /build
 src/**/*.js
+# Compiled copies of prisma/*.ts shadow the sources in jest's module resolution.
+prisma/*.js
+prisma/*.js.map
 *.Extension.js
 customPrismaExtension.js
 emailExtension.js

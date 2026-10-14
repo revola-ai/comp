@@ -8,15 +8,13 @@
  * For browser-side auth (login, logout, hooks), use auth-client.ts instead.
  */
 
+import { getServerApiBaseUrl } from '@/lib/server-api-base-url';
 import type { ReadonlyHeaders } from 'next/dist/server/web/spec-extension/adapters/headers';
+import { buildAuthForwardHeaders } from './auth-forward-headers';
 import { ac, allRoles } from './permissions';
 
 // Re-export permissions for convenience
 export { ac, allRoles };
-
-// Must point to the API server for server-to-server auth calls.
-const API_URL =
-  process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
 
 const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
 
@@ -109,23 +107,10 @@ export interface FullSession extends Session {
 }
 
 /**
- * Convert Headers to a plain object for fetch
+ * Convert the incoming request headers to the set forwarded to the API.
  */
 function headersToObject(headers: ReadonlyHeaders | Headers): Record<string, string> {
-  const obj: Record<string, string> = {};
-  headers.forEach((value, key) => {
-    const k = key.toLowerCase();
-    // Forward cookies, origin (required by better-auth CSRF), and custom headers
-    if (k === 'cookie' || k === 'origin' || k.startsWith('x-')) {
-      obj[key] = value;
-    }
-  });
-  // Ensure Origin is always present — server actions may not have one.
-  // better-auth requires it for CSRF protection on POST requests.
-  if (!obj.origin && !obj.Origin) {
-    obj.origin = API_URL;
-  }
-  return obj;
+  return buildAuthForwardHeaders({ incoming: headers });
 }
 
 /**
@@ -136,7 +121,7 @@ function headersToObject(headers: ReadonlyHeaders | Headers): Record<string, str
  */
 async function getSession(options: { headers: ReadonlyHeaders | Headers }): Promise<Session | null> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/get-session`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/get-session`, {
       method: 'GET',
       headers: {
         ...headersToObject(options.headers),
@@ -169,7 +154,7 @@ async function getFullSession(options: {
   headers: ReadonlyHeaders | Headers;
 }): Promise<FullSession | null> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/get-full-session`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/get-full-session`, {
       method: 'GET',
       headers: {
         ...headersToObject(options.headers),
@@ -202,7 +187,7 @@ async function getActiveMember(options: {
   headers: ReadonlyHeaders | Headers;
 }): Promise<Member | null> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/organization/get-active-member`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/organization/get-active-member`, {
       method: 'GET',
       headers: {
         ...headersToObject(options.headers),
@@ -239,7 +224,7 @@ async function hasPermission(options: {
   };
 }): Promise<{ success: boolean; error?: string }> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/organization/has-permission`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/organization/has-permission`, {
       method: 'POST',
       headers: {
         ...headersToObject(options.headers),
@@ -273,7 +258,7 @@ async function listOrganizations(options: {
   headers: ReadonlyHeaders | Headers;
 }): Promise<Organization[]> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/organization/list`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/organization/list`, {
       method: 'GET',
       headers: {
         ...headersToObject(options.headers),
@@ -315,7 +300,7 @@ async function setActiveOrganization(options: {
   asResponse?: boolean;
 }): Promise<Response | Session | null> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/organization/set-active`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/organization/set-active`, {
       method: 'POST',
       headers: {
         ...headersToObject(options.headers),
@@ -364,7 +349,7 @@ async function getFullOrganization(options: {
   headers: ReadonlyHeaders | Headers;
 }): Promise<FullOrganization | null> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/organization/get-full-organization`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/organization/get-full-organization`, {
       method: 'GET',
       headers: {
         ...headersToObject(options.headers),
@@ -403,7 +388,7 @@ async function createInvitation(options: {
   };
 }): Promise<Invitation | null> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/organization/invite-member`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/organization/invite-member`, {
       method: 'POST',
       headers: {
         ...headersToObject(options.headers),
@@ -444,7 +429,7 @@ async function addMember(options: {
   };
 }): Promise<Member | null> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/organization/add-member`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/organization/add-member`, {
       method: 'POST',
       headers: {
         ...headersToObject(options.headers),
@@ -489,7 +474,7 @@ async function signUpEmail(options: {
   asResponse?: boolean;
 }): Promise<Response | Session | null> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/sign-up/email`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/sign-up/email`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -539,7 +524,7 @@ async function signInEmail(options: {
   asResponse?: boolean;
 }): Promise<Response | Session | null> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/sign-in/email`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/api/auth/sign-in/email`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

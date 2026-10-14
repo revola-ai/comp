@@ -1,12 +1,14 @@
 import { db } from '@db/server';
 import { logger, schedules } from '@trigger.dev/sdk';
+import { isScheduledRunAllowed } from '../../lib/schedule-guard';
 import { sendIntegrationResults } from './integration-results';
 
 export const sendIntegrationSchedule = schedules.task({
   id: 'integration-schedule',
   cron: '0 5 * * *', // 12:00 AM EST (5:00 AM UTC)
   maxDuration: 1000 * 60 * 10, // 10 minutes
-  run: async () => {
+  run: async (_payload, { ctx }) => {
+    if (!isScheduledRunAllowed({ ctx })) return { skipped: true as const };
     const integrations = await db.integration.findMany({
       select: {
         id: true,
