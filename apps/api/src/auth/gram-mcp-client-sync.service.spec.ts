@@ -32,6 +32,13 @@ const GRAM = {
   GRAM_OAUTH_CLIENT_SECRET: 'gram-secret-value',
   GRAM_OAUTH_REDIRECT_URI: 'https://gram.example/oauth/callback',
 };
+// The deployed API (production-deployment.ts). Laptops share its database
+// (D7), so only it may write Gram's row.
+const DEPLOYED = {
+  NODE_ENV: 'production',
+  SELF_HOSTED: 'true',
+  AUTH_COOKIE_DOMAIN: '.comp.revola.ai',
+};
 
 // At boot the API writes Gram's oauthApplication row from GRAM_OAUTH_*
 // through better-auth's adapter (end to end: gram-mcp-oauth-flow.spec.ts).
@@ -41,7 +48,7 @@ describe('GramMcpClientSync', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    Object.assign(process.env, GRAM);
+    Object.assign(process.env, GRAM, DEPLOYED);
     logged = [];
     for (const level of ['log', 'error', 'warn'] as const) {
       jest
@@ -53,7 +60,7 @@ describe('GramMcpClientSync', () => {
   });
 
   afterEach(() => {
-    process.env = savedEnv;
+    process.env = { ...savedEnv };
     jest.restoreAllMocks();
   });
 
@@ -85,6 +92,22 @@ describe('GramMcpClientSync', () => {
     expect(mockContextRead).not.toHaveBeenCalled();
     expect(logged).toEqual([]);
   });
+
+  it.each([
+    ['a laptop', { NODE_ENV: 'development', AUTH_COOKIE_DOMAIN: '' }],
+    ['the production image run locally', { AUTH_COOKIE_DOMAIN: '' }],
+  ])(
+    'skips the sync on %s, saying so, without touching better-auth',
+    async (_name, env) => {
+      Object.assign(process.env, env);
+      await new GramMcpClientSync().onApplicationBootstrap();
+      expect(mockContextRead).not.toHaveBeenCalled();
+      expect(mockAdapter.findOne).not.toHaveBeenCalled();
+      expect(logged).toEqual([
+        'Skipped the Gram MCP OAuth client sync: only the production deployment (NODE_ENV=production, SELF_HOSTED=true, AUTH_COOKIE_DOMAIN set) writes its row',
+      ]);
+    },
+  );
 
   it('logs a failure by name and code only, and lets the API boot', async () => {
     mockAdapter.findOne.mockRejectedValue(
