@@ -14,7 +14,7 @@ class FakeSocket extends EventEmitter {
 
 describe('closeGracefully', () => {
   it('waits for the socket to close even when client.end() resolves first', async () => {
-    // Some runtimes (Bun 1.3.4 on Linux) resolve pg's end() before the socket's close.
+    // A client whose end() resolves before its socket has closed.
     const socket = new FakeSocket();
     let settled = false;
     const closing = closeGracefully({

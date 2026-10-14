@@ -76,8 +76,7 @@ function socketClosed(socket: ClosableSocket): Promise<void> {
  * Sends Terminate and resolves once the connection's TCP socket has closed; a
  * server that has not closed it after CLOSE_GRACE_MS has the socket destroyed
  * instead, which also emits close, so it always settles. It waits for the
- * socket itself because `client.end()` may resolve before the socket closes
- * (Bun 1.3.4 on Linux does), which would leave the connection open.
+ * socket itself rather than trusting `client.end()` alone to mean closed.
  */
 export async function closeGracefully({
   client,

@@ -1,5 +1,5 @@
 // A GitHub Actions workflow's triggers, whichever way the YAML parser keys them. YAML 1.1
-// parsers (Bun 1.3.4's Bun.YAML, which CI runs) read the bare key `on` as the boolean true,
+// parsers (Bun 1.3.4's Bun.YAML, for one) read the bare key `on` as the boolean true,
 // so the triggers land under "true"; YAML 1.2 parsers keep "on".
 
 export type Triggers = Record<string, { inputs?: Record<string, { required?: boolean }> } | null>;
