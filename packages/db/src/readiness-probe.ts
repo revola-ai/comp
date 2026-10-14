@@ -58,22 +58,39 @@ function asProbeError(error: unknown): unknown {
 // After a successful probe, a server that does not close on Terminate gets this long.
 export const CLOSE_GRACE_MS = 1000;
 
+/** The part of a socket closeGracefully watches. */
+type ClosableSocket = {
+  readonly destroyed: boolean;
+  once: (event: 'close', listener: () => void) => unknown;
+};
+
+/** Resolves once the socket has closed (at once when it already has). */
+function socketClosed(socket: ClosableSocket): Promise<void> {
+  if (socket.destroyed) return Promise.resolve();
+  return new Promise((resolve) => {
+    socket.once('close', () => resolve());
+  });
+}
+
 /**
- * Sends Terminate and resolves once the connection's socket has closed; a server
- * that has not closed it after CLOSE_GRACE_MS has the socket destroyed instead.
- * `client.end()` resolves on the socket's close event, which a destroy also
- * emits, so it always settles.
+ * Sends Terminate and resolves once the connection's TCP socket has closed; a
+ * server that has not closed it after CLOSE_GRACE_MS has the socket destroyed
+ * instead, which also emits close, so it always settles. It waits for the
+ * socket itself because `client.end()` may resolve before the socket closes
+ * (Bun 1.3.4 on Linux does), which would leave the connection open.
  */
-async function closeGracefully({
+export async function closeGracefully({
   client,
+  socket,
   destroy,
 }: {
-  client: Client;
+  client: Pick<Client, 'end'>;
+  socket: ClosableSocket;
   destroy: () => void;
 }): Promise<void> {
   const force = setTimeout(destroy, CLOSE_GRACE_MS);
   try {
-    await client.end();
+    await Promise.all([client.end(), socketClosed(socket)]);
   } finally {
     clearTimeout(force);
   }
@@ -132,7 +149,7 @@ export async function probeDatabase({
   } finally {
     clearTimeout(timer);
   }
-  await closeGracefully({ client, destroy });
+  await closeGracefully({ client, socket, destroy });
 }
 
 /**
