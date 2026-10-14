@@ -30,6 +30,9 @@ jobs:
         include:
           # api, app and portal write a JSON report that is checked against a committed list of
           # known failures (scripts/ci/known-failures/*.txt) instead of trusting the exit code.
+          # Vitest's JSON report omits errors thrown outside any test, so app and portal also
+          # write a run-errors summary (scripts/ci/vitest-run-errors-reporter.ts) that fails
+          # the check on any unhandled error or an interrupted run.
           # The whole jest suite, src/auth, src/throttle and src/health included.
           - suite: api (jest)
             directory: apps/api
@@ -38,15 +41,21 @@ jobs:
           - suite: app (vitest)
             directory: apps/app
             command: >-
+              VITEST_RUN_ERRORS_FILE="$RUNNER_TEMP/run-errors.json"
               npx vitest run --reporter=default --reporter=json
               --outputFile.json="$RUNNER_TEMP/test-report.json"
+              --reporter=../../scripts/ci/vitest-run-errors-reporter.ts
             known_failures: scripts/ci/known-failures/app.txt
+            check_args: --run-errors "$RUNNER_TEMP/run-errors.json"
           - suite: portal (vitest)
             directory: apps/portal
             command: >-
+              VITEST_RUN_ERRORS_FILE="$RUNNER_TEMP/run-errors.json"
               npx vitest run --reporter=default --reporter=json
               --outputFile.json="$RUNNER_TEMP/test-report.json"
+              --reporter=../../scripts/ci/vitest-run-errors-reporter.ts
             known_failures: scripts/ci/known-failures/portal.txt
+            check_args: --run-errors "$RUNNER_TEMP/run-errors.json"
           # The known-failures checker the three suites above depend on.
           - suite: ci scripts (bun test)
             directory: .
@@ -83,7 +92,8 @@ jobs:
           || echo "::notice::${{ matrix.suite }} exited with $?; judged by the known-failures check"
 
       # Fails on a new failure, on a listed test that now passes (delete its line), and on a
-      # listed test that no longer runs. A missing report (the runner crashed) fails too.
+      # listed test that no longer runs. A missing report (the runner crashed) fails too, and
+      # for vitest so do an unhandled error, an interrupted run or a missing run-errors file.
       - name: Check ${{ matrix.suite }} against known failures
         if: ${{ matrix.known_failures }}
         working-directory: ${{ matrix.directory }}
@@ -91,3 +101,4 @@ jobs:
           bun "$GITHUB_WORKSPACE/scripts/ci/known-failures.ts"
           --report "$RUNNER_TEMP/test-report.json"
           --list "$GITHUB_WORKSPACE/${{ matrix.known_failures }}"
+          ${{ matrix.check_args }}

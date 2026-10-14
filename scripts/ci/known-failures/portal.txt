@@ -5,7 +5,12 @@
 #
 # Format: one id per line, `<file relative to apps/portal> > <describe> > ... > <test title>`.
 # To check locally:
-#   cd apps/portal && npx vitest run --reporter=default --reporter=json \
-#     --outputFile.json=/tmp/portal-report.json
+#   cd apps/portal && VITEST_RUN_ERRORS_FILE=/tmp/portal-run-errors.json \
+#     npx vitest run --reporter=default --reporter=json \
+#     --outputFile.json=/tmp/portal-report.json \
+#     --reporter=../../scripts/ci/vitest-run-errors-reporter.ts
 #   bun ../../scripts/ci/known-failures.ts --report /tmp/portal-report.json \
-#     --list ../../scripts/ci/known-failures/portal.txt
+#     --list ../../scripts/ci/known-failures/portal.txt \
+#     --run-errors /tmp/portal-run-errors.json
+# The run-errors file also fails the check on an error thrown outside any test, which
+# vitest's JSON report leaves out.

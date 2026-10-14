@@ -11,10 +11,15 @@
 # This list only shrinks: when you fix a test, delete its line.
 # Never add a line for a new failure; fix the test instead.
 # To check locally:
-#   cd apps/app && npx vitest run --reporter=default --reporter=json \
-#     --outputFile.json=/tmp/app-report.json
+#   cd apps/app && VITEST_RUN_ERRORS_FILE=/tmp/app-run-errors.json \
+#     npx vitest run --reporter=default --reporter=json \
+#     --outputFile.json=/tmp/app-report.json \
+#     --reporter=../../scripts/ci/vitest-run-errors-reporter.ts
 #   bun ../../scripts/ci/known-failures.ts --report /tmp/app-report.json \
-#     --list ../../scripts/ci/known-failures/app.txt
+#     --list ../../scripts/ci/known-failures/app.txt \
+#     --run-errors /tmp/app-run-errors.json
+# The run-errors file also fails the check on an error thrown outside any test, which
+# vitest's JSON report leaves out.
 
 src/app/(app)/[orgId]/admin/organizations/[adminOrgId]/components/PoliciesTab.test.tsx > PoliciesTab > shows Regenerate button for each policy
 src/app/(app)/[orgId]/admin/organizations/[adminOrgId]/components/PoliciesTab.test.tsx > PoliciesTab > triggers regeneration when Regenerate is clicked

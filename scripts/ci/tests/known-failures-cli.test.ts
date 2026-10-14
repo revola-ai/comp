@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const script = join(import.meta.dir, '..', 'known-failures.ts');
-const jestReport = join(import.meta.dir, 'fixtures', 'jest-report.json');
+const fixture = (name: string) => join(import.meta.dir, 'fixtures', name);
+const jestReport = fixture('jest-report.json');
 
 let workDir = '';
 
@@ -16,11 +17,30 @@ afterAll(() => {
   rmSync(workDir, { recursive: true, force: true });
 });
 
-function runCli({ list, report = jestReport }: { list: string; report?: string }) {
+function runCli({
+  list,
+  report = jestReport,
+  runErrors,
+}: {
+  list: string;
+  report?: string;
+  runErrors?: string;
+}) {
   const listPath = join(workDir, 'list.txt');
   writeFileSync(listPath, list);
+  const runErrorsArgs = runErrors === undefined ? [] : ['--run-errors', runErrors];
   const result = Bun.spawnSync({
-    cmd: ['bun', script, '--report', report, '--list', listPath, '--root', '/repo/apps/api'],
+    cmd: [
+      'bun',
+      script,
+      '--report',
+      report,
+      '--list',
+      listPath,
+      '--root',
+      '/repo/apps/api',
+      ...runErrorsArgs,
+    ],
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -80,5 +100,44 @@ describe('known-failures CLI', () => {
     writeFileSync(badReport, '{ not json');
     const { exitCode } = runCli({ list: knownApiFailures, report: badReport });
     expect(exitCode).toBe(2);
+  });
+
+  // --run-errors: the vitest run-errors reporter's summary
+  // (vitest-run-errors-reporter.ts). Vitest's JSON report drops errors thrown
+  // outside any test, so this file is the only place they show.
+  test('exits 0 with --run-errors when the run had no unhandled errors', () => {
+    const { exitCode, output } = runCli({
+      list: knownApiFailures,
+      runErrors: fixture('run-errors-clean.json'),
+    });
+    expect(output).toContain('No unhandled errors');
+    expect(exitCode).toBe(0);
+  });
+
+  test('exits 1 with --run-errors on an unhandled error, even if the tests match', () => {
+    const { exitCode, output } = runCli({
+      list: knownApiFailures,
+      runErrors: fixture('run-errors-unhandled.json'),
+    });
+    expect(exitCode).toBe(1);
+    expect(output).toContain("TypeError: Cannot read properties of undefined (reading 'id')");
+  });
+
+  test('exits 1 with --run-errors when the run was interrupted', () => {
+    const { exitCode, output } = runCli({
+      list: knownApiFailures,
+      runErrors: fixture('run-errors-interrupted.json'),
+    });
+    expect(exitCode).toBe(1);
+    expect(output).toContain('interrupted');
+  });
+
+  test('exits 2 when the --run-errors file does not exist', () => {
+    const { exitCode, output } = runCli({
+      list: knownApiFailures,
+      runErrors: join(workDir, 'no-run-errors.json'),
+    });
+    expect(exitCode).toBe(2);
+    expect(output).toContain('no-run-errors.json');
   });
 });
