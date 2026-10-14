@@ -147,3 +147,4 @@ src/trigger/tasks/onboarding/link-risks-and-vendors-to-work.spec.ts > linkRisksA
 src/trigger/tasks/onboarding/link-risks-and-vendors-to-work.spec.ts > linkRisksAndVendorsToWork > links vendors via _TaskToVendor when vendorId is provided
 src/trigger/tasks/onboarding/link-risks-and-vendors-to-work.spec.ts > linkRisksAndVendorsToWork > scopes to a single risk when riskId is provided
 src/trigger/tasks/onboarding/link-risks-and-vendors-to-work.spec.ts > linkRisksAndVendorsToWork > skips a risk with no candidates above threshold
+flaky: src/app/(app)/[orgId]/people/[employeeId]/components/EmployeeBackgroundCheck.test.tsx > EmployeeBackgroundCheck — V1 two-paths > PATCHes /v1/people/:id with exempt + reason when Confirm exemption is clicked
