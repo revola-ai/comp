@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { workflowTriggers } from './workflow-yaml.ts';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,12 +14,12 @@ const WORKFLOW = join(REPO_ROOT, '.github/workflows/security-questionnaire-exten
 
 type Step = { name?: string; run?: string; env?: Record<string, string> };
 type Workflow = {
-  on: Record<string, { inputs?: Record<string, { required?: boolean }> } | null>;
   env?: Record<string, string>;
   jobs: { release: { steps: Step[] } };
 };
 
 const workflow = Bun.YAML.parse(readFileSync(WORKFLOW, 'utf8')) as Workflow;
+const triggers = workflowTriggers(workflow);
 const steps = workflow.jobs.release.steps;
 const VALIDATE = 'Validate deployment URLs';
 
@@ -43,8 +44,8 @@ function runValidation({ apiUrl, appUrl }: { apiUrl: string; appUrl: string }) {
 
 describe('security questionnaire extension release workflow', () => {
   test('runs only on manual dispatch with required API and app URL inputs', () => {
-    expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch']);
-    const inputs = workflow.on.workflow_dispatch?.inputs ?? {};
+    expect(Object.keys(triggers)).toEqual(['workflow_dispatch']);
+    const inputs = triggers.workflow_dispatch?.inputs ?? {};
     expect(inputs.api_url?.required).toBe(true);
     expect(inputs.app_url?.required).toBe(true);
   });
