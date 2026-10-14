@@ -6,6 +6,8 @@
 # deleted or skipped) each fail the job.
 #
 # Format: one id per line, `<file relative to apps/api> > <describe> > ... > <test title>`.
+# `flaky: <id>` marks a test that passes alone but fails in some full runs (state leaking
+# between files in one jest worker); it may pass or fail, but must still run. Fix and delete it.
 # A bare file path means the file failed outside any test (it did not load, or a hook threw).
 # A whole-file entry hides every test in that file: none of them runs, so a regression there
 # cannot fail CI until the file loads again. Why each whole-file entry below fails to load
@@ -58,7 +60,7 @@ src/offboarding-checklist/offboarding-export.service.spec.ts > OffboardingExport
 src/offboarding-checklist/offboarding-export.service.spec.ts > OffboardingExportService > includes vendor evidence files from S3
 src/offboarding-checklist/offboarding-export.service.spec.ts > OffboardingExportService > skips evidence files that fail to download
 src/openapi-docs.spec.ts > OpenAPI document > public metadata > curates high-value API pages with operation-specific SEO copy
-src/security-penetration-tests/security-penetration-tests.billing.spec.ts > SecurityPenetrationTestsService billing usage > persists the subscription usage source on subscription-backed runs
+flaky: src/security-penetration-tests/security-penetration-tests.billing.spec.ts > SecurityPenetrationTestsService billing usage > persists the subscription usage source on subscription-backed runs
 src/tasks/tasks.controller.spec.ts > TasksController > updateTasksStatus > should call tasksService.updateTasksStatus with correct params
 src/tasks/tasks.controller.spec.ts > TasksController > updateTasksStatus > should parse reviewDate when provided
 src/tasks/tasks.controller.spec.ts > TasksController > updateTasksStatus > should use getApiKeyActorUserId for API key auth

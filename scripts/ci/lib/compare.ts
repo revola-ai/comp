@@ -16,16 +16,20 @@ export interface Comparison {
 export function compareWithKnownFailures({
   outcomes,
   knownFailures,
+  flaky = [],
 }: {
   outcomes: TestOutcomes;
   knownFailures: readonly string[];
+  /** Tests that may pass or fail in a full run; each must still run. */
+  flaky?: readonly string[];
 }): Comparison {
   const known = new Set(knownFailures);
+  const mayFail = new Set(flaky);
   const unexpectedFailures: string[] = [];
   let passedCount = 0;
 
   for (const [id, status] of outcomes) {
-    if (status === 'failed' && !known.has(id)) unexpectedFailures.push(id);
+    if (status === 'failed' && !known.has(id) && !mayFail.has(id)) unexpectedFailures.push(id);
     if (status === 'passed' && id.includes(' > ')) passedCount += 1;
   }
 
@@ -37,6 +41,9 @@ export function compareWithKnownFailures({
     if (status === 'failed') stillFailing.push(id);
     else if (status === 'passed') nowPassing.push(id);
     else missing.push(id);
+  }
+  for (const id of flaky) {
+    if (!outcomes.has(id)) missing.push(id);
   }
 
   return {

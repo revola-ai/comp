@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { compareWithKnownFailures, formatComparison } from './lib/compare';
-import { parseKnownFailuresList } from './lib/known-failures-list';
+import { parseFlakyEntries, parseKnownFailuresList } from './lib/known-failures-list';
 import { checkRunErrors } from './lib/run-errors';
 import { parseTestReport } from './lib/test-report';
 
@@ -62,16 +62,18 @@ function main(): number {
     json: readJson({ path: values.report, what: 'test report' }),
     root: resolve(values.root ?? process.cwd()),
   });
-  const knownFailures = parseKnownFailuresList(
-    readText({ path: values.list, what: 'known-failures list' }),
-  );
+  const listText = readText({ path: values.list, what: 'known-failures list' });
+  const knownFailures = parseKnownFailuresList(listText);
+  const flaky = parseFlakyEntries(listText);
 
   const runErrorsPath = values['run-errors'];
   const runErrors = runErrorsPath
     ? checkRunErrors(readJson({ path: runErrorsPath, what: 'run-errors file' }))
     : { ok: true, text: '' };
 
-  const { ok, text } = formatComparison(compareWithKnownFailures({ outcomes, knownFailures }));
+  const { ok, text } = formatComparison(
+    compareWithKnownFailures({ outcomes, knownFailures, flaky }),
+  );
   console.log(`Known-failures check against ${values.list}`);
   console.log(text);
   if (runErrorsPath) {
