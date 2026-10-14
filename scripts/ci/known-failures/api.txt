@@ -7,6 +7,16 @@
 #
 # Format: one id per line, `<file relative to apps/api> > <describe> > ... > <test title>`.
 # A bare file path means the file failed outside any test (it did not load, or a hook threw).
+# A whole-file entry hides every test in that file: none of them runs, so a regression there
+# cannot fail CI until the file loads again. Why each whole-file entry below fails to load
+# (fix the spec's mock or import, then delete its line):
+#   admin-context.controller.spec.ts: AuditLogEntityType undefined (@db mock lacks Prisma enums)
+#   admin-evidence.controller.spec.ts: ESM better-auth/plugins/access via @trycompai/auth
+#   admin-findings.controller.spec.ts: ESM better-auth/plugins/access via @trycompai/auth
+#   admin-policies.controller.spec.ts: ESM better-auth/plugins/access via @trycompai/auth
+#   admin-tasks.controller.spec.ts: ESM better-auth/plugins/access via @trycompai/auth
+#   admin-vendors.controller.spec.ts: AuditLogEntityType undefined (@db mock lacks Prisma enums)
+#   frameworks.controller.spec.ts: BackgroundCheckStatus undefined (@db mock lacks Prisma enums)
 #
 # This list only shrinks: when you fix a test, delete its line.
 # Never add a line for a new failure; fix the test instead.
