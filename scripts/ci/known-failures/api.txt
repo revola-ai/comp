@@ -48,7 +48,6 @@ src/offboarding-checklist/offboarding-export.service.spec.ts > OffboardingExport
 src/offboarding-checklist/offboarding-export.service.spec.ts > OffboardingExportService > includes vendor evidence files from S3
 src/offboarding-checklist/offboarding-export.service.spec.ts > OffboardingExportService > skips evidence files that fail to download
 src/openapi-docs.spec.ts > OpenAPI document > public metadata > curates high-value API pages with operation-specific SEO copy
-src/openapi-docs.spec.ts > OpenAPI document > public metadata > keeps the public spec complete, SEO-ready, and free of private surfaces
 src/security-penetration-tests/security-penetration-tests.billing.spec.ts > SecurityPenetrationTestsService billing usage > persists the subscription usage source on subscription-backed runs
 src/tasks/tasks.controller.spec.ts > TasksController > updateTasksStatus > should call tasksService.updateTasksStatus with correct params
 src/tasks/tasks.controller.spec.ts > TasksController > updateTasksStatus > should parse reviewDate when provided
