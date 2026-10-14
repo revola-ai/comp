@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
   type ProductionTarget,
-  readProductionTargetFile,
+  committedProductionTarget,
 } from '../../packages/db/src/production-target.ts';
 import { spawnAws } from './secrets/aws-cli.ts';
 import { KEYS_DIR, SECRET_KEYS } from './secrets/keys.ts';
@@ -68,7 +68,7 @@ export async function main({
       env: process.env,
       keysDir: KEYS_DIR,
       secretKeys: SECRET_KEYS,
-      target: target ?? readProductionTargetFile(),
+      target: target ?? committedProductionTarget(),
     });
   } finally {
     terminal?.close();

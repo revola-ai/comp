@@ -3,108 +3,40 @@
 // Skipped by default to avoid side effects in CI.
 // Run manually with: cd apps/api && GEN_OPENAPI=1 bunx jest src/gen-openapi.spec.ts
 
-// Mock better-auth ESM-only modules so Jest (CJS) can import AppModule's transitive AuthModule.
-jest.mock('./auth/auth.server', () => ({
-  auth: {
-    api: {},
-    handler: async () => new Response(null, { status: 204 }),
-    options: {},
-  },
-  getTrustedOrigins: () => [],
-  isTrustedOrigin: async () => false,
-  isStaticTrustedOrigin: () => false,
-}));
+// Boots the whole AppModule with its database, Redis and ESM-only packages
+// mocked (test/openapi-app-mocks.ts). jest.mock calls are hoisted above the
+// imports; the environment is set before AppModule loads.
+function mockOpenApiModule(id: string): unknown {
+  return jest
+    .requireActual<typeof import('../test/openapi-app-mocks')>(
+      '../test/openapi-app-mocks',
+    )
+    .openApiAppMock(id);
+}
+jest.mock('./auth/auth.server', () => mockOpenApiModule('./auth/auth.server'));
+jest.mock('@thallesp/nestjs-better-auth', () =>
+  mockOpenApiModule('@thallesp/nestjs-better-auth'),
+);
+jest.mock('@inference/tracing', () => mockOpenApiModule('@inference/tracing'));
+jest.mock('@inference/tracing/ai-sdk', () =>
+  mockOpenApiModule('@inference/tracing/ai-sdk'),
+);
+jest.mock('better-auth/plugins/access', () =>
+  mockOpenApiModule('better-auth/plugins/access'),
+);
+jest.mock('better-auth/plugins/organization/access', () =>
+  mockOpenApiModule('better-auth/plugins/organization/access'),
+);
+jest.mock('@trycompai/auth', () => mockOpenApiModule('@trycompai/auth'));
+jest.mock('@db', () => mockOpenApiModule('@db'));
+jest.mock('@upstash/redis', () => mockOpenApiModule('@upstash/redis'));
 
-jest.mock('@thallesp/nestjs-better-auth', () => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { Module } = require('@nestjs/common');
-  @Module({})
-  class AuthModuleStub {
-    static forRoot() {
-      return {
-        module: AuthModuleStub,
-        imports: [],
-        providers: [],
-        exports: [],
-      };
-    }
-  }
-  return { AuthModule: AuthModuleStub };
-});
-
-// @inference/tracing is ESM-only, same as better-auth above.
-jest.mock('@inference/tracing', () => ({ setup: jest.fn() }));
-jest.mock('@inference/tracing/ai-sdk', () => ({
-  createAISdkTelemetrySettings: jest.fn(() => ({})),
-}));
-
-jest.mock('better-auth/plugins/access', () => ({
-  createAccessControl: () => ({
-    newRole: () => ({}),
-    statement: {},
-  }),
-}));
-jest.mock('better-auth/plugins/organization/access', () => ({
-  defaultStatements: {},
-  adminAc: {},
-  ownerAc: {},
-}));
-
-jest.mock('@trycompai/auth', () => {
-  const emptyRole = { statements: {} };
-  const roles = {
-    owner: emptyRole,
-    admin: emptyRole,
-    auditor: emptyRole,
-    employee: emptyRole,
-    contractor: emptyRole,
-  };
-  return {
-    ac: { newRole: () => emptyRole },
-    statement: {},
-    allRoles: roles,
-    ...roles,
-    ROLE_HIERARCHY: ['contractor', 'employee', 'auditor', 'admin', 'owner'],
-    RESTRICTED_ROLES: ['employee', 'contractor'],
-    PRIVILEGED_ROLES: ['owner', 'admin', 'auditor'],
-    BUILT_IN_ROLE_PERMISSIONS: {},
-    BUILT_IN_ROLE_OBLIGATIONS: {},
-  };
-});
-
-jest.mock('@db', () => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const prismaClient = require('@prisma/client');
-  return {
-    ...prismaClient,
-    db: {
-      $connect: jest.fn(),
-      $disconnect: jest.fn(),
-      organization: { findFirst: jest.fn(), findMany: jest.fn() },
-      auditLog: { create: jest.fn() },
-      trust: { findMany: jest.fn().mockResolvedValue([]) },
-      dynamicIntegration: { findMany: jest.fn().mockResolvedValue([]) },
-      apiKey: { findFirst: jest.fn() },
-      session: { findFirst: jest.fn() },
-      member: { findFirst: jest.fn() },
-    },
-  };
-});
-
-jest.mock('@upstash/redis', () => ({
-  Redis: jest.fn().mockImplementation(() => ({
-    get: jest.fn().mockResolvedValue(null),
-    set: jest.fn().mockResolvedValue('OK'),
-  })),
-}));
-
-process.env.SECRET_KEY = 'test-secret-key-at-least-16-chars';
-process.env.BASE_URL = 'http://localhost:3333';
-process.env.APP_AWS_ACCESS_KEY_ID = 'test-access-key-id';
-process.env.APP_AWS_SECRET_ACCESS_KEY = 'test-secret-access-key';
-process.env.APP_AWS_BUCKET_NAME = 'test-bucket';
-process.env.APP_AWS_REGION = 'us-east-1';
-process.env.MACED_API_KEY = 'mc_dev_test-openapi-gen';
+Object.assign(
+  process.env,
+  jest.requireActual<typeof import('../test/openapi-app-mocks')>(
+    '../test/openapi-app-mocks',
+  ).OPENAPI_APP_ENV,
+);
 
 import path from 'path';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';

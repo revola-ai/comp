@@ -9,11 +9,12 @@ import { Reflector } from '@nestjs/core';
 // the caller's: it answers 503 with a named reason, never 401, which would
 // log browser sessions out and tell clients their credential is wrong.
 const mockGetSession = jest.fn();
+const mockGetMcpSession = jest.fn();
 jest.mock('./auth.server', () => ({
   auth: {
     api: {
       getSession: (...args: unknown[]) => mockGetSession(...args),
-      getMcpSession: jest.fn().mockResolvedValue(null),
+      getMcpSession: (...args: unknown[]) => mockGetMcpSession(...args),
     },
   },
 }));
@@ -38,12 +39,26 @@ jest.mock('@trycompai/auth', () => ({
   statement: {},
   BUILT_IN_ROLE_PERMISSIONS: {},
 }));
+// The database probe that confirms a FAILED_TO_GET_SESSION outage
+// (session-store-outage.ts) fails here, as it would during an outage.
+jest.mock('../health/readiness', () => ({
+  checkApiReadiness: () =>
+    Promise.resolve({ status: 'unavailable', reason: 'P1001' }),
+}));
 jest.mock('./service-token.config', () => ({
   resolveServiceByToken: () => ({ definition: { name: 'portal' } }),
 }));
 
+import {
+  betterAuthApiError,
+  failedToGetSessionError,
+} from '../../test/better-auth-errors';
 import { ApiKeyService } from './api-key.service';
-import { CREDENTIAL_STORE_UNAVAILABLE } from './credential-store-error';
+import {
+  CREDENTIAL_STORE_UNAVAILABLE,
+  isCredentialStoreFailure,
+  isSessionLookupFailure,
+} from './credential-store-error';
 import { AuthFailureLimiter } from '../throttle/auth-failure-limiter';
 import { HybridAuthGuard } from './hybrid-auth.guard';
 
@@ -82,8 +97,15 @@ describe('credential validation during a database outage', () => {
     } as unknown as ExecutionContext;
   }
 
+  const savedEnv = { ...process.env };
+
+  afterAll(() => {
+    process.env = savedEnv;
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetMcpSession.mockResolvedValue(null);
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     const reflector = new Reflector();
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
@@ -123,13 +145,22 @@ describe('credential validation during a database outage', () => {
     );
   });
 
+  // better-auth's getSession catches the store failure and throws its own
+  // APIError (FAILED_TO_GET_SESSION, status 500) without the cause.
   it('a session request answers 503 when the session store is unreachable', async () => {
-    mockGetSession.mockRejectedValue(
-      new Error('session lookup failed', { cause: prismaOutage() }),
-    );
+    mockGetSession.mockRejectedValue(failedToGetSessionError());
     expectOutage(
       await failureOf(() =>
         guard.canActivate(contextWith({ cookie: 'session=abc' })),
+      ),
+    );
+  });
+
+  it('a bearer request answers 503 when the session store is unreachable', async () => {
+    mockGetSession.mockRejectedValue(failedToGetSessionError());
+    expectOutage(
+      await failureOf(() =>
+        guard.canActivate(contextWith({ authorization: 'Bearer abc' })),
       ),
     );
   });
@@ -138,6 +169,38 @@ describe('credential validation during a database outage', () => {
     mockGetSession.mockRejectedValue(new Error('malformed session token'));
     await expect(
       guard.canActivate(contextWith({ cookie: 'session=abc' })),
+    ).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('a better-auth APIError with another code still answers 401', async () => {
+    mockGetSession.mockRejectedValue(
+      betterAuthApiError({ status: 'UNAUTHORIZED', code: 'INVALID_TOKEN' }),
+    );
+    await expect(
+      guard.canActivate(contextWith({ cookie: 'session=abc' })),
+    ).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('an MCP OAuth token lookup answers 503 when the token store is unreachable', async () => {
+    Object.assign(process.env, {
+      GRAM_OAUTH_CLIENT_ID: 'gram-client-id',
+      GRAM_OAUTH_CLIENT_SECRET: 'gram-client-secret',
+      GRAM_OAUTH_REDIRECT_URI: 'https://gram.example/callback',
+    });
+    mockGetSession.mockResolvedValue(null);
+    mockGetMcpSession.mockRejectedValue(prismaOutage());
+    expectOutage(
+      await failureOf(() =>
+        guard.canActivate(contextWith({ authorization: 'Bearer mcp' })),
+      ),
+    );
+  });
+
+  it('an MCP OAuth token lookup failing for another reason answers 401', async () => {
+    mockGetSession.mockResolvedValue(null);
+    mockGetMcpSession.mockRejectedValue(new TypeError('unexpected'));
+    await expect(
+      guard.canActivate(contextWith({ authorization: 'Bearer mcp' })),
     ).rejects.toThrow(UnauthorizedException);
   });
 
@@ -173,5 +236,38 @@ describe('credential validation during a database outage', () => {
         contextWith({ 'x-service-token': 't', 'x-organization-id': 'org_1' }),
       ),
     ).rejects.toBe(bug);
+  });
+});
+
+describe('isCredentialStoreFailure and better-auth errors', () => {
+  // A malformed cookie produces it too, so it is confirmed by a database
+  // probe before it counts (session-store-outage.spec.ts).
+  it('treats the error getSession throws on any lookup failure as ambiguous', () => {
+    expect(isCredentialStoreFailure(failedToGetSessionError())).toBe(false);
+    expect(isSessionLookupFailure(failedToGetSessionError())).toBe(true);
+  });
+
+  it('does not match other better-auth API errors', () => {
+    expect(
+      isCredentialStoreFailure(
+        betterAuthApiError({ status: 'UNAUTHORIZED', code: 'INVALID_TOKEN' }),
+      ),
+    ).toBe(false);
+    expect(
+      isCredentialStoreFailure(
+        betterAuthApiError({
+          status: 'INTERNAL_SERVER_ERROR',
+          code: 'FAILED_TO_CREATE_SESSION',
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isCredentialStoreFailure(
+        betterAuthApiError({
+          status: 'BAD_REQUEST',
+          code: 'FAILED_TO_GET_SESSION',
+        }),
+      ),
+    ).toBe(false);
   });
 });

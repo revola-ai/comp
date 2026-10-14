@@ -9,9 +9,16 @@ import { ApiKeyService } from '../auth/api-key.service';
 import { HybridAuthGuard } from '../auth/hybrid-auth.guard';
 
 // When HybridAuthGuard gives an API key's slot back: as soon as it accepts the
-// key (not when the handler finishes). A failed lookup keeps the slot, whether
-// the key was wrong or the credential store was down. A valid service token
-// never takes a slot at all.
+// key (not when the handler finishes), or when its lookup hit a credential-store
+// outage that a database probe confirms, so retries during an outage do not
+// lock the key out after recovery. A wrong key or any other failure keeps the
+// slot, as does a 503 the probe does not confirm (a flood of junk keys
+// exhausting the connection pool while the database answers). A valid service
+// token never takes a slot at all.
+const mockReadiness = jest.fn();
+jest.mock('../health/readiness', () => ({
+  checkApiReadiness: () => mockReadiness(),
+}));
 jest.mock('../auth/auth.server', () => ({
   auth: {
     api: {
@@ -73,6 +80,7 @@ const resolveByKey = (key: string) =>
           scopes: ['risk:read'],
           createdByMemberId: 'mem_1',
           organizationOwned: false,
+          creatorRoles: null,
         }
       : null,
   );
@@ -127,6 +135,7 @@ describe('credential attempt limit: refunds at acceptance, service tokens first'
   beforeEach(() => {
     validateApiKey.mockReset();
     validateApiKey.mockImplementation(resolveByKey);
+    mockReadiness.mockReset().mockResolvedValue({ status: 'ok' });
   });
 
   const call = (
@@ -225,26 +234,36 @@ describe('credential attempt limit: refunds at acceptance, service tokens first'
     ).toBe(429);
   });
 
-  it('keeps the slot of a request that ends in a credential-store 503', async () => {
+  const outageThenValidKey = async (client: string) => {
     validateApiKey.mockRejectedValue(credentialStoreUnavailable());
-    for (let i = 0; i < N; i += 1) {
-      const response = await call(
-        '/probe/private',
-        '192.0.2.85',
-        key(`any-${i}`),
-      );
+    for (let i = 0; i <= N; i += 1) {
+      const response = await call('/probe/private', client, key(`any-${i}`));
+      if (response.status === 429) break;
       expect(response.status).toBe(503);
       expect(response.headers['retry-after']).toMatch(/^\d+$/);
     }
     validateApiKey.mockReset();
     validateApiKey.mockImplementation(resolveByKey);
-    const refused = await call('/probe/private', '192.0.2.85', key(VALID_KEY));
+    return call('/probe/private', client, key(VALID_KEY));
+  };
+
+  it('gives the slot back when the probe confirms a credential-store outage', async () => {
+    mockReadiness.mockResolvedValue({ status: 'unavailable', reason: 'P1001' });
+    const recovered = await outageThenValidKey('192.0.2.85');
+    expect(recovered.status).toBe(200);
+    expect(validateApiKey).toHaveBeenCalledWith(VALID_KEY);
+  });
+
+  it('keeps the slot of a 503 the database probe does not confirm', async () => {
+    const refused = await outageThenValidKey('192.0.2.87');
     expect(refused.status).toBe(429);
     expect(refused.headers['retry-after']).toMatch(/^\d+$/);
     expect(validateApiKey).not.toHaveBeenCalled();
   });
 
   it('keeps the slot of a request whose lookup fails for another reason', async () => {
+    // Even while the database is down: only a credential-store 503 is refunded.
+    mockReadiness.mockResolvedValue({ status: 'unavailable', reason: 'P1001' });
     validateApiKey.mockRejectedValue(new Error('bug'));
     for (let i = 0; i < N; i += 1) {
       expect(await status('/probe/private', '192.0.2.86', key(`x-${i}`))).toBe(

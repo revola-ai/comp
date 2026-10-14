@@ -1,3 +1,4 @@
+import { selfHostedTrustedOrigins } from './origin-policy';
 import {
   parseTrustedEdgeProxyIps,
   TRUSTED_EDGE_PROXY_IPS,
@@ -68,17 +69,41 @@ function assertCloudflareTrust({ env }: { env: Env }): void {
 }
 
 /**
- * Boot check for the self-hosted production deployment: the settings that
+ * A production SELF_HOSTED=true API must trust some browser origin, and the
+ * deployment that shares its session cookie through AUTH_COOKIE_DOMAIN must
+ * be SELF_HOSTED=true: otherwise the origin policy also trusts Comp AI's own
+ * domains (its hosted subdomains and published trust-portal custom domains).
+ */
+function assertSelfHostedOrigins({ env }: { env: Env }): void {
+  const selfHosted = env.SELF_HOSTED === 'true';
+  if (env.AUTH_COOKIE_DOMAIN?.trim() && !selfHosted) {
+    throw bootError({
+      detail: 'SELF_HOSTED must be set to "true"',
+      consequence:
+        "Without it the API also trusts Comp AI's own hosted origins and trust-portal custom domains for CORS and sign-in redirects.",
+    });
+  }
+  if (!selfHosted) return;
+  if (selfHostedTrustedOrigins({ env }).length > 0) return;
+  throw new Error(
+    'AUTH_TRUSTED_ORIGINS or AUTH_COOKIE_DOMAIN must be set when NODE_ENV=production and SELF_HOSTED=true. Without either the API trusts no browser origin and refuses every sign-in.',
+  );
+}
+
+/**
+ * Boot check for the self-hosted production deployment: SELF_HOSTED=true with
+ * at least one trusted origin (assertSelfHostedOrigins), and the settings that
  * let the API trust Cloudflare's client IP (COMP_ORIGIN_AUTH or
  * TRUSTED_EDGE_PROXY_IPS) and the app's and portal's forwarded client IP
  * (COMP_FORWARDED_IP_TOKEN) must be present and well formed, and every
  * configured service token (SERVICE_TOKEN_<NAME> and its _PREVIOUS) must be
  * at least 32 characters, or the API refuses to start. Messages name the
- * variable, never its value. Other deployments (no AUTH_COOKIE_DOMAIN, or not
- * production) are left alone.
+ * variable, never its value. Other deployments (no AUTH_COOKIE_DOMAIN and no
+ * SELF_HOSTED, or not production) are left alone.
  */
 export function assertEdgeSecrets({ env }: { env: Env }): void {
   if (env.NODE_ENV !== 'production') return;
+  assertSelfHostedOrigins({ env });
   if (!env.AUTH_COOKIE_DOMAIN?.trim()) return;
 
   assertCloudflareTrust({ env });

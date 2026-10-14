@@ -43,6 +43,15 @@ export function getServerApiBaseUrl(): string {
   );
 }
 
+/**
+ * The public API URL (what browsers and better-auth's trusted origins know),
+ * for server code that needs the public address, such as the fallback
+ * `Origin` for better-auth's CSRF check.
+ */
+export function getPublicApiUrl(): string {
+  return stripTrailingSlashes(readEnv('NEXT_PUBLIC_API_URL') ?? LOCAL_API_URL);
+}
+
 function validIp(value: string | null | undefined): string | undefined {
   const candidate = value?.trim();
   if (!candidate) return undefined;

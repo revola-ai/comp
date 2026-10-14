@@ -9,6 +9,11 @@ import { db } from '@db';
 import { statement } from '@trycompai/auth';
 import { randomBytes } from 'node:crypto';
 import { lockKeyCreator } from './api-key-creator-lock';
+import {
+  ApiKeySchemaOutOfDateError,
+  asApiKeySchemaError,
+  assertApiKeySchema,
+} from './api-key-schema-check';
 import { asCredentialStoreError } from './credential-store-error';
 import type { ApiKeyProvenance } from './api-key-provenance';
 import {
@@ -29,11 +34,15 @@ export type { ApiKeyValidationResult } from './api-key-validation';
 export class ApiKeyService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ApiKeyService.name);
 
-  /** Reports active legacy keys once the API has started, without delaying it. */
-  onApplicationBootstrap(): void {
-    void reportLegacyApiKeys({
-      warn: (message) => this.logger.warn(message),
-    });
+  /**
+   * Refuses to start when the database lacks an ApiKey column this build
+   * reads (migrations must be applied before the image is deployed), then
+   * reports active legacy keys without delaying the start.
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    const warn = (message: string) => this.logger.warn(message);
+    await assertApiKeySchema({ warn });
+    void reportLegacyApiKeys({ warn });
   }
 
   private generateApiKey(): string {
@@ -197,7 +206,7 @@ export class ApiKeyService implements OnApplicationBootstrap {
 
       // Offboarding: a personal key stops working once its creator is no
       // longer an active member, even before revocation has run, and a
-      // creatorless personal key newer than the legacy cutoff is an orphan.
+      // creatorless personal key not flagged legacyCreatorless is an orphan.
       const rejection = apiKeyRejection(matchingRecord);
       if (rejection) {
         this.logger.warn(
@@ -220,9 +229,16 @@ export class ApiKeyService implements OnApplicationBootstrap {
 
       return toValidationResult(matchingRecord);
     } catch (error) {
-      // A database failure is not a verdict on the key: the caller gets 503,
-      // not "invalid key" (which would count against its IP). Anything else
-      // is a bug and surfaces as one.
+      // A database missing a column this build reads was not migrated
+      // before the deploy: say so by name. A database failure is not a
+      // verdict on the key: the caller gets 503, not "invalid key" (which
+      // would count against its IP). Anything else is a bug and surfaces as
+      // one.
+      const schemaError = asApiKeySchemaError(error);
+      if (schemaError instanceof ApiKeySchemaOutOfDateError) {
+        this.logger.error(schemaError.message);
+        throw schemaError;
+      }
       this.logger.error('Error validating API key:', error);
       throw asCredentialStoreError(error);
     }

@@ -2,12 +2,11 @@
 // guard (prisma.config.ts) and scripts/prod-guard.ts. The matching rules live in
 // src/production-target.ts. No Bun-only APIs, no process access: prisma.config.ts loads
 // this under Node.
-import productionTargetJson from '../production-target.json';
 import {
   type GuardEnv,
   type ProductionTarget,
   assertNotProduction as assertNotProductionFor,
-  productionTargetSchema,
+  committedProductionTarget,
 } from '../src/production-target';
 
 export {
@@ -21,7 +20,7 @@ export {
 // The single committed source of the production database identity, validated on use
 // so a malformed file fails the guarded command, never silently allows it.
 export function loadProductionTarget(): ProductionTarget {
-  return productionTargetSchema.parse(productionTargetJson);
+  return committedProductionTarget();
 }
 
 export function assertNotProduction({

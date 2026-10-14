@@ -124,10 +124,10 @@ describe('database URLs', () => {
 
   test('another database is refused', () => {
     expect(problems('DATABASE_URL', DEV_URL)).toEqual([
-      'DATABASE_URL does not name the production database (packages/db/production-target.json)',
+      'DATABASE_URL does not name the production database (packages/db/src/production-target.json)',
     ]);
     expect(problems('DATABASE_MIGRATION_URL', DEV_URL)).toEqual([
-      'DATABASE_MIGRATION_URL does not name the production database (packages/db/production-target.json)',
+      'DATABASE_MIGRATION_URL does not name the production database (packages/db/src/production-target.json)',
     ]);
   });
 

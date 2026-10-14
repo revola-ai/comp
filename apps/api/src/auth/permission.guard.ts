@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RESTRICTED_ROLES, PRIVILEGED_ROLES } from '@trycompai/auth';
+import { assertApiKeyScopes } from './api-key-scope-check';
 import { permissionsGrant, resolveRolePermissions } from './app-access';
 import { auth } from './auth.server';
 import { resolveServiceByName } from './service-token.config';
@@ -59,37 +60,16 @@ export class PermissionGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
-    // API key scope enforcement
+    // API key scope enforcement: the key's scopes, a personal key's cut to
+    // its creator's current permissions (api-key-scope-check.ts).
     if (request.isApiKey) {
-      const scopes = request.apiKeyScopes;
-
-      // Legacy keys (empty scopes): full access until April 20, 2026, then blocked
-      if (!scopes || scopes.length === 0) {
-        const deprecationDate = new Date('2026-04-20T00:00:00Z');
-        if (new Date() >= deprecationDate) {
-          this.logger.warn(
-            `[PermissionGuard] Legacy API key with empty scopes BLOCKED after deprecation date on ${request.method} ${request.url}.`,
-          );
-          throw new ForbiddenException(
-            'This API key is no longer supported. Please regenerate your API key with explicit scopes.',
-          );
-        }
-        this.logger.warn(
-          `[PermissionGuard] Legacy API key with empty scopes used on ${request.method} ${request.url}. This key will stop working after April 20, 2026.`,
-        );
-        return true;
-      }
-
-      // Scoped keys: enforce permissions
-      const hasAllPerms = requiredPermissions.every((perm) =>
-        perm.actions.every((action) =>
-          scopes.includes(`${perm.resource}:${action}`),
+      assertApiKeyScopes({
+        request,
+        requiredScopes: requiredPermissions.flatMap((perm) =>
+          perm.actions.map((action) => `${perm.resource}:${action}`),
         ),
-      );
-
-      if (!hasAllPerms) {
-        throw new ForbiddenException('API key lacks required permission scope');
-      }
+        warn: (message) => this.logger.warn(`[PermissionGuard] ${message}`),
+      });
       return true;
     }
 
@@ -139,8 +119,9 @@ export class PermissionGuard implements CanActivate {
         request.organizationId,
         request.userRoles ?? [],
       );
-      const granted = Object.entries(permissionBody).every(([resource, actions]) =>
-        actions.every((action) => permissionsGrant(perms, resource, action)),
+      const granted = Object.entries(permissionBody).every(
+        ([resource, actions]) =>
+          actions.every((action) => permissionsGrant(perms, resource, action)),
       );
       if (!granted) {
         this.logger.warn(

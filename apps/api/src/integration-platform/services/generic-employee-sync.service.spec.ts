@@ -279,6 +279,21 @@ describe('GenericEmployeeSyncService role validation', () => {
 
       // Phase 2 will see one other member in the same domain who was NOT returned
       mockMemberFindMany.mockResolvedValue([existingOrgMember]);
+
+      // The member row lock (SELECT ... FOR UPDATE) returns the locked row, which
+      // decides whether deactivating it cuts access (api-key-access-loss.ts).
+      const { db: mockedDb } = jest.requireMock<{
+        db: { $queryRaw: jest.Mock };
+      }>('@db');
+      mockedDb.$queryRaw.mockResolvedValue([
+        {
+          id: existingOrgMember.id,
+          organizationId: 'org_1',
+          role: existingOrgMember.role,
+          isActive: true,
+          deactivated: false,
+        },
+      ]);
     });
 
     it('skips Phase 2 by default (isDirectorySource omitted)', async () => {

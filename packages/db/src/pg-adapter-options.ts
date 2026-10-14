@@ -1,11 +1,16 @@
 import { z } from 'zod';
 import { DatabaseConfigError } from './database-config-error';
+import {
+  committedProductionTarget,
+  productionVerdict,
+  type ProductionTarget,
+} from './production-verdict';
 import { isLocalhostUrl, resolveSslConfig, stripSslMode, type SslConfig } from './ssl-config';
 
 // The one connection policy for every Prisma client (api, app, portal, framework
 // editor, Trigger workers, seed): TLS from resolveSslConfig, pool size from
-// DATABASE_POOL_MAX, and a hard stop when a production process would talk to a
-// remote database without the CA it needs to verify it.
+// DATABASE_POOL_MAX, and a hard stop when a production process, or any process
+// reaching the production database, would connect without verified TLS.
 
 export type PgAdapterOptions = {
   connectionString: string;
@@ -66,17 +71,36 @@ function parsePoolMax(raw: string | undefined): number | undefined {
   return parsed.data;
 }
 
-function assertProductionCa({ databaseUrl, env }: { databaseUrl: string; env: Env }): void {
-  if (env.NODE_ENV !== 'production') return;
-  if (isLocalhostUrl(databaseUrl)) return;
+// Laptops share production's database (D7) and run with NODE_ENV=development, so the
+// strict rules apply by the database too, not only by NODE_ENV. A URL whose verdict is
+// unverifiable (pg cannot parse it) gets them as well.
+function requiresVerifiedTls({
+  databaseUrl,
+  env,
+  target,
+}: {
+  databaseUrl: string;
+  env: Env;
+  target: ProductionTarget;
+}): boolean {
+  if (isLocalhostUrl(databaseUrl)) return false;
+  if (env.NODE_ENV === 'production') return true;
+  // TLS parameters never change which database the URL names, and pg-connection-string
+  // would read sslrootcert/sslcert/sslkey files and warn about sslmode while parsing.
+  const identity = withoutTlsParams(databaseUrl);
+  return productionVerdict({ databaseUrl: identity, env, target }) !== 'not_production';
+}
+
+function assertProductionCa(env: Env): void {
   if (env.DATABASE_SSL_CA) return;
   if (env.PRISMA_ALLOW_INSECURE_TLS === '1') return;
   throw new DatabaseConfigError({
     code: 'ca_file_missing',
     detail:
-      'NODE_ENV=production with a non-local database requires DATABASE_SSL_CA, the path of the ' +
-      "database server's CA certificate (e.g. DATABASE_SSL_CA=/app/certs/supabase-ca.crt). " +
-      'PRISMA_ALLOW_INSECURE_TLS=1 is the only explicit opt-out.',
+      'NODE_ENV=production with a non-local database, or any connection to the production ' +
+      "database, requires DATABASE_SSL_CA, the path of the database server's CA certificate " +
+      '(the committed deploy/aws/certs/supabase-ca.crt, as an absolute path; deployed tasks ' +
+      'use /app/certs/supabase-ca.crt). PRISMA_ALLOW_INSECURE_TLS=1 is the only explicit opt-out.',
   });
 }
 
@@ -86,6 +110,14 @@ function assertProductionCa({ databaseUrl, env }: { databaseUrl: string; env: En
 // enforced verified TLS already satisfies are stripped instead (stripSslMode).
 const TLS_OVERRIDE_PARAMS = ['ssl', 'sslrootcert', 'sslcert', 'sslkey', 'uselibpqcompat'];
 const SATISFIED_SSL_MODES = new Set(['require', 'verify-ca', 'verify-full']);
+
+const TLS_PARAMS = [...TLS_OVERRIDE_PARAMS, 'sslmode', 'sslnegotiation'];
+
+function withoutTlsParams(databaseUrl: string): string {
+  const url = new URL(databaseUrl);
+  for (const name of TLS_PARAMS) url.searchParams.delete(name);
+  return url.toString();
+}
 
 function conflictingTlsParams(databaseUrl: string): string[] {
   const params = new URL(databaseUrl).searchParams;
@@ -99,9 +131,7 @@ function conflictingTlsParams(databaseUrl: string): string[] {
   return conflicts;
 }
 
-function assertNoTlsParamConflict({ databaseUrl, env }: { databaseUrl: string; env: Env }): void {
-  if (env.NODE_ENV !== 'production') return;
-  if (isLocalhostUrl(databaseUrl)) return;
+function assertNoTlsParamConflict(databaseUrl: string): void {
   const conflicts = conflictingTlsParams(databaseUrl);
   if (conflicts.length === 0) return;
   throw new DatabaseConfigError({
@@ -124,10 +154,13 @@ export function buildPgAdapterOptions({
   databaseUrl,
   env = process.env,
   log = defaultLog,
+  target,
 }: {
   databaseUrl: string | undefined;
   env?: Env;
   log?: LogSink;
+  /** The production database identity; the committed one unless a test injects its own. */
+  target?: ProductionTarget;
 }): PgAdapterOptions {
   if (!databaseUrl) {
     throw new DatabaseConfigError({
@@ -144,8 +177,10 @@ export function buildPgAdapterOptions({
     });
   }
   const max = parsePoolMax(env.DATABASE_POOL_MAX);
-  assertProductionCa({ databaseUrl, env });
-  assertNoTlsParamConflict({ databaseUrl, env });
+  if (requiresVerifiedTls({ databaseUrl, env, target: target ?? committedProductionTarget() })) {
+    assertProductionCa(env);
+    assertNoTlsParamConflict(databaseUrl);
+  }
   const ssl = resolveSslConfig(databaseUrl, env);
   const connectionString = ssl === undefined ? databaseUrl : stripSslMode(databaseUrl);
 

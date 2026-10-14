@@ -2,6 +2,11 @@ import { ForbiddenException, Logger } from '@nestjs/common';
 import { db } from '@db';
 import { hasAppAccess } from './app-access';
 import { auth } from './auth.server';
+import {
+  credentialStoreUnavailable,
+  isCredentialStoreFailure,
+} from './credential-store-error';
+import { readGramMcpClient } from './gram-mcp-client';
 import type { AuthenticatedRequest } from './types';
 
 const logger = new Logger('HybridAuthGuard');
@@ -10,8 +15,8 @@ const logger = new Logger('HybridAuthGuard');
  * Resolve a hosted-MCP OAuth access token (issued by better-auth's mcp/oidc
  * provider and forwarded by the Gram-hosted MCP server). Populates the request
  * context and returns true on success; returns false when the bearer token is
- * not a valid MCP OAuth token (so the caller throws the generic 401). Throws
- * when no organization can be resolved.
+ * not a valid MCP OAuth token issued to the configured Gram client (so the
+ * caller throws the generic 401). Throws when no organization can be resolved.
  *
  * The token carries the user identity only. The organization is resolved
  * explicitly from the user's active memberships (device-agent style), never a
@@ -37,8 +42,21 @@ export async function authenticateMcpOAuth({
   /** Called once the token resolves to an existing user. */
   onAccepted: () => void;
 }): Promise<boolean> {
-  const token = await auth.api.getMcpSession({ headers }).catch(() => null);
-  if (!token?.userId) {
+  // Only Gram's tokens: without the Gram client the MCP endpoints do not
+  // exist, and a token minted for any other OAuth client is not ours to honor.
+  const gram = readGramMcpClient({ env: process.env });
+  if (!gram) {
+    return false;
+  }
+  // A store outage is not an invalid token (503, not 401); any other lookup
+  // failure leaves the token unaccepted.
+  const token = await auth.api
+    .getMcpSession({ headers })
+    .catch((error: unknown) => {
+      if (isCredentialStoreFailure(error)) throw credentialStoreUnavailable();
+      return null;
+    });
+  if (!token?.userId || token.clientId !== gram.clientId) {
     return false;
   }
 

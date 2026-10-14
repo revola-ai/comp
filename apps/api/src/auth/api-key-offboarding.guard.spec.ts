@@ -40,8 +40,8 @@ function keyRecord(overrides: Record<string, unknown>) {
     scopes: ['risk:read', 'risk:update'],
     createdByMemberId: 'mem_departed',
     organizationOwned: false,
-    createdBy: { isActive: false, deactivated: true },
-    createdAt: new Date('2026-10-07T00:00:00Z'),
+    createdBy: { isActive: false, deactivated: true, role: 'admin' },
+    legacyCreatorless: false,
     ...overrides,
   };
 }
@@ -103,10 +103,14 @@ describe('HybridAuthGuard with a key whose creator left the organization', () =>
   );
 
   it.each(['GET', 'POST', 'DELETE'])(
-    'answers 401 on a %s request with a creatorless personal key minted after the cutoff',
+    'answers 401 on a %s request with a creatorless personal key not flagged legacy',
     async (method) => {
       mockApiKeyFindMany.mockResolvedValueOnce([
-        keyRecord({ createdByMemberId: null, createdBy: null }),
+        keyRecord({
+          createdByMemberId: null,
+          createdBy: null,
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        }),
       ]);
       const { context } = contextFor(method);
       await expect(guard.canActivate(context)).rejects.toThrow(
@@ -115,12 +119,12 @@ describe('HybridAuthGuard with a key whose creator left the organization', () =>
     },
   );
 
-  it('still accepts a creatorless legacy key minted before the cutoff', async () => {
+  it('still accepts a creatorless key flagged legacy by the backfill', async () => {
     mockApiKeyFindMany.mockResolvedValueOnce([
       keyRecord({
         createdByMemberId: null,
         createdBy: null,
-        createdAt: new Date('2026-01-01T00:00:00Z'),
+        legacyCreatorless: true,
       }),
     ]);
     const { context, request } = contextFor('POST');

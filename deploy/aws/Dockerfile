@@ -9,7 +9,7 @@
 # later. Bump the tag and the digest together; the digest is the "Digest:" line of
 # `docker buildx imagetools inspect node:22-slim` (or oven/bun:<tag>), never a per-platform one.
 ARG NODE_IMAGE=node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
-ARG BUN_IMAGE=oven/bun:1.3.4@sha256:7608db4aeb44f1fe8169cc8ec7055376b3013557b106407ccf092b00e426407d
+ARG BUN_IMAGE=oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895
 
 FROM ${BUN_IMAGE} AS bun
 

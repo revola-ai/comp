@@ -9,7 +9,7 @@ import {
 
 // Synthetic values only. Every fake value contains MARKER, so a test can prove that no value
 // reaches the output, an aws argument or a log. The database URLs name a fake production
-// project (TARGET), the way packages/db/production-target.json names the real one.
+// project (TARGET), the way packages/db/src/production-target.json names the real one.
 
 export const MARKER = 'fakesecret';
 export const PROD_REF = 'fakesecretprodrefabc';

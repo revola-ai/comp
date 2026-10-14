@@ -1,4 +1,4 @@
-// The one zod schema for packages/db/production-target.json, shared by the production
+// The one zod schema for packages/db/src/production-target.json, shared by the production
 // guard (scripts/production-target-guard.ts) and deploy/aws/config.ts.
 export {
   hashProjectRef,

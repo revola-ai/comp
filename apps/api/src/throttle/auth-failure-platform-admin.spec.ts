@@ -1,9 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
 import { Controller, Get, UseGuards } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { Agent } from 'node:http';
 import request from 'supertest';
 import type { App } from 'supertest/types';
+import { failedToGetSessionError } from '../../test/better-auth-errors';
+import { CREDENTIAL_STORE_UNAVAILABLE } from '../auth/credential-store-error';
+import { CredentialStoreUnavailableFilter } from '../auth/credential-store-unavailable.filter';
 import { PlatformAdminGuard } from '../auth/platform-admin.guard';
 
 // Platform admin routes (/v1/admin/*, the framework editor) run
@@ -20,15 +24,26 @@ jest.mock('../auth/auth.server', () => ({
     api: { getSession: (...args: unknown[]) => mockGetSession(...args) },
   },
 }));
+// The database probe that confirms a FAILED_TO_GET_SESSION outage
+// (session-store-outage.ts) fails, as it would during an outage.
+jest.mock('../health/readiness', () => ({
+  checkApiReadiness: () =>
+    Promise.resolve({ status: 'unavailable', reason: 'P1001' }),
+}));
 jest.mock('@db', () => ({
   db: { user: { findUnique: (...args: unknown[]) => mockFindUser(...args) } },
 }));
 
-import { AUTH_FAILURE_LIMIT, AuthFailureLimiter } from './auth-failure-limiter';
+import {
+  AUTH_FAILURE_CREDENTIAL_LIMIT,
+  AUTH_FAILURE_LIMIT,
+  AuthFailureLimiter,
+} from './auth-failure-limiter';
 import { ThrottleModule } from './throttle.module';
 
 const ORIGIN = 'D'.repeat(64);
 const N = AUTH_FAILURE_LIMIT;
+const PER_CREDENTIAL = AUTH_FAILURE_CREDENTIAL_LIMIT;
 const ADMIN_TOKEN = 'admin-session-token';
 const USER_TOKEN = 'user-session-token';
 const SESSION_USERS: Record<string, { id: string; role: string | null }> = {
@@ -64,7 +79,12 @@ describe('credential attempt limit on platform admin routes (PlatformAdminGuard)
     const moduleRef = await Test.createTestingModule({
       imports: [ThrottleModule],
       controllers: [AdminProbeController],
-      providers: [PlatformAdminGuard, AuthFailureLimiter],
+      providers: [
+        PlatformAdminGuard,
+        AuthFailureLimiter,
+        // AuthModule's global filter: credential-store outages get Retry-After.
+        { provide: APP_FILTER, useClass: CredentialStoreUnavailableFilter },
+      ],
     }).compile();
     app = moduleRef.createNestApplication({ logger: false });
     await app.listen(0);
@@ -155,21 +175,53 @@ describe('credential attempt limit on platform admin routes (PlatformAdminGuard)
         Authorization: 'Bearer junk',
         Cookie: `better-auth.session_token=${ADMIN_TOKEN}`,
       });
+    // One repeated token: refused once its own allowance (per IP) is used.
     const statuses: number[] = [];
-    for (let i = 0; i < N; i += 1) {
+    for (let i = 0; i < PER_CREDENTIAL; i += 1) {
       statuses.push((await both('203.0.113.40')).status);
     }
-    expect(statuses).toEqual(Array(N).fill(401));
+    expect(statuses).toEqual(Array(PER_CREDENTIAL).fill(401));
     mockGetSession.mockClear();
     expect((await both('203.0.113.40')).status).toBe(429);
     expect(mockGetSession).not.toHaveBeenCalled();
   });
 
-  it('keeps the attempt when the session lookup fails', async () => {
-    mockGetSession.mockRejectedValue(new Error('cannot reach database'));
-    for (let i = 0; i < N; i += 1) {
-      expect((await withBearer('203.0.113.50', ADMIN_TOKEN)).status).toBe(500);
+  it('answers a session-store outage with 503 and Retry-After, giving the attempt back', async () => {
+    // better-auth's getSession reports an unreachable store as this APIError.
+    mockGetSession.mockRejectedValue(failedToGetSessionError());
+    for (let i = 0; i < N + 5; i += 1) {
+      const response = await withBearer('203.0.113.50', ADMIN_TOKEN);
+      expect(response.status).toBe(503);
+      expect(response.headers['retry-after']).toMatch(/^\d+$/);
+      expect(JSON.stringify(response.body)).toContain(
+        CREDENTIAL_STORE_UNAVAILABLE,
+      );
     }
-    expect((await withBearer('203.0.113.50', ADMIN_TOKEN)).status).toBe(429);
+    mockGetSession.mockReset();
+    mockGetSession.mockResolvedValue(null);
+    const statuses: number[] = [];
+    for (let i = 0; i < N; i += 1) {
+      statuses.push((await withBearer('203.0.113.50', `junk-${i}`)).status);
+    }
+    expect(statuses).toEqual(Array(N).fill(401));
+  });
+
+  it('answers an outage of the admin role lookup with 503', async () => {
+    mockFindUser.mockRejectedValue(
+      Object.assign(new Error('cannot reach database'), {
+        code: 'ECONNREFUSED',
+      }),
+    );
+    const response = await withBearer('203.0.113.51', ADMIN_TOKEN);
+    expect(response.status).toBe(503);
+    expect(response.headers['retry-after']).toMatch(/^\d+$/);
+  });
+
+  it('keeps the attempt when the session lookup fails for another reason', async () => {
+    mockGetSession.mockRejectedValue(new TypeError('unexpected'));
+    for (let i = 0; i < PER_CREDENTIAL; i += 1) {
+      expect((await withBearer('203.0.113.52', ADMIN_TOKEN)).status).toBe(500);
+    }
+    expect((await withBearer('203.0.113.52', ADMIN_TOKEN)).status).toBe(429);
   });
 });

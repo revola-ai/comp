@@ -1,7 +1,7 @@
 // The direction of the callers that REQUIRE the production database rather than refuse it:
 // deploy/server/secrets/values.ts (DATABASE_URL and DATABASE_MIGRATION_URL before
 // push-secrets stores them). The Prisma CLI guard's direction (refuse when any part names
-// production) is productionVerdict in production-target.ts; on its own it is no allowlist,
+// production) is productionVerdict in production-verdict.ts; on its own it is no allowlist,
 // because a URL naming production next to another project passes it. Ported from the parked
 // ECS design (revola/aws-infra packages/db/src/production-connection.ts). No Bun-only APIs:
 // prisma.config.ts loads this package's src under Node.
@@ -11,7 +11,7 @@ import {
   hashProjectRef,
   type ProductionTarget,
   projectRefsIn,
-} from './production-target';
+} from './production-verdict';
 
 /**
  * For callers that require production: 'production' only when every project ref the URL names

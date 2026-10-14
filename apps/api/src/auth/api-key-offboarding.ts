@@ -1,4 +1,9 @@
 import { db, type Prisma } from '@db';
+import {
+  type MemberAccessChange,
+  revokeCreatedApiKeys,
+  revokeKeysCutOffBy,
+} from './api-key-access-loss';
 import { lockMembersById } from './api-key-member-lock';
 
 /**
@@ -6,28 +11,39 @@ import { lockMembersById } from './api-key-member-lock';
  *
  * A personal key (`organizationOwned = false`) belongs to the member who
  * created it and must stop working when that member is removed or
- * deactivated. Each helper locks the member row first (the same lock key
- * creation takes, see api-key-member-lock.ts), then revokes and changes the
- * membership in the same transaction; deleting a member would otherwise null
- * `createdByMemberId` (onDelete: SetNull) and orphan the key.
+ * deactivated (see api-key-access-loss.ts); a role change only narrows what
+ * it may do (api-key-effective-scopes.ts). Each helper locks the member
+ * row first (the same lock key creation takes, see api-key-member-lock.ts),
+ * then revokes and changes the membership in the same transaction; deleting a
+ * member would otherwise null `createdByMemberId` (onDelete: SetNull) and
+ * orphan the key.
  */
 
-const PERSONAL_ACTIVE_KEYS = { organizationOwned: false, isActive: true };
-const REVOKED = { isActive: false };
-
-type RevokingClient = Pick<Prisma.TransactionClient, 'apiKey'>;
-
-/** Revoke the active personal keys created by the given members. */
-export function revokeCreatedApiKeys({
-  tx,
-  memberIds,
+/**
+ * Applies a membership change in one transaction that first locks the member
+ * and revokes its personal keys when `change` cuts its access. `apply` makes
+ * the change itself with the transaction client; if it throws, the
+ * revocation rolls back with it.
+ */
+export function changeMemberRevokingApiKeys<T>({
+  memberId,
+  organizationId,
+  change,
+  apply,
 }: {
-  tx: RevokingClient;
-  memberIds: string[];
-}) {
-  return tx.apiKey.updateMany({
-    where: { createdByMemberId: { in: memberIds }, ...PERSONAL_ACTIVE_KEYS },
-    data: REVOKED,
+  memberId: string;
+  organizationId?: string;
+  change: MemberAccessChange;
+  apply: (tx: Prisma.TransactionClient) => Promise<T>;
+}): Promise<T> {
+  return db.$transaction(async (tx) => {
+    await revokeKeysCutOffBy({
+      tx,
+      memberIds: [memberId],
+      organizationId,
+      change,
+    });
+    return apply(tx);
   });
 }
 
@@ -44,19 +60,21 @@ export async function deactivateMemberAndRevokeApiKeys({
   organizationId?: string;
   offboardDate?: Date | null;
 }): Promise<void> {
-  await db.$transaction(async (tx) => {
-    await lockMembersById({ tx, memberIds: [memberId] });
-    await revokeCreatedApiKeys({ tx, memberIds: [memberId] });
-    await tx.member.update({
-      where: organizationId
-        ? { id: memberId, organizationId }
-        : { id: memberId },
-      data: {
-        deactivated: true,
-        isActive: false,
-        ...(offboardDate !== undefined ? { offboardDate } : {}),
-      },
-    });
+  const change = { deactivated: true, isActive: false };
+  await changeMemberRevokingApiKeys({
+    memberId,
+    organizationId,
+    change,
+    apply: (tx) =>
+      tx.member.update({
+        where: organizationId
+          ? { id: memberId, organizationId }
+          : { id: memberId },
+        data: {
+          ...change,
+          ...(offboardDate !== undefined ? { offboardDate } : {}),
+        },
+      }),
   });
 }
 

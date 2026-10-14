@@ -200,10 +200,18 @@ describe('better-auth deletes revoke personal keys in the same transaction', () 
     expect(mockDb.lockLog.sort()).toEqual(['mem_1', 'mem_2']);
   });
 
-  it('nothing is revoked while no delete happens (a refused leave never deletes)', async () => {
-    const client = betterAuthClient();
-    await client.member.findUnique({ where: { id: 'mem_1' } });
+  it('a delete the database refuses after revoking rolls the revocation back', async () => {
+    mockDb.failNext({
+      operation: 'member.delete',
+      error: new Error('P2003: foreign key constraint failed'),
+    });
+    await expect(
+      betterAuthClient().member.delete({ where: { id: 'mem_1' } }),
+    ).rejects.toThrow(/P2003/);
+    expect(mockDb.lockLog).toEqual(['mem_1']);
+    expect(mockDb.members.has('mem_1')).toBe(true);
     expect(activity()).toEqual([true, true, true]);
+    expect(mockDb.usableKeysOf('mem_1')).toHaveLength(2);
   });
 
   it('a failed delete rolls nothing forward: the member and its keys stay', async () => {

@@ -7,6 +7,7 @@ import { ActingUserResolver } from './acting-user.service';
 import { ApiKeyService } from './api-key.service';
 import { AuthController } from './auth.controller';
 import { CredentialStoreUnavailableFilter } from './credential-store-unavailable.filter';
+import { GramMcpClientSync } from './gram-mcp-client-sync.service';
 import { HybridAuthGuard } from './hybrid-auth.guard';
 import { PermissionGuard } from './permission.guard';
 
@@ -36,6 +37,8 @@ import { PermissionGuard } from './permission.guard';
     HybridAuthGuard,
     PermissionGuard,
     ActingUserResolver,
+    // Writes the Gram MCP OAuth client's row from GRAM_OAUTH_* at boot.
+    GramMcpClientSync,
     // Credential-store outages answer 503 with Retry-After.
     { provide: APP_FILTER, useClass: CredentialStoreUnavailableFilter },
   ],

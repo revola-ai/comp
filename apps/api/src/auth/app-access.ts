@@ -25,7 +25,7 @@ function mergeInto(
 ): void {
   for (const [resource, actions] of Object.entries(perms)) {
     if (!Array.isArray(actions)) continue;
-    (target[resource] ??= new Set<string>());
+    target[resource] ??= new Set<string>();
     for (const action of actions) target[resource].add(action);
   }
 }
@@ -67,6 +67,17 @@ export async function resolveRolePermissions(
     result[resource] = [...actions];
   }
   return result;
+}
+
+/** Resolved permissions as `resource:action` scope strings. */
+export function permissionScopes(
+  permissions: Record<string, string[]>,
+): Set<string> {
+  return new Set(
+    Object.entries(permissions).flatMap(([resource, actions]) =>
+      actions.map((action) => `${resource}:${action}`),
+    ),
+  );
 }
 
 /** Whether resolved permissions grant `resource:action`. */

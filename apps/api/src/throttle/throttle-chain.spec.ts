@@ -91,6 +91,7 @@ const apiKeyService = {
       scopes: [],
       createdByMemberId: null,
       organizationOwned: false,
+      creatorRoles: null,
     }),
 };
 
@@ -225,7 +226,7 @@ describe('throttling chain (global public limiter + identity interceptor after H
     expect(statuses).toEqual([200, 200, 429]);
   });
 
-  it('gives a service-token caller its own bucket', async () => {
+  it('gives a service-token caller its own bucket, above the route limit', async () => {
     const service = {
       'X-Service-Token': SERVICE_TOKEN,
       'X-Organization-Id': 'org_1',
@@ -233,9 +234,9 @@ describe('throttling chain (global public limiter + identity interceptor after H
     await get('/probe/private', { Cookie: 'user=carol' });
     await get('/probe/private', { Cookie: 'user=carol' });
     expect(await get('/probe/private', { Cookie: 'user=carol' })).toBe(429);
-    expect(await get('/probe/private', service)).toBe(200);
-    expect(await get('/probe/private', service)).toBe(200);
-    expect(await get('/probe/private', service)).toBe(429);
+    for (let i = 0; i < 3; i += 1) {
+      expect(await get('/probe/private', service)).toBe(200);
+    }
   });
 
   it('gives each API key its own bucket', async () => {

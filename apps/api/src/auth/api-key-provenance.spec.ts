@@ -1,5 +1,8 @@
 import { ForbiddenException } from '@nestjs/common';
-import { resolveKeyProvenance } from './api-key-provenance';
+import {
+  resolveKeyProvenance,
+  resolveOrganizationOwnedProvenance,
+} from './api-key-provenance';
 
 // Who a new API key belongs to. A key must always trace back to a member (so
 // offboarding can revoke it) or be explicitly organization-owned; a null
@@ -62,5 +65,69 @@ describe('resolveKeyProvenance', () => {
     expect(() => resolveKeyProvenance({ authType: 'session' })).toThrow(
       ForbiddenException,
     );
+  });
+});
+
+// POST /v1/organization/api-keys with organizationOwned: true. Such a key
+// deliberately outlives its creator, so only an owner may mint one.
+describe('resolveOrganizationOwnedProvenance', () => {
+  it('lets an owner session create one, attributed to the owner', () => {
+    expect(
+      resolveOrganizationOwnedProvenance({
+        authType: 'session',
+        memberId: 'mem_owner',
+        userRoles: ['admin', ' owner'],
+      }),
+    ).toEqual({ createdByMemberId: 'mem_owner', organizationOwned: true });
+  });
+
+  it.each([[['admin']], [['auditor']], [['ci-bot']], [null]])(
+    'refuses a session whose roles are %p',
+    (userRoles) => {
+      const create = () =>
+        resolveOrganizationOwnedProvenance({
+          authType: 'session',
+          memberId: 'mem_1',
+          userRoles,
+        });
+      expect(create).toThrow(ForbiddenException);
+      expect(create).toThrow(/owner/);
+    },
+  );
+
+  it('refuses an owner role without a member to attribute it to', () => {
+    expect(() =>
+      resolveOrganizationOwnedProvenance({
+        authType: 'session',
+        userRoles: ['owner'],
+      }),
+    ).toThrow(ForbiddenException);
+  });
+
+  it('refuses a personal API key and a service token', () => {
+    expect(() =>
+      resolveOrganizationOwnedProvenance({
+        authType: 'api-key',
+        apiKeyCreatedByMemberId: 'mem_owner',
+        apiKeyOrganizationOwned: false,
+      }),
+    ).toThrow(ForbiddenException);
+    expect(() =>
+      resolveOrganizationOwnedProvenance({
+        authType: 'service',
+        memberId: 'mem_owner',
+        userRoles: ['owner'],
+      }),
+    ).toThrow(ForbiddenException);
+  });
+
+  it('lets an organization-owned API key create one, as it would anyway', () => {
+    expect(
+      resolveOrganizationOwnedProvenance({
+        authType: 'api-key',
+        apiKeyCreatedByMemberId: 'mem_creator',
+        apiKeyOrganizationOwned: true,
+      }),
+    ).toEqual({ createdByMemberId: 'mem_creator', organizationOwned: true });
   });
 });

@@ -86,7 +86,7 @@ describe('resolveDesired', () => {
       prod: { SERVICE_TOKEN_PORTAL: 'fakesecret-short', TRIGGER_SECRET_KEY_API: 'tr_dev_fakesecret' },
     });
     expect(resolve(files).problems).toEqual([
-      'DATABASE_URL does not name the production database (packages/db/production-target.json)',
+      'DATABASE_URL does not name the production database (packages/db/src/production-target.json)',
       'SERVICE_TOKEN_PORTAL must be at least 32 characters',
       'TRIGGER_SECRET_KEY_API is a dev key (tr_dev_); use the prod key (tr_prod_...) of the project',
     ]);

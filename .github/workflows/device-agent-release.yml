@@ -2,7 +2,8 @@ name: Device Agent Release
 
 # Revola fork: manual only. Upstream released on every push touching the agent and
 # pointed it at upstream's portal and API; here a release needs this deployment's URLs
-# as inputs and fails fast unless they are https URLs on a revola.ai host.
+# as inputs and fails fast unless they are https URLs on a revola.ai host. A production
+# release must be dispatched from the release branch with the exact production hosts.
 on:
   workflow_dispatch:
     inputs:
@@ -76,6 +77,20 @@ jobs:
           done
           PORTAL_URL="${PORTAL_URL%/}"
           API_URL="${API_URL%/}"
+
+          # Production agents come only from the release branch and talk only to the
+          # production hosts; staging may use any https revola.ai host from any branch.
+          # GITHUB_REF is the runner's copy of github.ref.
+          if [ "$CHANNEL" = "production" ]; then
+            if [ "${GITHUB_REF:-}" != "refs/heads/release" ]; then
+              echo "::error::channel=production is released only from the release branch (refs/heads/release)."
+              exit 1
+            fi
+            if [ "$PORTAL_URL" != "https://portal.comp.revola.ai" ] || [ "$API_URL" != "https://api.comp.revola.ai" ]; then
+              echo "::error::channel=production must use https://portal.comp.revola.ai and https://api.comp.revola.ai."
+              exit 1
+            fi
+          fi
 
           if [ "$CHANNEL" = "production" ]; then
             TAG_NAME="device-agent-v${NEXT_VERSION}"

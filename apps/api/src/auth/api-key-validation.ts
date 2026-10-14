@@ -1,3 +1,5 @@
+import { memberRoles } from './api-key-effective-scopes';
+
 /** Result from validating an API key */
 export interface ApiKeyValidationResult {
   /** API key row primary key - exposed on the request so downstream
@@ -16,15 +18,11 @@ export interface ApiKeyValidationResult {
   /** Organization-owned keys outlive their creator's membership; personal
    *  keys stop working once the creator is removed or deactivated. */
   organizationOwned: boolean;
+  /** The creator's current roles, which bound a personal key's scopes at
+   *  every use (api-key-effective-scopes.ts); null for keys no member bounds:
+   *  organization-owned and legacy creatorless keys. */
+  creatorRoles: string[] | null;
 }
-
-/**
- * When `organizationOwned` shipped (migration 20261006063557). Keys created
- * before it may lack a recorded creator; any personal key created since has
- * one, so a creatorless personal key from after it is an orphan (its creator's
- * membership was deleted) and is refused.
- */
-export const LEGACY_CREATOR_CUTOFF = new Date('2026-10-06T06:35:57Z');
 
 /** Columns read when matching a presented key against stored candidates. */
 export const API_KEY_VALIDATION_SELECT = {
@@ -37,8 +35,8 @@ export const API_KEY_VALIDATION_SELECT = {
   scopes: true,
   createdByMemberId: true,
   organizationOwned: true,
-  createdAt: true,
-  createdBy: { select: { isActive: true, deactivated: true } },
+  legacyCreatorless: true,
+  createdBy: { select: { isActive: true, deactivated: true, role: true } },
 } as const;
 
 export interface ApiKeyCandidate {
@@ -50,8 +48,8 @@ export interface ApiKeyCandidate {
   scopes: string[];
   createdByMemberId: string | null;
   organizationOwned: boolean;
-  createdAt: Date;
-  createdBy: { isActive: boolean; deactivated: boolean } | null;
+  legacyCreatorless: boolean;
+  createdBy: { isActive: boolean; deactivated: boolean; role: string } | null;
 }
 
 export type ApiKeyRejection = 'inactive_creator' | 'orphaned';
@@ -59,16 +57,18 @@ export type ApiKeyRejection = 'inactive_creator' | 'orphaned';
 /**
  * Why a matched key must not authenticate, or null when it may. Organization-
  * owned keys are always accepted. A personal key needs an active creator; one
- * without a recorded creator is accepted only as a legacy key created before
- * LEGACY_CREATOR_CUTOFF.
+ * without a recorded creator is accepted only when it is flagged
+ * `legacyCreatorless` (set once, by migration 20261013120000, for keys that
+ * predate creator attribution). Any other creatorless personal key lost its
+ * creator's membership (createdByMemberId is SET NULL on delete) and is an
+ * orphan.
  */
 export function apiKeyRejection(
   candidate: ApiKeyCandidate,
 ): ApiKeyRejection | null {
   if (candidate.organizationOwned) return null;
   if (!candidate.createdByMemberId) {
-    const legacy = candidate.createdAt < LEGACY_CREATOR_CUTOFF;
-    return legacy ? null : 'orphaned';
+    return candidate.legacyCreatorless ? null : 'orphaned';
   }
   const creator = candidate.createdBy;
   const active = creator && !creator.deactivated && creator.isActive;
@@ -85,5 +85,9 @@ export function toValidationResult(
     scopes: candidate.scopes,
     createdByMemberId: candidate.createdByMemberId ?? null,
     organizationOwned: candidate.organizationOwned,
+    creatorRoles:
+      candidate.organizationOwned || !candidate.createdBy
+        ? null
+        : memberRoles(candidate.createdBy.role),
   };
 }

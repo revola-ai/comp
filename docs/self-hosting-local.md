@@ -109,16 +109,18 @@ Why the session pooler: Supabase's direct connection is IPv6-only without the IP
 Session mode works for the apps, the Trigger workers, `prisma migrate deploy` and the seed.
 
 TLS: the pooler's certificate is signed by Supabase's own CA, which is not in Node's trust store.
-Download it (Database, SSL, "Download certificate"), save it as `packages/db/certs/prod-ca-2021.crt` (gitignored) and set `DATABASE_SSL_CA` to its absolute path.
+The CA is committed at `deploy/aws/certs/supabase-ca.crt`, and `scripts/local-env-init.sh` sets `DATABASE_SSL_CA` to its absolute path in every env file it writes (a local database ignores it).
+For env files written before that, set `DATABASE_SSL_CA` to the absolute path of `deploy/aws/certs/supabase-ca.crt` in each of them by hand.
 `resolveSslConfig` then verifies the chain and the hostname against Node's roots plus that CA; a wrong CA is rejected (`self signed certificate in certificate chain`).
 Do not use `PRISMA_ALLOW_INSECURE_TLS=1` for a shared database.
 Every Prisma client builds its connection through `buildPgAdapterOptions` (`packages/db/src/pg-adapter-options.ts`), which logs the TLS mode once at startup and never the URL.
-With `NODE_ENV=production` and a non-local host it refuses to start without `DATABASE_SSL_CA` (error code `ca_file_missing`); `PRISMA_ALLOW_INSECURE_TLS=1` is the only explicit opt-out.
+It applies the strict TLS rules to any non-local host under `NODE_ENV=production`, and to the production database (the project in `packages/db/src/production-target.json`) whatever `NODE_ENV` says, so a laptop on the shared database gets them too.
+Under those rules it refuses to start without `DATABASE_SSL_CA` (error code `ca_file_missing`; `PRISMA_ALLOW_INSECURE_TLS=1` is the only explicit opt-out) and refuses URL parameters that would replace the verified TLS, such as `ssl=false` or `sslmode=disable` (error code `ssl_param_conflict`; `sslmode=require`, `verify-ca` and `verify-full` are accepted).
 `DATABASE_POOL_MAX` (a whole number from 1 to 50) caps each process's pool; unset keeps the driver default.
 
 ### Schema changes against the shared database
 
-Laptops and production share this database, so `prisma migrate dev`, `migrate reset`, `migrate deploy`, `migrate resolve`, `db push`, `db seed` and `db execute` refuse to run when `DATABASE_URL` points at the production project recorded in `packages/db/production-target.json`.
+Laptops and production share this database, so `prisma migrate dev`, `migrate reset`, `migrate deploy`, `migrate resolve`, `db push`, `db seed`, `db execute` and `studio` refuse to run when `DATABASE_URL`, or a `--url <value>` / `--url=<value>` flag overriding it, points at the production project recorded in `packages/db/src/production-target.json`.
 That file holds the SHA-256 of the project ref, never the ref itself (the fork is public); the guard hashes the ref a URL carries (the pooler user `postgres.<ref>` or the host `db.<ref>.supabase.co`) and compares, so another project on the same regional pooler is not refused.
 The check runs inside every `prisma.config.ts` (`packages/db`, `apps/app`, `apps/portal`, `apps/framework-editor`), so it applies to the package scripts and to `bunx prisma ...` alike; `bun run db:seed`, a direct `bun prisma/seed/seed.ts` and `bun run backfill:framework-versions` check too.
 `COMP_I_AM_TOUCHING_PROD=1` runs them anyway; use it only when you mean to change production by hand.
@@ -132,6 +134,15 @@ The schema flow:
 
 Until `release.sh migrate` exists, Kyle applies reviewed migrations to the shared database by hand, after review, from `packages/db`: `COMP_I_AM_TOUCHING_PROD=1 bunx prisma migrate deploy`.
 Nobody runs new code that needs a migration the shared database does not have yet: the API, app and portal query the new columns and fail with "column does not exist" until it is applied (for example `ApiKey.organizationOwned`, which API-key validation and member offboarding read).
+
+#### Release order: migrations first, then the image
+
+Every release applies its migrations to the shared database before any new API, app or portal image (or laptop build) runs against it.
+Migrations here are additive, so the running old images keep working on the migrated database; the reverse order breaks the new image.
+The API checks this at boot: it reads one API key with every column API-key validation selects, and when one is missing it refuses to start with `ApiKeySchemaOutOfDateError` ("The database is missing ApiKey.<column> ... Apply the pending migrations before deploying this image").
+On ECS the new task then never becomes healthy and the old one keeps serving; apply the migrations and redeploy the same image.
+An unreachable database at boot is only a warning, since it says nothing about the schema.
+Migrations `20261006063557` to `20261013130000` (the `ApiKey` columns `organizationOwned` and `legacyCreatorless`, and the API-key revocation triggers) are the current example: apply them before deploying an API image that contains them.
 The onboarding advice below to skip the migrate step holds only once every committed migration has been applied this way.
 
 Moving an existing local database to Supabase (done once, 2026-09-16):
@@ -147,7 +158,7 @@ bunx prisma migrate status   # "Database schema is up to date!"
 The dump carries `_prisma_migrations`, so no migration runs during the restore; Supabase already provides `pgcrypto` in its `extensions` schema, which is on the default `search_path`, so `generate_prefixed_cuid()` keeps working.
 Files are copied bucket by bucket with `aws s3 sync --endpoint-url` from MinIO to the Supabase S3 endpoint (there were none to copy at migration time).
 
-Onboarding a colleague: they clone the fork, run the one-time setup up to `./scripts/local-env-init.sh`, then replace the local values with the shared ones above (share them through a password manager, never in git), download the CA, set `DATABASE_SSL_CA`, and skip the migrate/seed step (the shared database is already migrated, once Kyle has applied every committed migration as described under Schema changes against the shared database).
+Onboarding a colleague: they clone the fork, run the one-time setup up to `./scripts/local-env-init.sh`, then replace the local values with the shared ones above (share them through a password manager, never in git), keep the `DATABASE_SSL_CA` the script wrote, and skip the migrate/seed step (the shared database is already migrated, once Kyle has applied every committed migration as described under Schema changes against the shared database).
 Their Google OAuth client must list `http://localhost:3000` and `http://localhost:3333` too, or they use the same client.
 Every member of a Trigger.dev project has their own Development environment and dev key, so jobs a person starts (onboarding, policy regeneration) run on that person's own `trigger dev`; invite colleagues to the Trigger.dev organization and have each create their own dev keys for `comp-app` and `comp-api`.
 Deploying the workers with `trigger deploy` removes that dependency on someone's laptop being up.
@@ -194,7 +205,10 @@ New organizations are auto-approved and the Stripe / booking flow is skipped.
 With `SELF_HOSTED=true` the API trusts only the origins in `AUTH_TRUSTED_ORIGINS` plus the api, app and portal origins behind `AUTH_COOKIE_DOMAIN`, never `*.trycomp.ai` or `*.trust.inc`; when `AUTH_TRUSTED_ORIGINS` is unset outside production it also keeps the `http://localhost` defaults.
 `AUTH_COOKIE_DOMAIN` (api, unset locally) is the shared session-cookie domain for a deployed install, for example `.comp.revola.ai`; the API refuses to start unless it starts with a dot, has at least three labels (or `AUTH_COOKIE_DOMAIN_ALLOW_BROAD=1`) and covers the hosts of `BASE_URL`, `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_PORTAL_URL`.
 `TRUSTED_EDGE_PROXY_IPS` (api, unset locally) is a comma-separated list of the IP addresses the Cloudflare Tunnel connector (`cloudflared`) reaches the API from; the API takes `CF-Connecting-IP` as the visitor's address (for rate limits) only on requests whose socket peer is listed or that carry a valid `X-Comp-Origin-Auth`, and with `NODE_ENV=production` and `AUTH_COOKIE_DOMAIN` set it refuses to start unless a valid `TRUSTED_EDGE_PROXY_IPS` or `COMP_ORIGIN_AUTH` is set, and also refuses a malformed list or origin secret even when the other one is valid (a whitespace-only value counts as unset; outside production invalid list entries are ignored with one warning).
-`AUTH_ALLOWED_EMAIL_DOMAINS` (api, unset locally) is a comma-separated list such as `revola.ai`; when set, sign-up from any other email domain fails with `email_domain_not_allowed` unless the address has a pending, unexpired invitation.
+`AUTH_ALLOWED_EMAIL_DOMAINS` (api, unset locally) is a comma-separated list such as `revola.ai`; when set, an account can only be created for those domains or for an address with a pending, unexpired invitation.
+OAuth sign-up (Google, Microsoft, GitHub) from any other address fails with `email_domain_not_allowed`.
+Magic-link and email-code requests never fail that way: every address gets the same success at the same time, existing users get their email, and a new address that may not sign up simply gets none, so the answer never reveals which addresses have an account.
+Those emails are sent in the background, so a delivery failure shows only in the API log (by error name and code), not in the response.
 
 ### Platform admin role
 

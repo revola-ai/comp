@@ -1,0 +1,88 @@
+{
+  "numTotalTestSuites": 4,
+  "numPassedTestSuites": 2,
+  "numFailedTestSuites": 2,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 5,
+  "numPassedTests": 3,
+  "numFailedTests": 1,
+  "numPendingTests": 1,
+  "numTodoTests": 0,
+  "snapshot": { "added": 0, "failure": false, "filesAdded": 0 },
+  "startTime": 1760000000000,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["PolicyEditor", "when read only"],
+          "fullName": "PolicyEditor when read only hides the save button",
+          "status": "passed",
+          "title": "hides the save button",
+          "duration": 12,
+          "failureMessages": [],
+          "location": { "line": 10, "column": 5 },
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["PolicyEditor"],
+          "fullName": "PolicyEditor saves a draft",
+          "status": "failed",
+          "title": "saves a draft",
+          "duration": 30,
+          "failureMessages": ["AssertionError: expected 1 to be 2"],
+          "location": { "line": 20, "column": 3 },
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["PolicyEditor"],
+          "fullName": "PolicyEditor publishes",
+          "status": "skipped",
+          "title": "publishes",
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1760000000000,
+      "endTime": 1760000000100,
+      "status": "failed",
+      "message": "",
+      "name": "/repo/apps/app/src/components/policy-editor.test.tsx"
+    },
+    {
+      "assertionResults": [],
+      "startTime": 1760000000000,
+      "endTime": 1760000000010,
+      "status": "failed",
+      "message": "Failed to resolve import \"@/missing\" from \"src/lib/broken.test.ts\"",
+      "name": "/repo/apps/app/src/lib/broken.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "fullName": "formats a date",
+          "status": "passed",
+          "title": "formats a date",
+          "duration": 1,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "formats a date",
+          "status": "passed",
+          "title": "formats a date",
+          "duration": 1,
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1760000000000,
+      "endTime": 1760000000005,
+      "status": "passed",
+      "message": "",
+      "name": "/repo/apps/app/src/lib/format.test.ts"
+    }
+  ]
+}

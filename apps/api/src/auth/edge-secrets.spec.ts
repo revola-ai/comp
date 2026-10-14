@@ -7,7 +7,11 @@ const FORWARDED = 'f'.repeat(32);
 
 const production = {
   NODE_ENV: 'production',
+  SELF_HOSTED: 'true',
   AUTH_COOKIE_DOMAIN: '.comp.revola.ai',
+  BASE_URL: 'https://api.comp.revola.ai',
+  NEXT_PUBLIC_APP_URL: 'https://app.comp.revola.ai',
+  NEXT_PUBLIC_PORTAL_URL: 'https://portal.comp.revola.ai',
   COMP_ORIGIN_AUTH: ORIGIN,
   COMP_FORWARDED_IP_TOKEN: FORWARDED,
 };

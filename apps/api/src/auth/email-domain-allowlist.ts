@@ -1,4 +1,5 @@
 import { APIError } from 'better-auth/api';
+import { describeFailure } from './describe-failure';
 
 type Env = Partial<NodeJS.ProcessEnv>;
 
@@ -94,9 +95,32 @@ async function hasPendingInvitation({
   return invitation !== null;
 }
 
+/** The one sign-up rule shared by every entry point. */
+async function maySignUp({
+  email,
+  allowedDomains,
+  db,
+}: {
+  email: string;
+  allowedDomains: readonly string[];
+  db: InvitationLookup;
+}): Promise<boolean> {
+  if (allowedDomains.length === 0) return true;
+
+  const domain = emailDomain(email);
+  if (domain !== null && allowedDomains.includes(domain)) return true;
+
+  const invited =
+    domain !== null && (await hasPendingInvitation({ db, email }));
+  return isEmailAllowed({
+    email,
+    allowedDomains,
+    hasPendingInvitation: invited,
+  });
+}
+
 /**
- * The one sign-up check shared by every entry point: throws
- * `APIError('FORBIDDEN')` whose code and message are both
+ * Throws `APIError('FORBIDDEN')` whose code and message are both
  * `email_domain_not_allowed` unless the email may create an account.
  */
 async function assertSignUpAllowed({
@@ -108,18 +132,7 @@ async function assertSignUpAllowed({
   allowedDomains: readonly string[];
   db: InvitationLookup;
 }): Promise<void> {
-  if (allowedDomains.length === 0) return;
-
-  const domain = emailDomain(email);
-  if (domain !== null && allowedDomains.includes(domain)) return;
-
-  const invited =
-    domain !== null && (await hasPendingInvitation({ db, email }));
-  if (
-    isEmailAllowed({ email, allowedDomains, hasPendingInvitation: invited })
-  ) {
-    return;
-  }
+  if (await maySignUp({ email, allowedDomains, db })) return;
   throw new APIError('FORBIDDEN', {
     code: EMAIL_DOMAIN_NOT_ALLOWED,
     message: EMAIL_DOMAIN_NOT_ALLOWED,
@@ -143,7 +156,7 @@ export function createEmailDomainAllowlistHook({
     assertSignUpAllowed({ email: user.email, allowedDomains, db });
 }
 
-/** The slice of the Prisma client the magic-link sender needs. */
+/** The slice of the Prisma client the sign-in email senders need. */
 export interface SignUpLookup extends InvitationLookup {
   user: {
     findFirst(args: {
@@ -153,42 +166,64 @@ export interface SignUpLookup extends InvitationLookup {
   };
 }
 
-export interface MagicLinkMessage {
+/** Whether a sign-in email may go to this address (see below). */
+async function mayReceiveSignInEmail({
+  email,
+  allowedDomains,
+  db,
+}: {
   email: string;
-  url: string;
+  allowedDomains: readonly string[];
+  db: SignUpLookup;
+}): Promise<boolean> {
+  if (allowedDomains.length === 0) return true;
+  const existingUser = await db.user.findFirst({
+    where: {
+      email: { equals: email.trim().toLowerCase(), mode: 'insensitive' },
+    },
+    select: { id: true },
+  });
+  if (existingUser !== null) return true;
+  return maySignUp({ email, allowedDomains, db });
 }
 
 /**
- * Wraps the magic-link `send` so a link that would create a disallowed
- * account is refused before anything is sent (the create hook would only
- * reject it at verify time). Existing users always get their link.
+ * Wraps a sign-in email sender (magic link, email OTP) so nothing is mailed
+ * to a new address that may not create an account; existing users always get
+ * theirs. A skipped address gets the same answer as a mailed one, at the same
+ * time: the wrapper resolves at once and decides and sends in the background
+ * (the API is a long-running server), so neither the lookups nor the send
+ * show in the latency and it never reveals which outside addresses have an
+ * account. A failure is logged by error name and code only, never the address
+ * or the link or code, and not thrown. The account itself is refused by the
+ * user.create hook (createEmailDomainAllowlistHook), which also gives OAuth
+ * sign-ins their email_domain_not_allowed error.
  */
-export function createAllowlistedMagicLinkSender({
+export function createAllowlistedEmailSender<
+  Message extends { email: string },
+>({
   env,
   db,
   send,
+  logError = (line) => console.error(`[Auth] ${line}`),
 }: {
   env: Env;
   db: SignUpLookup;
-  send: (message: MagicLinkMessage) => Promise<void>;
-}): (message: MagicLinkMessage) => Promise<void> {
+  send: (message: Message) => Promise<void>;
+  logError?: (line: string) => void;
+}): (message: Message) => Promise<void> {
   const allowedDomains = parseAllowedDomains({ env });
 
-  return async (message) => {
-    if (allowedDomains.length > 0) {
-      const existingUser = await db.user.findFirst({
-        where: {
-          email: {
-            equals: message.email.trim().toLowerCase(),
-            mode: 'insensitive',
-          },
-        },
-        select: { id: true },
-      });
-      if (!existingUser) {
-        await assertSignUpAllowed({ email: message.email, allowedDomains, db });
-      }
-    }
+  const deliver = async (message: Message): Promise<void> => {
+    const email = message.email;
+    if (!(await mayReceiveSignInEmail({ email, allowedDomains, db }))) return;
     await send(message);
+  };
+
+  return (message) => {
+    void deliver(message).catch((error: unknown) => {
+      logError(`Sign-in email not sent: ${describeFailure(error)}`);
+    });
+    return Promise.resolve();
   };
 }

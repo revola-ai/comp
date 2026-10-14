@@ -144,7 +144,7 @@ function databaseUrlProblems({
     return [`${key} cannot be checked against the production database; ${ENCODE}`];
   }
   if (verdict === 'not_production') {
-    return [`${key} does not name the production database (packages/db/production-target.json)`];
+    return [`${key} does not name the production database (packages/db/src/production-target.json)`];
   }
   if (verdict === 'mixed') {
     return [`${key} also names another project (its user and host carry different project refs)`];

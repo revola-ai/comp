@@ -8,6 +8,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { CommentEntityType } from '@db';
 import type { Request } from 'express';
+import { assertApiKeyScopes } from '../auth/api-key-scope-check';
 import { auth } from '../auth/auth.server';
 import {
   PERMISSIONS_KEY,
@@ -70,31 +71,17 @@ export class CommentsPermissionGuard implements CanActivate {
     const resource = this.resolveEntityResource(request, fallback.resource);
     const requiredScope = `${resource}:${action}`;
 
-    // API keys: scope must explicitly include `${resource}:${action}`.
-    // Mirrors PermissionGuard's API-key handling so the dynamic-resource
-    // resolution doesn't accidentally bypass scope enforcement.
+    // API keys: scope must explicitly include `${resource}:${action}`, with
+    // PermissionGuard's rules (legacy keys, a personal key's scopes cut to its
+    // creator's current permissions) so the dynamic-resource resolution
+    // doesn't accidentally bypass scope enforcement.
     if (request.isApiKey) {
-      const scopes = request.apiKeyScopes;
-      if (!scopes || scopes.length === 0) {
-        // Legacy keys: same deprecation behavior as the standard guard —
-        // allow until April 20 2026, deny after.
-        const deprecationDate = new Date('2026-04-20T00:00:00Z');
-        if (new Date() >= deprecationDate) {
-          this.logger.warn(
-            `[CommentsPermissionGuard] Legacy API key with empty scopes BLOCKED on ${request.method} ${request.url}.`,
-          );
-          throw new ForbiddenException(
-            'This API key is no longer supported. Please regenerate your API key with explicit scopes.',
-          );
-        }
-        return true;
-      }
-      if (!scopes.includes(requiredScope)) {
-        this.logger.warn(
-          `[CommentsPermissionGuard] API key lacks scope ${requiredScope}`,
-        );
-        throw new ForbiddenException('API key lacks required permission scope');
-      }
+      assertApiKeyScopes({
+        request,
+        requiredScopes: [requiredScope],
+        warn: (message) =>
+          this.logger.warn(`[CommentsPermissionGuard] ${message}`),
+      });
       return true;
     }
 

@@ -1,0 +1,92 @@
+{
+  "numFailedTestSuites": 2,
+  "numFailedTests": 1,
+  "numPassedTests": 3,
+  "numPendingTests": 1,
+  "numRuntimeErrorTestSuites": 1,
+  "numTotalTestSuites": 3,
+  "numTotalTests": 5,
+  "success": false,
+  "wasInterrupted": false,
+  "testResults": [
+    {
+      "name": "/repo/apps/api/src/users/users.service.spec.ts",
+      "status": "failed",
+      "message": "  ● UsersService > rejects a duplicate email\n\n    expect(received).toThrow()",
+      "startTime": 1760000000000,
+      "endTime": 1760000000100,
+      "summary": "",
+      "assertionResults": [
+        {
+          "ancestorTitles": ["UsersService"],
+          "fullName": "UsersService creates a user",
+          "status": "passed",
+          "title": "creates a user",
+          "duration": 5,
+          "failureMessages": [],
+          "failureDetails": [],
+          "numPassingAsserts": 1
+        },
+        {
+          "ancestorTitles": ["UsersService"],
+          "fullName": "UsersService rejects a duplicate email",
+          "status": "failed",
+          "title": "rejects a duplicate email",
+          "duration": 3,
+          "failureMessages": ["Error: expect(received).toThrow()"],
+          "failureDetails": [{}],
+          "numPassingAsserts": 0
+        },
+        {
+          "ancestorTitles": ["UsersService"],
+          "fullName": "UsersService deletes a user",
+          "status": "pending",
+          "title": "deletes a user",
+          "duration": null,
+          "failureMessages": [],
+          "failureDetails": [],
+          "numPassingAsserts": 0
+        }
+      ]
+    },
+    {
+      "name": "/repo/apps/api/src/billing/billing.controller.spec.ts",
+      "status": "failed",
+      "message": "  ● Test suite failed to run\n\n    Cannot find module '@trycompai/billing'",
+      "startTime": 1760000000000,
+      "endTime": 1760000000050,
+      "summary": "",
+      "assertionResults": []
+    },
+    {
+      "name": "/repo/apps/api/src/health/health.spec.ts",
+      "status": "passed",
+      "message": "",
+      "startTime": 1760000000000,
+      "endTime": 1760000000020,
+      "summary": "",
+      "assertionResults": [
+        {
+          "ancestorTitles": ["Health", "GET /health"],
+          "fullName": "Health GET /health returns ok",
+          "status": "passed",
+          "title": "returns ok",
+          "duration": 2,
+          "failureMessages": [],
+          "failureDetails": [],
+          "numPassingAsserts": 1
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "top level  test\n  with odd   spacing",
+          "status": "passed",
+          "title": "top level  test\n  with odd   spacing",
+          "duration": 1,
+          "failureMessages": [],
+          "failureDetails": [],
+          "numPassingAsserts": 1
+        }
+      ]
+    }
+  ]
+}

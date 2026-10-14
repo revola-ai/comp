@@ -2,7 +2,12 @@ import { db } from '@db';
 import type { PeopleResponseDto } from '../dto/people-responses.dto';
 import type { CreatePeopleDto } from '../dto/create-people.dto';
 import type { UpdatePeopleDto } from '../dto/update-people.dto';
-import { deleteMemberAndRevokeApiKeys } from '../../auth/api-key-offboarding';
+import { memberAccessChange, cutsAccess } from '../../auth/api-key-access-loss';
+import {
+  changeMemberRevokingApiKeys,
+  deleteMemberAndRevokeApiKeys,
+} from '../../auth/api-key-offboarding';
+import { buildMemberUpdate } from './member-update-payload';
 
 /**
  * Common database queries for member operations
@@ -72,15 +77,21 @@ export class MemberQueries {
           ? {
               onboardDate: {
                 ...(filters.onboardAfter ? { gte: filters.onboardAfter } : {}),
-                ...(filters.onboardBefore ? { lte: filters.onboardBefore } : {}),
+                ...(filters.onboardBefore
+                  ? { lte: filters.onboardBefore }
+                  : {}),
               },
             }
           : {}),
         ...(filters?.offboardAfter || filters?.offboardBefore
           ? {
               offboardDate: {
-                ...(filters.offboardAfter ? { gte: filters.offboardAfter } : {}),
-                ...(filters.offboardBefore ? { lte: filters.offboardBefore } : {}),
+                ...(filters.offboardAfter
+                  ? { gte: filters.offboardAfter }
+                  : {}),
+                ...(filters.offboardBefore
+                  ? { lte: filters.offboardBefore }
+                  : {}),
               },
             }
           : {}),
@@ -130,99 +141,59 @@ export class MemberQueries {
   }
 
   /**
-   * Update a member by ID within an organization
+   * Update a member by ID within an organization. A change that ends the
+   * member's access (isActive: false) revokes the member's personal API keys
+   * in the same transaction (api-key-access-loss.ts); reactivating brings
+   * none back. A role change does not revoke: personal keys are bounded by
+   * their creator's current roles at every use.
    */
   static async updateMember(
     memberId: string,
     organizationId: string,
     updateData: UpdatePeopleDto,
   ): Promise<PeopleResponseDto> {
-    // Separate user-level fields from member-level fields
-    const { name, email, createdAt, onboardDate, offboardDate, ...memberFields } = updateData;
+    const { member: memberData, user: userData } =
+      buildMemberUpdate(updateData);
+    const change = memberAccessChange(memberData);
+    const hasUserUpdates = Object.keys(userData).length > 0;
+    const hasMemberUpdates = Object.keys(memberData).length > 0;
+    const where = { id: memberId, organizationId };
 
-    // Prepare member update data
-    const updatePayload: any = { ...memberFields };
-
-    // Convert createdAt string to Date for Prisma
-    if (createdAt !== undefined) {
-      updatePayload.createdAt = new Date(createdAt);
-    }
-
-    if (onboardDate !== undefined) {
-      updatePayload.onboardDate = onboardDate ? new Date(onboardDate) : null;
-    }
-    if (offboardDate !== undefined) {
-      updatePayload.offboardDate = offboardDate ? new Date(offboardDate) : null;
-    }
-
-    // Handle fleetDmLabelId: convert undefined to null for database
-    if (
-      memberFields.fleetDmLabelId === undefined &&
-      'fleetDmLabelId' in memberFields
-    ) {
-      updatePayload.fleetDmLabelId = null;
-    }
-
-    // Un-exempting clears reason + justification so a future re-exemption
-    // starts from a clean state. The audit log retains the prior values
-    // from the original exempt-true request.
-    if (updatePayload.backgroundCheckExempt === false) {
-      updatePayload.backgroundCheckExemptReason = null;
-      updatePayload.backgroundCheckExemptJustification = null;
-    }
-
-    // Reactivation: the status dropdown sends { isActive: true } via PATCH. A
-    // member deactivated via offboarding (or the skip-offboarding path) carries
-    // deactivated:true, which hides them from the people list. Clear it so
-    // isActive and deactivated stay in sync and the member is fully restored.
-    if (updatePayload.isActive === true) {
-      updatePayload.deactivated = false;
-    }
-
-    const hasUserUpdates = name !== undefined || email !== undefined;
-    const hasMemberUpdates = Object.keys(updatePayload).length > 0;
-
-    // If we need to update both user and member, use a transaction
-    if (hasUserUpdates) {
-      return db.$transaction(async (tx) => {
-        // Get the member to find the associated userId (scoped to org)
-        const member = await tx.member.findFirstOrThrow({
-          where: { id: memberId, organizationId },
-          select: { userId: true },
-        });
-
-        // Update user fields
-        const userUpdateData: { name?: string; email?: string } = {};
-        if (name !== undefined) userUpdateData.name = name;
-        if (email !== undefined) userUpdateData.email = email;
-
-        await tx.user.update({
-          where: { id: member.userId },
-          data: userUpdateData,
-        });
-
-        // Update member fields if any
-        if (hasMemberUpdates) {
-          return tx.member.update({
-            where: { id: memberId, organizationId },
-            data: updatePayload,
-            select: this.MEMBER_SELECT,
-          });
-        }
-
-        // Return updated member with fresh user data
-        return tx.member.findFirstOrThrow({
-          where: { id: memberId, organizationId },
-          select: this.MEMBER_SELECT,
-        });
+    // Only member-level updates that cannot cut access
+    if (!hasUserUpdates && !cutsAccess(change)) {
+      return db.member.update({
+        where,
+        data: memberData,
+        select: this.MEMBER_SELECT,
       });
     }
 
-    // Only member-level updates
-    return db.member.update({
-      where: { id: memberId, organizationId },
-      data: updatePayload,
-      select: this.MEMBER_SELECT,
+    return changeMemberRevokingApiKeys({
+      memberId,
+      organizationId,
+      change,
+      apply: async (tx) => {
+        if (hasUserUpdates) {
+          // The member's user, scoped to the organization
+          const { userId } = await tx.member.findFirstOrThrow({
+            where,
+            select: { userId: true },
+          });
+          await tx.user.update({ where: { id: userId }, data: userData });
+        }
+        if (hasMemberUpdates) {
+          return tx.member.update({
+            where,
+            data: memberData,
+            select: this.MEMBER_SELECT,
+          });
+        }
+        // Return the member with fresh user data
+        return tx.member.findFirstOrThrow({
+          where,
+          select: this.MEMBER_SELECT,
+        });
+      },
     });
   }
 
